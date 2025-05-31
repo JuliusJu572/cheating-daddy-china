@@ -23,7 +23,7 @@ A real-time AI assistant that provides contextual help during video calls, inter
 2. Choose your profile and language in settings
 3. Click "Start Session" to begin
 4. Position the window using keyboard shortcuts
-5. The AI will provide real-time assistance based on your screen and audio
+5. The AI will provide real-time assistance based on your screen and what interview asks
 
 ## Keyboard Shortcuts
 
