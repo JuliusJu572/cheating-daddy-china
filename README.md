@@ -15,7 +15,7 @@ A real-time AI assistant that provides contextual help during video calls, inter
 - **Multiple Profiles**: Interview, Sales Call, Business Meeting, Presentation, Negotiation
 - **Transparent Overlay**: Always-on-top window that can be positioned anywhere
 - **Click-through Mode**: Make window transparent to clicks when needed
-- **Cross-platform**: Works on macOS, Windows, and Linux
+- **Cross-platform**: Works on macOS, Windows, and Linux (kinda, dont use, just for testing rn)
 
 ## Setup
 
