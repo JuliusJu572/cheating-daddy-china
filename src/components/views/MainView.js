@@ -209,15 +209,30 @@ export class MainView extends LitElement {
         const isMac = navigator.platform.toLowerCase().includes('mac') || 
               navigator.userAgent.toLowerCase().includes('mac') ||
               process.platform === 'darwin';
-        const isStartShortcut = isMac 
+        const isCmdOrCtrlEnter = isMac 
             ? (e.metaKey && !e.ctrlKey && e.key === 'Enter') 
             : (!e.metaKey && e.ctrlKey && e.key === 'Enter');
         const isAltEnter = e.altKey && e.key === 'Enter';
-        const isAudioCapture = !e.metaKey && e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === 'l' || e.key === 'L');
-        
-        if ((isStartShortcut || isAltEnter) && this.isKeyValid) {  // ✅ 增加验证检查
+        const isAudioCapture = (isMac 
+            ? (e.metaKey && !e.ctrlKey) 
+            : (!e.metaKey && e.ctrlKey)) && !e.altKey && !e.shiftKey && (e.key === 'l' || e.key === 'L');
+
+        if ((isCmdOrCtrlEnter || isAltEnter) && this.isKeyValid) {
             e.preventDefault();
-            this.handleStartClick();
+            try {
+                const view = window.cheddar && typeof window.cheddar.getCurrentView === 'function'
+                    ? window.cheddar.getCurrentView()
+                    : 'main';
+                if (view === 'main') {
+                    this.handleStartClick();
+                } else {
+                    if (typeof window.captureManualScreenshot === 'function') {
+                        window.captureManualScreenshot();
+                    }
+                }
+            } catch (_) {
+                this.handleStartClick();
+            }
         }
         if (isAudioCapture) {
             e.preventDefault();

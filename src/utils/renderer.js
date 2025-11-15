@@ -713,25 +713,31 @@ async function startQuickAudioCapture() {
             streamToUse = mediaStream;
         } else {
             try {
-                quickRecordStream = await navigator.mediaDevices.getUserMedia({
+                quickRecordStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        frameRate: 1,
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                    },
                     audio: {
                         sampleRate: 16000,
                         channelCount: 1,
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false,
                     },
-                    video: false,
                 });
                 streamToUse = quickRecordStream;
             } catch (getErr) {
-                console.error('Failed to get microphone on macOS:', getErr);
-                cheddar.setStatus('Error: Microphone access denied');
+                console.error('Failed to capture system output audio:', getErr);
+                const isMac = process.platform === 'darwin';
+                cheddar.setStatus(isMac ? 'Error: System audio capture requires screen permission' : 'Error: System audio capture unavailable');
                 return;
             }
         }
 
-        cheddar.setStatus('Recording system audio... Press Ctrl+L to stop');
+        const stopKey = process.platform === 'darwin' ? 'Cmd+L' : 'Ctrl+L';
+        cheddar.setStatus(`Recording system audio... Press ${stopKey} to stop`);
 
         quickRecordContext = new AudioContext({ sampleRate: 16000 });
         const source = quickRecordContext.createMediaStreamSource(streamToUse);
@@ -747,7 +753,8 @@ async function startQuickAudioCapture() {
                 
                 // 更新状态显示录音时长
                 const elapsed = Math.floor((Date.now() - quickRecordStartTime) / 1000);
-                cheddar.setStatus(`Recording system audio... ${elapsed}s (Press Ctrl+L to stop)`);
+                const stopKey2 = process.platform === 'darwin' ? 'Cmd+L' : 'Ctrl+L';
+                cheddar.setStatus(`Recording system audio... ${elapsed}s (Press ${stopKey2} to stop)`);
             }
         };
         

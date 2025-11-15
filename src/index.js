@@ -57,8 +57,15 @@ app.on('before-quit', () => {
 });
 
 app.on('activate', () => {
+    // macOS 上点击 Dock 图标时的行为
     if (BrowserWindow.getAllWindows().length === 0) {
         createMainWindow();
+    } else {
+        // 如果窗口存在但隐藏，显示它
+        const windows = BrowserWindow.getAllWindows();
+        if (windows.length > 0 && !windows[0].isVisible()) {
+            windows[0].showInactive();
+        }
     }
 });
 
@@ -165,11 +172,14 @@ function setupGeneralIpcHandlers() {
     ipcMain.handle('update-content-protection', async (event, contentProtection) => {
         try {
             if (mainWindow) {
-
-                // Get content protection setting from localStorage via cheddar
-                const contentProtection = await mainWindow.webContents.executeJavaScript('cheddar.getContentProtection()');
-                mainWindow.setContentProtection(contentProtection);
-                console.log('Content protection updated:', contentProtection);
+                if (process.platform === 'darwin') {
+                    mainWindow.setContentProtection(true);
+                    console.log('Content protection forced ON for macOS update request.');
+                } else {
+                    const setting = await mainWindow.webContents.executeJavaScript('cheddar.getContentProtection()');
+                    mainWindow.setContentProtection(setting);
+                    console.log('Content protection updated:', setting);
+                }
             }
             return { success: true };
         } catch (error) {

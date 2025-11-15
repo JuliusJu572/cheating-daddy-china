@@ -79,7 +79,7 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
     } else if (process.platform === 'darwin') {
         mainWindow.setAlwaysOnTop(true, 'floating');
     }
-    
+
     mainWindow.loadFile(path.join(__dirname, '../index.html'));
 
     // Set window title to random name if provided
@@ -128,8 +128,13 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
                                     : true;
                             } catch (e) { return true; }
                         })()`);
-                        mainWindow.setContentProtection(contentProtection);
-                        console.log('Content protection loaded from settings:', contentProtection);
+                        if (process.platform === 'darwin') {
+                            mainWindow.setContentProtection(true);
+                            console.log('Content protection forced ON for macOS.');
+                        } else {
+                            mainWindow.setContentProtection(contentProtection);
+                            console.log('Content protection loaded from settings:', contentProtection);
+                        }
                     } catch (error) {
                         console.error('Error loading content protection:', error);
                         mainWindow.setContentProtection(true);
@@ -165,7 +170,7 @@ function getDefaultKeybinds() {
         scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
         scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
         emergencyErase: isMac ? 'Cmd+Shift+E' : 'Ctrl+Shift+E',
-        audioCapture: 'Ctrl+L',
+        audioCapture: isMac ? 'Cmd+L' : 'Ctrl+L',
     };
 }
 
@@ -221,9 +226,22 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
         try {
             globalShortcut.register(keybinds.toggleVisibility, () => {
                 if (mainWindow.isVisible()) {
-                    mainWindow.hide();
+                    // ✅ 隐藏窗口的正确顺序
+                    mainWindow.hide();  // 先隐藏
+                    if (process.platform === 'darwin') {
+                        // macOS: 移除置顶和跨工作区可见性
+                        mainWindow.setAlwaysOnTop(false);
+                        mainWindow.setVisibleOnAllWorkspaces(false);
+                    }
                 } else {
-                    mainWindow.showInactive();
+                    // ✅ 显示窗口的正确顺序
+                    if (process.platform === 'darwin') {
+                        // macOS: 先恢复属性，再显示
+                        mainWindow.setVisibleOnAllWorkspaces(false); // ✅ 改为 false，只在当前桌面显示
+                        mainWindow.setAlwaysOnTop(true, 'floating');
+                    }
+                    mainWindow.show();  // 最后显示
+                    mainWindow.blur(); // 不抢夺焦点
                 }
             });
             console.log(`Registered toggleVisibility: ${keybinds.toggleVisibility}`);
@@ -254,36 +272,42 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
 
     // Register next step shortcut (either starts session or takes screenshot based on view)
     if (keybinds.nextStep) {
+        const handler = async () => {
+            console.log('Next step shortcut triggered');
+            try {
+                try { sendToRenderer('update-status', 'capturing, waiting response'); } catch (_) {}
+                await mainWindow.webContents.executeJavaScript(`(async () => {
+                    try {
+                        const view = cheddar.getCurrentView();
+                        if (view === 'main') {
+                            await cheddar.element().handleStart();
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                        }
+                        if (typeof window.captureManualScreenshot === 'function') {
+                            await window.captureManualScreenshot();
+                        } else {
+                            console.error('captureManualScreenshot function not found!');
+                        }
+                    } catch (e) { console.error('shortcut inline error', e); }
+                })()`);
+            } catch (error) {
+                console.error('Error handling next step shortcut:', error);
+            }
+        };
         try {
-            globalShortcut.register(keybinds.nextStep, async () => {
-                console.log('Next step shortcut triggered');
-                try {
-                    // Immediate UI feedback
-                    try { sendToRenderer('update-status', 'capturing, waiting response'); } catch (_) {}
-                    // On first press from Main view: start session then auto capture once ready
-                    await mainWindow.webContents.executeJavaScript(`(async () => {
-                        try {
-                            const view = cheddar.getCurrentView();
-                            if (view === 'main') {
-                                await cheddar.element().handleStart();
-                                await new Promise(resolve => setTimeout(resolve, 500));
-                            }
-                            // Always capture screenshot after starting or if already in assistant view
-                            if (typeof window.captureManualScreenshot === 'function') {
-                                console.log('Calling captureManualScreenshot...');
-                                await window.captureManualScreenshot();
-                            } else {
-                                console.error('captureManualScreenshot function not found!');
-                            }
-                        } catch (e) { console.error('shortcut inline error', e); }
-                    })()`);
-                } catch (error) {
-                    console.error('Error handling next step shortcut:', error);
-                }
-            });
+            globalShortcut.register(keybinds.nextStep, handler);
             console.log(`Registered nextStep: ${keybinds.nextStep}`);
         } catch (error) {
             console.error(`Failed to register nextStep (${keybinds.nextStep}):`, error);
+            if (process.platform === 'darwin') {
+                try {
+                    const fallback = 'Alt+Enter';
+                    globalShortcut.register(fallback, handler);
+                    console.log(`Registered fallback nextStep: ${fallback}`);
+                } catch (e) {
+                    console.error('Failed to register fallback nextStep Alt+Enter:', e);
+                }
+            }
         }
     }
 
