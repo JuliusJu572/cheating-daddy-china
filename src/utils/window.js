@@ -3,6 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('os');
 const { applyStealthMeasures, startTitleRandomization } = require('./stealthFeatures');
+const { getLocalConfig } = require('../config');
 
 let mouseEventsIgnored = false;
 let windowResizing = false;
@@ -30,6 +31,13 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
     let windowWidth = 1100;
     let windowHeight = 800;
 
+    const cfg = getLocalConfig();
+    const stealthLevel = (cfg && cfg.stealthLevel) ? cfg.stealthLevel : 'balanced';
+    const macStealth = process.platform === 'darwin';
+    const skipTaskbarFlag = macStealth ? (stealthLevel !== 'visible') : true;
+    const hiddenMissionFlag = macStealth ? (stealthLevel !== 'visible') : true;
+    const protectContentInit = macStealth ? (stealthLevel !== 'visible') : true;
+
     // 在 createWindow 函数中，添加 macOS 特定配置：
     const mainWindow = new BrowserWindow({
         width: windowWidth,
@@ -38,8 +46,8 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
         transparent: true,
         hasShadow: false,
         alwaysOnTop: true,
-        skipTaskbar: true,
-        hiddenInMissionControl: true,
+        skipTaskbar: skipTaskbarFlag,
+        hiddenInMissionControl: hiddenMissionFlag,
         vibrancy: process.platform === 'darwin' ? 'under-window' : undefined, // 添加这行
         visualEffectState: process.platform === 'darwin' ? 'active' : undefined, // 添加这行
         webPreferences: {
@@ -64,7 +72,7 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
     );
 
     mainWindow.setResizable(false);
-    mainWindow.setContentProtection(true);
+    mainWindow.setContentProtection(protectContentInit);
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
     // Center window at the top of the screen
@@ -88,11 +96,10 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
         console.log(`Set window title to: ${randomNames.windowTitle}`);
     }
 
-    // Apply stealth measures
-    applyStealthMeasures(mainWindow);
-
-    // Start periodic title randomization for additional stealth
-    startTitleRandomization(mainWindow);
+    if (stealthLevel !== 'visible') {
+        applyStealthMeasures(mainWindow);
+        startTitleRandomization(mainWindow);
+    }
 
     // After window is created, check for layout preference and resize if needed
     mainWindow.webContents.once('dom-ready', () => {
@@ -129,8 +136,9 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
                             } catch (e) { return true; }
                         })()`);
                         if (process.platform === 'darwin') {
-                            mainWindow.setContentProtection(true);
-                            console.log('Content protection forced ON for macOS.');
+                            const protect = stealthLevel !== 'visible';
+                            mainWindow.setContentProtection(protect);
+                            console.log('Content protection set for macOS:', protect);
                         } else {
                             mainWindow.setContentProtection(contentProtection);
                             console.log('Content protection loaded from settings:', contentProtection);

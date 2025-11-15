@@ -1196,6 +1196,33 @@ export class CustomizeView extends LitElement {
                     </div>
                 </div>
 
+                <div class="settings-section">
+                    <div class="section-title">
+                        <span>Stealth Profile</span>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">Profile</label>
+                            <select class="form-control" .value=${localStorage.getItem('stealthProfile') || 'balanced'} @change=${async e => {
+                                const v = e.target.value;
+                                localStorage.setItem('stealthProfile', v);
+                                try {
+                                    const ipc = window.require ? window.require('electron').ipcRenderer : null;
+                                    if (ipc) await ipc.invoke('set-stealth-level', v);
+                                } catch (_) {}
+                                alert('Restart the application for stealth changes to take full effect.');
+                            }}>
+                                <option value="visible">Visible</option>
+                                <option value="balanced">Balanced</option>
+                                <option value="ultra">Ultra-Stealth</option>
+                            </select>
+                            <div class="form-description">
+                                Adjusts visibility and detection resistance. A restart is required for changes to apply.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Advanced Mode Section -->
                 <div class="settings-section">
                     <div class="section-title">
