@@ -1,4 +1,4 @@
-name: macos-dmg
+name: Build macOS DMG
 
 on:
   workflow_dispatch:
@@ -9,19 +9,56 @@ on:
 jobs:
   build-macos:
     runs-on: macos-latest
+    
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
-      - run: npm ci
-      - run: npm run make
-      - name: Find DMG
-        id: find
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build DMG
+        run: npm run make
+      
+      - name: Find all DMG files
+        id: find_dmg
         run: |
-          echo "DMG_PATH=$(find out -name '*.dmg' | head -n 1)" >> $GITHUB_OUTPUT
-      - uses: actions/upload-artifact@v4
+          DMG_FILES=$(find out/make -name '*.dmg' -type f)
+          echo "Found DMG files:"
+          echo "$DMG_FILES"
+          echo "dmg_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$DMG_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Upload DMG artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: macos-dmg
-          path: ${{ steps.find.outputs.DMG_PATH }}
+          name: macos-dmg-${{ github.sha }}
+          path: out/make/**/*.dmg
+          if-no-files-found: error
+      
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: out/make/**/*.dmg
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## macOS Installation
+            
+            1. Download the `.dmg` file below
+            2. Open the DMG file
+            3. Drag CheatingDaddy to Applications folder
+            4. Right-click the app and select "Open" (first time only)
+            
+            **Note:** If you see a security warning, go to System Preferences > Security & Privacy and click "Open Anyway"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
