@@ -1,4 +1,5 @@
 import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
+import { t } from '../../i18n/strings.js';
 
 export class AppHeader extends LitElement {
     static styles = css`
@@ -174,15 +175,15 @@ export class AppHeader extends LitElement {
 
     getViewTitle() {
         const titles = {
-            onboarding: 'Welcome to Cheating Daddy',
-            main: 'Cheating Daddy',
-            customize: 'Customize',
-            help: 'Help & Shortcuts',
-            history: 'Conversation History',
-            advanced: 'Advanced Tools',
-            assistant: 'Cheating Daddy',
+            onboarding: t('header_title_onboarding'),
+            main: t('header_title_main'),
+            customize: t('header_title_customize'),
+            help: t('header_title_help'),
+            history: t('header_title_history'),
+            advanced: t('header_title_advanced'),
+            assistant: t('header_title_assistant'),
         };
-        return titles[this.currentView] || 'Cheating Daddy';
+        return titles[this.currentView] || t('header_title_main');
     }
 
     getElapsedTime() {
@@ -362,7 +363,7 @@ export class AppHeader extends LitElement {
                     ${this.currentView === 'assistant'
                         ? html`
                               <button @click=${this.onHideToggleClick} class="button">
-                                  Hide&nbsp;&nbsp;<span class="key" style="pointer-events: none;">${cheddar.isMacOS ? 'Cmd' : 'Ctrl'}</span
+                                  ${t('hide')}&nbsp;&nbsp;<span class="key" style="pointer-events: none;">${cheddar.isMacOS ? 'Cmd' : 'Ctrl'}</span
                                   >&nbsp;&nbsp;<span class="key">&bsol;</span>
                               </button>
                               <button @click=${this.onCloseClick} class="icon-button window-close">

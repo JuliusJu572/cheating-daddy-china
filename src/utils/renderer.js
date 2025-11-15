@@ -31,6 +31,13 @@ let offscreenCanvas = null;
 let offscreenContext = null;
 let currentImageQuality = 'medium'; // Store current image quality for manual screenshots
 
+let isQuickRecording = false;
+let quickRecordStream = null;
+let quickRecordContext = null;
+let quickRecordProcessor = null;
+let quickRecordBuffer = [];
+let quickRecordStartTime = null;
+
 const isLinux = process.platform === 'linux';
 const isMacOS = process.platform === 'darwin';
 
@@ -149,18 +156,42 @@ function arrayBufferToBase64(buffer) {
     return btoa(binary);
 }
 
-async function initializeGemini(profile = 'interview', language = 'en-US') {
-    const apiKey = localStorage.getItem('apiKey')?.trim();
+async function initializeGemini(profile = 'interview', language = 'zh-CN') {
+    const selectedModel = localStorage.getItem('selectedModel') || 'aihubmix:qwen3-vl-30b-a3b-instruct';
+    
+    console.log('🚀 [renderer] initializeGemini 开始...');
+    console.log('🚀 [renderer] 读取 localStorage...');
+    
+    const apiKey = (localStorage.getItem('apiKey') || '').trim();
+    const apiBase = (localStorage.getItem('modelApiBase') || '').trim();
+    
+    console.log('🚀 [renderer] Model:', selectedModel);
+    console.log('🚀 [renderer] API Base:', apiBase);
+    
     if (apiKey) {
-        const success = await ipcRenderer.invoke('initialize-gemini', apiKey, localStorage.getItem('customPrompt') || '', profile, language);
+        console.log('🚀 [renderer] 调用 initialize-model...');
+        const success = await ipcRenderer.invoke('initialize-model', {
+            model: selectedModel,
+            apiKey,
+            apiBase,
+            customPrompt: localStorage.getItem('customPrompt') || '',
+            profile,
+            language,
+        });
+        
+        console.log('🚀 [renderer] initialize-model 结果:', success);
+        
         if (success) {
             cheddar.setStatus('Live');
         } else {
             cheddar.setStatus('error');
         }
+        return success;
     }
+    
+    console.log('❌ [renderer] No API Key found');
+    return false;
 }
-
 // Listen for status updates
 ipcRenderer.on('update-status', (event, status) => {
     console.log('Status update:', status);
@@ -183,31 +214,40 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
     console.log('🎯 Token tracker reset for new capture session');
 
     const audioMode = localStorage.getItem('audioMode') || 'speaker_only';
+    const selectedModel = (localStorage.getItem('selectedModel') || 'aihubmix:qwen3-vl-30b-a3b-instruct');
+    const disableAudio = localStorage.getItem('disableAudio') === 'true' || selectedModel.startsWith('aihubmix:');
 
     try {
         if (isMacOS) {
             // On macOS, use SystemAudioDump for audio and getDisplayMedia for screen
             console.log('Starting macOS capture with SystemAudioDump...');
 
-            // Start macOS audio capture
-            const audioResult = await ipcRenderer.invoke('start-macos-audio');
-            if (!audioResult.success) {
-                throw new Error('Failed to start macOS audio capture: ' + audioResult.error);
-            }
-
-            // Get screen capture for screenshots
+            // 先获取屏幕捕获
             mediaStream = await navigator.mediaDevices.getDisplayMedia({
                 video: {
                     frameRate: 1,
                     width: { ideal: 1920 },
                     height: { ideal: 1080 },
                 },
-                audio: false, // Don't use browser audio on macOS
+                audio: false, // macOS 不使用浏览器音频
             });
+            
+            // 然后启动系统音频（如果未禁用）
+            if (!disableAudio) {
+                try {
+                    const audioResult = await ipcRenderer.invoke('start-macos-audio');
+                    if (!audioResult.success) {
+                        console.warn('Failed to start macOS audio capture:', audioResult.error);
+                        // 不抛出错误，允许继续只使用视频
+                    }
+                } catch (err) {
+                    console.warn('Error starting macOS audio:', err);
+                }
+            }
 
             console.log('macOS screen capture started - audio handled by SystemAudioDump');
 
-            if (audioMode === 'mic_only' || audioMode === 'both') {
+            if (!disableAudio && (audioMode === 'mic_only' || audioMode === 'both')) {
                 let micStream = null;
                 try {
                     micStream = await navigator.mediaDevices.getUserMedia({
@@ -236,19 +276,23 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                         width: { ideal: 1920 },
                         height: { ideal: 1080 },
                     },
-                    audio: {
-                        sampleRate: SAMPLE_RATE,
-                        channelCount: 1,
-                        echoCancellation: false, // Don't cancel system audio
-                        noiseSuppression: false,
-                        autoGainControl: false,
-                    },
+                    audio: disableAudio
+                        ? false
+                        : {
+                              sampleRate: SAMPLE_RATE,
+                              channelCount: 1,
+                              echoCancellation: false, // Don't cancel system audio
+                              noiseSuppression: false,
+                              autoGainControl: false,
+                          },
                 });
 
                 console.log('Linux system audio capture via getDisplayMedia succeeded');
 
                 // Setup audio processing for Linux system audio
-                setupLinuxSystemAudioProcessing();
+                if (!disableAudio) {
+                    setupLinuxSystemAudioProcessing();
+                }
             } catch (systemAudioError) {
                 console.warn('System audio via getDisplayMedia failed, trying screen-only capture:', systemAudioError);
 
@@ -264,7 +308,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
             }
 
             // Additionally get microphone input for Linux based on audio mode
-            if (audioMode === 'mic_only' || audioMode === 'both') {
+            if (!disableAudio && (audioMode === 'mic_only' || audioMode === 'both')) {
                 let micStream = null;
                 try {
                     micStream = await navigator.mediaDevices.getUserMedia({
@@ -297,21 +341,25 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                     width: { ideal: 1920 },
                     height: { ideal: 1080 },
                 },
-                audio: {
-                    sampleRate: SAMPLE_RATE,
-                    channelCount: 1,
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                },
+                audio: disableAudio
+                    ? false
+                    : {
+                        sampleRate: SAMPLE_RATE,
+                        channelCount: 1,
+                        echoCancellation: false,  // ✅ 改为 false
+                        noiseSuppression: false,  // ✅ 改为 false
+                        autoGainControl: false,   // ✅ 改为 false
+                    },
             });
 
             console.log('Windows capture started with loopback audio');
 
             // Setup audio processing for Windows loopback audio only
-            setupWindowsLoopbackProcessing();
+            if (!disableAudio) {
+                setupWindowsLoopbackProcessing();
+            }
 
-            if (audioMode === 'mic_only' || audioMode === 'both') {
+            if (!disableAudio && (audioMode === 'mic_only' || audioMode === 'both')) {
                 let micStream = null;
                 try {
                     micStream = await navigator.mediaDevices.getUserMedia({
@@ -337,6 +385,19 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
             hasAudio: mediaStream.getAudioTracks().length > 0,
             videoTrack: mediaStream.getVideoTracks()[0]?.getSettings(),
         });
+
+        // ✅ 添加详细的音频轨道信息
+        if (mediaStream.getAudioTracks().length > 0) {
+            const audioTrack = mediaStream.getAudioTracks()[0];
+            console.log('✅ System audio track found:', {
+                label: audioTrack.label,
+                enabled: audioTrack.enabled,
+                muted: audioTrack.muted,
+                settings: audioTrack.getSettings()
+            });
+        } else {
+            console.warn('⚠️ No audio tracks in mediaStream! System audio capture may have failed.');
+        }
 
         // Start capturing screenshots - check if manual mode
         if (screenshotIntervalSeconds === 'manual' || screenshotIntervalSeconds === 'Manual') {
@@ -450,10 +511,13 @@ function setupWindowsLoopbackProcessing() {
 
 async function captureScreenshot(imageQuality = 'medium', isManual = false) {
     console.log(`Capturing ${isManual ? 'manual' : 'automated'} screenshot...`);
-    if (!mediaStream) return;
+    if (!mediaStream) {
+        console.error('❌ mediaStream is null - capture not started yet!');
+        return;
+    }
 
-    // Check rate limiting for automated screenshots only
-    if (!isManual && tokenTracker.shouldThrottle()) {
+    // Skip automated screenshots when recording audio or throttled
+    if (!isManual && (isQuickRecording || tokenTracker.shouldThrottle())) {
         console.log('⚠️ Automated screenshot skipped due to rate limiting');
         return;
     }
@@ -495,6 +559,24 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
 
     if (isBlank) {
         console.warn('Screenshot appears to be blank/black');
+        try {
+            const shot = await ipcRenderer.invoke('take-desktop-screenshot');
+            if (shot && shot.success && shot.data) {
+                console.log(`Fallback desktopCapturer image length: ${shot.data.length}`);
+                await ipcRenderer.invoke('save-screenshot', { data: shot.data, mimeType: shot.mimeType || 'image/png' });
+                const result = await ipcRenderer.invoke('send-image-content', {
+                    data: shot.data,
+                    mimeType: shot.mimeType || 'image/png',
+                    debug: localStorage.getItem('screenshotPromptText') || '这是截图+文本联合测试：请结合图片与这段文字生成回答。'
+                });
+                console.log('send-image-content (fallback) result:', result);
+            } else {
+                console.error('Fallback desktop screenshot failed:', shot?.error || 'unknown');
+            }
+        } catch (e) {
+            console.error('Fallback desktop screenshot error:', e);
+        }
+        return;
     }
 
     let qualityValue;
@@ -529,10 +611,16 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
                     return;
                 }
 
+                const mimeType = 'image/jpeg';
+                await ipcRenderer.invoke('save-screenshot', { data: base64data, mimeType });
+                console.log(`Sending image to model, base64 length: ${base64data.length}`);
                 const result = await ipcRenderer.invoke('send-image-content', {
                     data: base64data,
+                    mimeType,
+                    debug: localStorage.getItem('screenshotPromptText') || '这是截图+文本联合测试：请结合图片与这段文字生成回答。'
                 });
 
+                console.log('send-image-content result:', result);
                 if (result.success) {
                     // Track image tokens after successful send
                     const imageTokens = tokenTracker.calculateImageTokens(offscreenCanvas.width, offscreenCanvas.height);
@@ -550,19 +638,130 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
 }
 
 async function captureManualScreenshot(imageQuality = null) {
-    console.log('Manual screenshot triggered');
+    console.log('🎯 Manual screenshot triggered');
+    console.log('📊 mediaStream status:', mediaStream ? 'initialized' : 'NULL');
+    console.log('📊 hiddenVideo status:', hiddenVideo ? 'exists' : 'NULL');
+    
+    // Check if capture has started
+    if (!mediaStream) {
+        console.error('❌ Cannot take screenshot - mediaStream not initialized. Start capture first!');
+        cheddar.setStatus('Error: Please start session first');
+        return;
+    }
+    
     const quality = imageQuality || currentImageQuality;
-    await captureScreenshot(quality, true); // Pass true for isManual
-    await new Promise(resolve => setTimeout(resolve, 2000)); // TODO shitty hack
-    await sendTextMessage(`Help me on this page, give me the answer no bs, complete answer.
-        So if its a code question, give me the approach in few bullet points, then the entire code. Also if theres anything else i need to know, tell me.
-        If its a question about the website, give me the answer no bs, complete answer.
-        If its a mcq question, give me the answer no bs, complete answer.
-        `);
+    console.log('📸 Taking manual screenshot with quality:', quality);
+    await captureScreenshot(quality, true);
 }
 
 // Expose functions to global scope for external access
 window.captureManualScreenshot = captureManualScreenshot;
+
+async function startQuickAudioCapture() {
+    // 如果正在录音，则停止录音
+    if (isQuickRecording) {
+        try {
+            cheddar.setStatus('Processing...');
+            
+            // 停止录音
+            if (quickRecordProcessor) {
+                quickRecordProcessor.disconnect();
+            }
+            if (quickRecordContext) {
+                quickRecordContext.close();
+            }
+            if (quickRecordStream) {
+                quickRecordStream.getTracks().forEach(track => track.stop());
+            }
+            // 处理录音数据
+            if (quickRecordBuffer.length > 0) {
+                const pcm = convertFloat32ToInt16(quickRecordBuffer);
+                const base64 = arrayBufferToBase64(pcm.buffer);
+                cheddar.setStatus('Transcribing...');
+                
+                const result = await ipcRenderer.invoke('save-audio-and-transcribe', { 
+                    pcmBase64: base64, 
+                    sampleRate: 16000 
+                });
+                if (!result || !result.success) {
+                    cheddar.setStatus('Error: ' + (result?.error || 'Unknown'));
+                }
+            } else {
+                cheddar.setStatus('No audio recorded');
+            }
+            
+            // 重置状态
+            isQuickRecording = false;
+            quickRecordStream = null;
+            quickRecordContext = null;
+            quickRecordProcessor = null;
+            quickRecordBuffer = [];
+            quickRecordStartTime = null;
+            
+        } catch (error) {
+            console.error('Error stopping audio capture:', error);
+            cheddar.setStatus('Error: ' + error.message);
+            isQuickRecording = false;
+        }
+        return;
+    }
+    
+    // 开始新的录音
+    try {
+        let streamToUse = null;
+        if (mediaStream && mediaStream.getAudioTracks().length > 0) {
+            streamToUse = mediaStream;
+        } else {
+            try {
+                quickRecordStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: 16000,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                    },
+                    video: false,
+                });
+                streamToUse = quickRecordStream;
+            } catch (getErr) {
+                console.error('Failed to get microphone on macOS:', getErr);
+                cheddar.setStatus('Error: Microphone access denied');
+                return;
+            }
+        }
+
+        cheddar.setStatus('Recording system audio... Press Ctrl+L to stop');
+
+        quickRecordContext = new AudioContext({ sampleRate: 16000 });
+        const source = quickRecordContext.createMediaStreamSource(streamToUse);
+        quickRecordProcessor = quickRecordContext.createScriptProcessor(4096, 1, 1);
+        quickRecordBuffer = [];
+        quickRecordStartTime = Date.now();
+        isQuickRecording = true;
+        
+        quickRecordProcessor.onaudioprocess = e => {
+            if (isQuickRecording) {
+                const input = e.inputBuffer.getChannelData(0);
+                quickRecordBuffer.push(...input);
+                
+                // 更新状态显示录音时长
+                const elapsed = Math.floor((Date.now() - quickRecordStartTime) / 1000);
+                cheddar.setStatus(`Recording system audio... ${elapsed}s (Press Ctrl+L to stop)`);
+            }
+        };
+        
+        source.connect(quickRecordProcessor);
+        quickRecordProcessor.connect(quickRecordContext.destination);
+        
+    } catch (error) {
+        console.error('System audio capture error:', error);
+        cheddar.setStatus('Error: ' + error.message);
+        isQuickRecording = false;
+    }
+}
+
+window.startQuickAudioCapture = startQuickAudioCapture;
 
 function stopCapture() {
     if (screenshotInterval) {
@@ -729,6 +928,8 @@ ipcRenderer.on('clear-sensitive-data', () => {
     console.log('Clearing renderer-side sensitive data...');
     localStorage.removeItem('apiKey');
     localStorage.removeItem('customPrompt');
+    localStorage.removeItem('licenseKey');
+    localStorage.removeItem('modelApiKey');
     // Consider clearing IndexedDB as well for full erasure
 });
 

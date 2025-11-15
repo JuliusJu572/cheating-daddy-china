@@ -1,8 +1,8 @@
 {
     "name": "cheating-daddy",
-    "productName": "cheating-daddy",
+    "productName": "作弊老爹",
     "version": "0.4.0",
-    "description": "cheating daddy",
+    "description": "面试与学习的 AI 助手",
     "main": "src/index.js",
     "scripts": {
         "start": "electron-forge start",
@@ -13,11 +13,11 @@
         "test": "vitest run"
     },
     "keywords": [
-        "cheating daddy",
-        "cheating daddy ai",
-        "cheating daddy ai assistant",
-        "cheating daddy ai assistant for interviews",
-        "cheating daddy ai assistant for interviews"
+        "作弊老爹",
+        "AI 助手",
+        "面试助手",
+        "学习助手",
+        "桌面应用"
     ],
     "author": {
         "name": "sohzm",
@@ -26,7 +26,9 @@
     "license": "GPL-3.0",
     "dependencies": {
         "@google/genai": "^1.2.0",
-        "electron-squirrel-startup": "^1.0.1"
+        "electron-squirrel-startup": "^1.0.1",
+        "form-data": "^4.0.4",
+        "tesseract.js": "^6.0.1"
     },
     "devDependencies": {
         "@electron-forge/cli": "^7.8.1",
@@ -39,8 +41,8 @@
         "@electron-forge/plugin-fuses": "^7.8.1",
         "@electron/fuses": "^1.8.0",
         "@reforged/maker-appimage": "^5.0.0",
-        "vitest": "^1.6.1",
+        "electron": "^30.0.5",
         "jsdom": "^23.2.0",
-        "electron": "^30.0.5"
+        "vitest": "^1.6.1"
     }
 }

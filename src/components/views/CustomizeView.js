@@ -1,4 +1,5 @@
 import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
+import { t } from '../../i18n/strings.js';
 import { resizeLayout } from '../../utils/windowResize.js';
 
 export class CustomizeView extends LitElement {
@@ -401,6 +402,7 @@ export class CustomizeView extends LitElement {
     static properties = {
         selectedProfile: { type: String },
         selectedLanguage: { type: String },
+        uiLanguage: { type: String },
         selectedScreenshotInterval: { type: String },
         selectedImageQuality: { type: String },
         layoutMode: { type: String },
@@ -415,12 +417,18 @@ export class CustomizeView extends LitElement {
         onLayoutModeChange: { type: Function },
         advancedMode: { type: Boolean },
         onAdvancedModeChange: { type: Function },
+        selectedModel: { type: String },
+        transcriptionModel: { type: String },
+        modelApiBase: { type: String },
+        modelApiKey: { type: String },
+        modelTestStatus: { type: String },
     };
 
-    constructor() {
+  constructor() {
         super();
         this.selectedProfile = 'interview';
-        this.selectedLanguage = 'en-US';
+        this.selectedLanguage = 'zh-CN';
+        this.uiLanguage = localStorage.getItem('uiLanguage') || 'zh';
         this.selectedScreenshotInterval = '5';
         this.selectedImageQuality = 'medium';
         this.layoutMode = 'normal';
@@ -433,7 +441,7 @@ export class CustomizeView extends LitElement {
         this.onAdvancedModeChange = () => {};
 
         // Google Search default
-        this.googleSearchEnabled = true;
+        this.googleSearchEnabled = false;
 
         // Advanced mode default
         this.advancedMode = false;
@@ -444,20 +452,29 @@ export class CustomizeView extends LitElement {
         // Font size default (in pixels)
         this.fontSize = 20;
 
+        this.selectedModel = localStorage.getItem('selectedModel') || 'aihubmix:qwen3-vl-30b-a3b-instruct';
+        this.transcriptionModel = localStorage.getItem('transcriptionModel') || 'whisper-large-v3';
+        this.modelApiBase = localStorage.getItem('modelApiBase') || '';
+        this.modelApiKey = localStorage.getItem('modelApiKey') || '';
+        this.modelTestStatus = '';
+
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
         this.loadAdvancedModeSettings();
         this.loadBackgroundTransparency();
-        this.loadFontSize();
-    }
+    this.loadFontSize();
+    localStorage.setItem('selectedLanguage', this.selectedLanguage);
+    this.boundKeydownHandler = this.handleKeydown.bind(this);
+  }
 
-    connectedCallback() {
-        super.connectedCallback();
-        // Load layout mode for display purposes
-        this.loadLayoutMode();
-        // Resize window for this view
-        resizeLayout();
-    }
+  connectedCallback() {
+    super.connectedCallback();
+    // Load layout mode for display purposes
+    this.loadLayoutMode();
+    // Resize window for this view
+    resizeLayout();
+    document.addEventListener('keydown', this.boundKeydownHandler);
+  }
 
     getProfiles() {
         return [
@@ -547,9 +564,15 @@ export class CustomizeView extends LitElement {
     }
 
     handleLanguageSelect(e) {
-        this.selectedLanguage = e.target.value;
+        this.selectedLanguage = 'zh-CN';
         localStorage.setItem('selectedLanguage', this.selectedLanguage);
         this.onLanguageChange(this.selectedLanguage);
+    }
+
+    handleUILanguageSelect(e) {
+        this.uiLanguage = e.target.value;
+        localStorage.setItem('uiLanguage', this.uiLanguage);
+        this.requestUpdate();
     }
 
     handleScreenshotIntervalSelect(e) {
@@ -587,6 +610,7 @@ export class CustomizeView extends LitElement {
             nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
             scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
             scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
+            audioCapture: 'Ctrl+L',
         };
     }
 
@@ -627,65 +651,78 @@ export class CustomizeView extends LitElement {
         }
     }
 
-    getKeybindActions() {
+  getKeybindActions() {
         return [
             {
                 key: 'moveUp',
-                name: 'Move Window Up',
-                description: 'Move the application window up',
+                name: t('keybind_move_up_name'),
+                description: t('keybind_move_up_desc'),
             },
             {
                 key: 'moveDown',
-                name: 'Move Window Down',
-                description: 'Move the application window down',
+                name: t('keybind_move_down_name'),
+                description: t('keybind_move_down_desc'),
             },
             {
                 key: 'moveLeft',
-                name: 'Move Window Left',
-                description: 'Move the application window left',
+                name: t('keybind_move_left_name'),
+                description: t('keybind_move_left_desc'),
             },
             {
                 key: 'moveRight',
-                name: 'Move Window Right',
-                description: 'Move the application window right',
+                name: t('keybind_move_right_name'),
+                description: t('keybind_move_right_desc'),
             },
             {
                 key: 'toggleVisibility',
-                name: 'Toggle Window Visibility',
-                description: 'Show/hide the application window',
+                name: t('keybind_toggle_visibility_name'),
+                description: t('keybind_toggle_visibility_desc'),
             },
             {
                 key: 'toggleClickThrough',
-                name: 'Toggle Click-through Mode',
-                description: 'Enable/disable click-through functionality',
+                name: t('keybind_toggle_clickthrough_name'),
+                description: t('keybind_toggle_clickthrough_desc'),
             },
             {
                 key: 'nextStep',
-                name: 'Ask Next Step',
-                description: 'Take screenshot and ask AI for the next step suggestion',
+                name: t('keybind_next_step_name'),
+                description: t('keybind_next_step_desc'),
             },
             {
                 key: 'previousResponse',
-                name: 'Previous Response',
-                description: 'Navigate to the previous AI response',
+                name: t('keybind_prev_response_name'),
+                description: t('keybind_prev_response_desc'),
             },
             {
                 key: 'nextResponse',
-                name: 'Next Response',
-                description: 'Navigate to the next AI response',
+                name: t('keybind_next_response_name'),
+                description: t('keybind_next_response_desc'),
             },
             {
                 key: 'scrollUp',
-                name: 'Scroll Response Up',
-                description: 'Scroll the AI response content up',
+                name: t('keybind_scroll_up_name'),
+                description: t('keybind_scroll_up_desc'),
             },
             {
                 key: 'scrollDown',
-                name: 'Scroll Response Down',
-                description: 'Scroll the AI response content down',
+                name: t('keybind_scroll_down_name'),
+                description: t('keybind_scroll_down_desc'),
+            },
+            {
+                key: 'audioCapture',
+                name: t('keybind_audio_capture_name'),
+                description: t('keybind_audio_capture_desc'),
             },
         ];
     }
+
+  handleKeydown(e) {
+    const isAudioCapture = e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === 'l' || e.key === 'L');
+    if (isAudioCapture) {
+      e.preventDefault();
+      try { window.startQuickAudioCapture && window.startQuickAudioCapture(); } catch (_) {}
+    }
+  }
 
     handleKeybindFocus(e) {
         e.target.placeholder = 'Press key combination...';
@@ -856,6 +893,61 @@ export class CustomizeView extends LitElement {
         root.style.setProperty('--response-font-size', `${this.fontSize}px`);
     }
 
+    getModelOptions() {
+        return [
+            { value: 'aihubmix:qwen3-vl-235b-a22b-instruct', name: 'Qwen3-VL-235B-A22B-Instruct' },
+            { value: 'aihubmix:qwen3-vl-30b-a3b-instruct', name: 'Qwen3-VL-30B-A3B-Instruct' },
+            { value: 'aihubmix:qwen3-vl-plus', name: 'Qwen3-VL-Plus' },
+            { value: 'aihubmix:glm-4.5v', name: 'GLM-4.5V' },
+        ];
+    }
+
+    getTranscriptionModelOptions() {
+        return [
+            { value: 'whisper-1', name: 'Whisper-1' },
+            { value: 'whisper-large-v3', name: 'Whisper-Large-v3' },
+            { value: 'whisper-large-v3-turbo', name: 'Whisper-Large-v3-Turbo' },
+        ];
+    }
+
+    handleModelSelect(e) {
+        this.selectedModel = e.target.value;
+        localStorage.setItem('selectedModel', this.selectedModel);
+    }
+
+    handleTranscriptionModelSelect(e) {
+        this.transcriptionModel = e.target.value;
+        localStorage.setItem('transcriptionModel', this.transcriptionModel);
+    }
+
+    handleModelApiBaseInput(e) {
+        this.modelApiBase = e.target.value;
+        localStorage.setItem('modelApiBase', this.modelApiBase);
+    }
+
+    async handleModelApiKeyInput(e) {
+        const v = e.target.value || '';
+        this.modelApiKey = v;
+        localStorage.setItem('modelApiKey', this.modelApiKey);
+    }
+
+    async handleTestModelConnection() {
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            let token = (this.modelApiKey || '').trim();
+            if (/^CD-/i.test(token)) {
+                try {
+                    const res = await ipcRenderer.invoke('decrypt-license-key', token);
+                    token = res?.apiKey || '';
+                } catch (_) {}
+            }
+            const headers = token ? { Authorization: `Bearer ${token}` } : {};
+            const result = await ipcRenderer.invoke('test-model-connection', { apiBase: this.modelApiBase || 'https://aihubmix.com/v1', headers });
+            this.modelTestStatus = result.success ? 'success' : 'fail';
+            this.requestUpdate();
+        }
+    }
+
     render() {
         const profiles = this.getProfiles();
         const languages = this.getLanguages();
@@ -868,14 +960,14 @@ export class CustomizeView extends LitElement {
                 <!-- Profile & Behavior Section -->
                 <div class="settings-section">
                     <div class="section-title">
-                        <span>AI Profile & Behavior</span>
+                        <span>${t('customize_ai_profile_section')}</span>
                     </div>
 
                     <div class="form-grid">
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">
-                                    Profile Type
+                                    ${t('customize_profile_type_label')}
                                     <span class="current-selection">${currentProfile?.name || 'Unknown'}</span>
                                 </label>
                                 <select class="form-control" .value=${this.selectedProfile} @change=${this.handleProfileSelect}>
@@ -891,13 +983,13 @@ export class CustomizeView extends LitElement {
                         </div>
 
                         <div class="form-group full-width">
-                            <label class="form-label">Custom AI Instructions</label>
+                            <label class="form-label">${t('customize_custom_instructions_label')}</label>
                             <textarea
                                 class="form-control"
                                 placeholder="Add specific instructions for how you want the AI to behave during ${
                                     profileNames[this.selectedProfile] || 'this interaction'
                                 }..."
-                                .value=${localStorage.getItem('customPrompt') || ''}
+                                .value=${localStorage.getItem('customPrompt') || '除非提出的面试问题是英文，不然一律请使用中文回答，如果是代码题，那么直接给出最终代码，以及代码的思路；如果是开放思维题，那么请尽可能多的给出不同的思路和方案。'}
                                 rows="4"
                                 @input=${this.handleCustomPromptInput}
                             ></textarea>
@@ -912,71 +1004,55 @@ export class CustomizeView extends LitElement {
                 <!-- Audio & Microphone Section -->
                 <div class="settings-section">
                     <div class="section-title">
-                        <span>Audio & Microphone</span>
+                        <span>${t('customize_audio_section')}</span>
                     </div>
                     <div class="form-grid">
                         <div class="form-group">
-                            <label class="form-label">Audio Mode</label>
+                            <label class="form-label">${t('customize_audio_mode_label')}</label>
                             <select class="form-control" .value=${localStorage.getItem('audioMode') || 'speaker_only'} @change=${e => localStorage.setItem('audioMode', e.target.value)}>
                                 <option value="speaker_only">Speaker Only (Interviewer)</option>
                                 <option value="mic_only">Microphone Only (Me)</option>
                                 <option value="both">Both Speaker & Microphone</option>
                             </select>
                             <div class="form-description">
-                                Choose which audio sources to capture for the AI.
+                                需要用户在面试官开始说话前，手动使用 Ctrl+L 开始录音，结束后自动转写用于回答。
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Stealth Profile Section -->
-                <div class="settings-section">
-                    <div class="section-title">
-                        <span>Stealth Profile</span>
-                    </div>
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label class="form-label">Profile</label>
-                            <select class="form-control" .value=${localStorage.getItem('stealthProfile') || 'balanced'} @change=${e => {
-                                localStorage.setItem('stealthProfile', e.target.value);
-                                // We need to notify the main process to restart for some settings to apply
-                                alert('Restart the application for stealth changes to take full effect.');
-                            }}>
-                                <option value="visible">Visible</option>
-                                <option value="balanced">Balanced</option>
-                                <option value="ultra">Ultra-Stealth</option>
-                            </select>
-                            <div class="form-description">
-                                Adjusts visibility and detection resistance. A restart is required for changes to apply.
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                
 
 
                 <!-- Language & Audio Section -->
                 <div class="settings-section">
                     <div class="section-title">
-                        <span>Language & Audio</span>
+                        <span>${t('customize_language_audio_section')}</span>
                     </div>
 
                     <div class="form-grid">
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">
-                                    Speech Language
+                                    ${t('customize_speech_language_label')}
                                     <span class="current-selection">${currentLanguage?.name || 'Unknown'}</span>
                                 </label>
-                                <select class="form-control" .value=${this.selectedLanguage} @change=${this.handleLanguageSelect}>
-                                    ${languages.map(
-                                        language => html`
-                                            <option value=${language.value} ?selected=${this.selectedLanguage === language.value}>
-                                                ${language.name}
-                                            </option>
-                                        `
-                                    )}
+                                <select class="form-control" .value=${this.selectedLanguage} disabled>
+                                    ${html`<option value="zh-CN" selected>中文 (简体)</option>`}
                                 </select>
                                 <div class="form-description">Language for speech recognition and AI responses</div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">主界面语言</label>
+                                <select class="form-control" .value=${this.uiLanguage} @change=${this.handleUILanguageSelect}>
+                                    ${html`
+                                        <option value="zh" ?selected=${this.uiLanguage === 'zh'}>中文</option>
+                                        <option value="en" ?selected=${this.uiLanguage === 'en'}>English</option>
+                                    `}
+                                </select>
+                                <div class="form-description">更改应用界面语言</div>
                             </div>
                         </div>
                     </div>
@@ -985,14 +1061,14 @@ export class CustomizeView extends LitElement {
                 <!-- Interface Layout Section -->
                 <div class="settings-section">
                     <div class="section-title">
-                        <span>Interface Layout</span>
+                        <span>${t('customize_interface_layout_section')}</span>
                     </div>
 
                     <div class="form-grid">
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">
-                                    Layout Mode
+                                    ${t('customize_layout_mode_label')}
                                     <span class="current-selection">${this.layoutMode === 'compact' ? 'Compact' : 'Normal'}</span>
                                 </label>
                                 <select class="form-control" .value=${this.layoutMode} @change=${this.handleLayoutModeSelect}>
@@ -1012,7 +1088,7 @@ export class CustomizeView extends LitElement {
                         <div class="form-group full-width">
                             <div class="slider-container">
                                 <div class="slider-header">
-                                    <label class="form-label">Background Transparency</label>
+                                    <label class="form-label">${t('customize_bg_transparency_label')}</label>
                                     <span class="slider-value">${Math.round(this.backgroundTransparency * 100)}%</span>
                                 </div>
                                 <input
@@ -1037,7 +1113,7 @@ export class CustomizeView extends LitElement {
                         <div class="form-group full-width">
                             <div class="slider-container">
                                 <div class="slider-header">
-                                    <label class="form-label">Response Font Size</label>
+                                    <label class="form-label">${t('customize_response_font_size_label')}</label>
                                     <span class="slider-value">${this.fontSize}px</span>
                                 </div>
                                 <input
@@ -1066,54 +1142,77 @@ export class CustomizeView extends LitElement {
                 <!-- Screen Capture Section -->
                 <div class="settings-section">
                     <div class="section-title">
-                        <span>Screen Capture Settings</span>
+                        <span>${t('customize_screen_capture_section')}</span>
                     </div>
 
                     <div class="form-grid">
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">
-                                    Capture Interval
+                                    ${t('capture_interval_label')}
                                     <span class="current-selection"
-                                        >${this.selectedScreenshotInterval === 'manual' ? 'Manual' : this.selectedScreenshotInterval + 's'}</span
+                                        >${this.selectedScreenshotInterval === 'manual' ? t('manual_option') : this.selectedScreenshotInterval + 's'}</span
                                     >
                                 </label>
                                 <select class="form-control" .value=${this.selectedScreenshotInterval} @change=${this.handleScreenshotIntervalSelect}>
-                                    <option value="manual" ?selected=${this.selectedScreenshotInterval === 'manual'}>Manual (On demand)</option>
-                                    <option value="1" ?selected=${this.selectedScreenshotInterval === '1'}>Every 1 second</option>
-                                    <option value="2" ?selected=${this.selectedScreenshotInterval === '2'}>Every 2 seconds</option>
-                                    <option value="5" ?selected=${this.selectedScreenshotInterval === '5'}>Every 5 seconds</option>
-                                    <option value="10" ?selected=${this.selectedScreenshotInterval === '10'}>Every 10 seconds</option>
+                                    <option value="manual" ?selected=${this.selectedScreenshotInterval === 'manual'}>${t('manual_option')}</option>
+                                    <option value="1" ?selected=${this.selectedScreenshotInterval === '1'}>${t('every_1s_option')}</option>
+                                    <option value="2" ?selected=${this.selectedScreenshotInterval === '2'}>${t('every_2s_option')}</option>
+                                    <option value="5" ?selected=${this.selectedScreenshotInterval === '5'}>${t('every_5s_option')}</option>
+                                    <option value="10" ?selected=${this.selectedScreenshotInterval === '10'}>${t('every_10s_option')}</option>
                                 </select>
                                 <div class="form-description">
                                     ${
                                         this.selectedScreenshotInterval === 'manual'
-                                            ? 'Screenshots will only be taken when you use the "Ask Next Step" shortcut'
-                                            : 'Automatic screenshots will be taken at the specified interval'
+                                            ? t('capture_interval_desc_manual')
+                                            : t('capture_interval_desc_auto')
                                     }
                                 </div>
                             </div>
 
                             <div class="form-group">
-                                <label class="form-label">
-                                    Image Quality
+                                    <label class="form-label">
+                                    ${t('image_quality_label')}
                                     <span class="current-selection"
-                                        >${this.selectedImageQuality.charAt(0).toUpperCase() + this.selectedImageQuality.slice(1)}</span
+                                        >${this.selectedImageQuality === 'high' ? t('high_quality_option') : this.selectedImageQuality === 'medium' ? t('medium_quality_option') : t('low_quality_option')}</span
                                     >
                                 </label>
                                 <select class="form-control" .value=${this.selectedImageQuality} @change=${this.handleImageQualitySelect}>
-                                    <option value="high" ?selected=${this.selectedImageQuality === 'high'}>High Quality</option>
-                                    <option value="medium" ?selected=${this.selectedImageQuality === 'medium'}>Medium Quality</option>
-                                    <option value="low" ?selected=${this.selectedImageQuality === 'low'}>Low Quality</option>
+                                    <option value="high" ?selected=${this.selectedImageQuality === 'high'}>${t('high_quality_option')}</option>
+                                    <option value="medium" ?selected=${this.selectedImageQuality === 'medium'}>${t('medium_quality_option')}</option>
+                                    <option value="low" ?selected=${this.selectedImageQuality === 'low'}>${t('low_quality_option')}</option>
                                 </select>
                                 <div class="form-description">
                                     ${
                                         this.selectedImageQuality === 'high'
-                                            ? 'Best quality, uses more tokens'
+                                            ? t('image_quality_desc_high')
                                             : this.selectedImageQuality === 'medium'
-                                              ? 'Balanced quality and token usage'
-                                              : 'Lower quality, uses fewer tokens'
+                                              ? t('image_quality_desc_medium')
+                                              : t('image_quality_desc_low')
                                     }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Advanced Mode Section -->
+                <div class="settings-section">
+                    <div class="section-title">
+                        <span>${t('advanced_mode_section')}</span>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">${t('advanced_mode_enable_label')}</label>
+                                <div class="checkbox-group">
+                                    <input
+                                        type="checkbox"
+                                        class="checkbox-input"
+                                        .checked=${this.advancedMode}
+                                        @change=${this.handleAdvancedModeChange}
+                                    />
+                                    <span class="form-description">启用后，顶部将显示“高级工具”入口</span>
                                 </div>
                             </div>
                         </div>
@@ -1123,14 +1222,14 @@ export class CustomizeView extends LitElement {
                 <!-- Keyboard Shortcuts Section -->
                 <div class="settings-section">
                     <div class="section-title">
-                        <span>Keyboard Shortcuts</span>
+                        <span>${t('customize_keyboard_shortcuts_section')}</span>
                     </div>
 
                     <table class="keybinds-table">
                         <thead>
                             <tr>
-                                <th>Action</th>
-                                <th>Shortcut</th>
+                                <th>${t('keybind_action_header')}</th>
+                                <th>${t('keybind_shortcut_header')}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1158,9 +1257,9 @@ export class CustomizeView extends LitElement {
                             )}
                             <tr class="table-reset-row">
                                 <td colspan="2">
-                                    <button class="reset-keybinds-button" @click=${this.resetKeybinds}>Reset to Defaults</button>
+                                    <button class="reset-keybinds-button" @click=${this.resetKeybinds}>${t('reset_to_defaults')}</button>
                                     <div class="form-description" style="margin-top: 8px;">
-                                        Restore all keyboard shortcuts to their default values
+                                        ${t('reset_to_defaults_desc')}
                                     </div>
                                 </td>
                             </tr>
@@ -1168,60 +1267,33 @@ export class CustomizeView extends LitElement {
                     </table>
                 </div>
 
-
-
-                <!-- Google Search Section -->
+                <!-- Model Settings Section -->
                 <div class="settings-section">
                     <div class="section-title">
-                        <span>Google Search</span>
+                        <span>${t('model_settings_section')}</span>
                     </div>
-
                     <div class="form-grid">
-                        <div class="checkbox-group">
-                            <input
-                                type="checkbox"
-                                class="checkbox-input"
-                                id="google-search-enabled"
-                                .checked=${this.googleSearchEnabled}
-                                @change=${this.handleGoogleSearchChange}
-                            />
-                            <label for="google-search-enabled" class="checkbox-label"> Enable Google Search </label>
-                        </div>
-                        <div class="form-description" style="margin-left: 24px; margin-top: -8px;">
-                            Allow the AI to search Google for up-to-date information and facts during conversations
-                            <br /><strong>Note:</strong> Changes take effect when starting a new AI session
-                        </div>
-                    </div>
-                </div>
-
-                <div class="settings-note">
-                    💡 Settings are automatically saved as you change them. Changes will take effect immediately or on the next session start.
-                </div>
-
-                <!-- Advanced Mode Section (Danger Zone) -->
-                <div class="settings-section" style="border-color: var(--danger-border, rgba(239, 68, 68, 0.3)); background: var(--danger-background, rgba(239, 68, 68, 0.05));">
-                    <div class="section-title" style="color: var(--danger-color, #ef4444);">
-                        <span>⚠️ Advanced Mode</span>
-                    </div>
-
-                    <div class="form-grid">
-                        <div class="checkbox-group">
-                                <input
-                                    type="checkbox"
-                                    class="checkbox-input"
-                                    id="advanced-mode"
-                                    .checked=${this.advancedMode}
-                                    @change=${this.handleAdvancedModeChange}
-                                />
-                                <label for="advanced-mode" class="checkbox-label"> Enable Advanced Mode </label>
-                            </div>
-                            <div class="form-description" style="margin-left: 24px; margin-top: -8px;">
-                                Unlock experimental features, developer tools, and advanced configuration options
-                                <br /><strong>Note:</strong> Advanced mode adds a new icon to the main navigation bar
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">${t('model_select_label')}</label>
+                                <select class="form-control" .value=${this.selectedModel} @change=${this.handleModelSelect}>
+                                    ${this.getModelOptions().map(opt => html`<option value=${opt.value} ?selected=${this.selectedModel === opt.value}>${opt.name}</option>`)}
+                                </select>
                             </div>
                         </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">${t('transcription_model_label')}</label>
+                                <select class="form-control" .value=${this.transcriptionModel} @change=${this.handleTranscriptionModelSelect}>
+                                    ${this.getTranscriptionModelOptions().map(opt => html`<option value=${opt.value} ?selected=${this.transcriptionModel === opt.value}>${opt.name}</option>`)}
+                                </select>
+                            </div>
+                        </div>
+                        
                     </div>
                 </div>
+
+                <div class="settings-note">💡 ${t('settings_saved_note')}</div>
             </div>
         `;
     }

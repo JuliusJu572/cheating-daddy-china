@@ -263,6 +263,7 @@ export class HelpView extends LitElement {
             nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
             scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
             scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
+            audioCapture: 'Ctrl+L',
         };
     }
 
@@ -294,163 +295,156 @@ export class HelpView extends LitElement {
             <div class="help-container">
                 <div class="option-group">
                     <div class="option-label">
-                        <span>Community & Support</span>
+                        <span>社区与支持</span>
                     </div>
                     <div class="community-links">
-                        <div class="community-link" @click=${() => this.handleExternalLinkClick('https://cheatingdaddy.com')}>
-                            🌐 Official Website
+                        <div class="community-link" title="微信：jrb_572_">
+                            🟩 微信：jrb_572_
                         </div>
-                        <div class="community-link" @click=${() => this.handleExternalLinkClick('https://github.com/sohzm/cheating-daddy')}>
-                            📂 GitHub Repository
-                        </div>
-                        <div class="community-link" @click=${() => this.handleExternalLinkClick('https://discord.gg/GCBdubnXfJ')}>
-                            💬 Discord Community
-                        </div>
+                        <a class="community-link" href="mailto:jrb572572@gmail.com">
+                            ✉️ 邮箱：jrb572572@gmail.com
+                        </a>
                     </div>
                 </div>
 
                 <div class="option-group">
                     <div class="option-label">
-                        <span>Keyboard Shortcuts</span>
+                        <span>键盘快捷键</span>
                     </div>
                     <div class="keyboard-section">
                         <div class="keyboard-group">
-                            <div class="keyboard-group-title">Window Movement</div>
+                            <div class="keyboard-group-title">窗口移动</div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">Move window up</span>
+                                <span class="shortcut-description">窗口上移</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.moveUp)}</div>
                             </div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">Move window down</span>
+                                <span class="shortcut-description">窗口下移</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.moveDown)}</div>
                             </div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">Move window left</span>
+                                <span class="shortcut-description">窗口左移</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.moveLeft)}</div>
                             </div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">Move window right</span>
+                                <span class="shortcut-description">窗口右移</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.moveRight)}</div>
                             </div>
                         </div>
 
                         <div class="keyboard-group">
-                            <div class="keyboard-group-title">Window Control</div>
+                            <div class="keyboard-group-title">窗口控制</div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">Toggle click-through mode</span>
+                                <span class="shortcut-description">切换穿透模式</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.toggleClickThrough)}</div>
                             </div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">Toggle window visibility</span>
+                                <span class="shortcut-description">切换窗口可见性</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.toggleVisibility)}</div>
                             </div>
                         </div>
 
                         <div class="keyboard-group">
-                            <div class="keyboard-group-title">AI Actions</div>
+                            <div class="keyboard-group-title">AI 操作</div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">Take screenshot and ask for next step</span>
+                                <span class="shortcut-description">截图并询问下一步</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.nextStep)}</div>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-description">开始音频录制（转写）</span>
+                                <div class="shortcut-keys">${this.formatKeybind(this.keybinds.audioCapture)}</div>
                             </div>
                         </div>
 
                         <div class="keyboard-group">
-                            <div class="keyboard-group-title">Response Navigation</div>
+                            <div class="keyboard-group-title">响应导航</div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">Previous response</span>
+                                <span class="shortcut-description">上一条响应</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.previousResponse)}</div>
                             </div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">Next response</span>
+                                <span class="shortcut-description">下一条响应</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.nextResponse)}</div>
                             </div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">Scroll response up</span>
+                                <span class="shortcut-description">响应向上滚动</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.scrollUp)}</div>
                             </div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">Scroll response down</span>
+                                <span class="shortcut-description">响应向下滚动</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.scrollDown)}</div>
                             </div>
                         </div>
 
                         <div class="keyboard-group">
-                            <div class="keyboard-group-title">Text Input</div>
+                            <div class="keyboard-group-title">文本输入</div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">Send message to AI</span>
+                                <span class="shortcut-description">发送消息给 AI</span>
                                 <div class="shortcut-keys"><span class="key">Enter</span></div>
                             </div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">New line in text input</span>
+                                <span class="shortcut-description">文本输入中换行</span>
                                 <div class="shortcut-keys"><span class="key">Shift</span><span class="key">Enter</span></div>
                             </div>
                         </div>
                     </div>
                     <div class="description" style="margin-top: 12px; font-style: italic; text-align: center;">
-                        💡 You can customize these shortcuts in the Settings page!
+                        💡 可以在设置页自定义这些快捷键！
                     </div>
                 </div>
 
                 <div class="option-group">
                     <div class="option-label">
-                        <span>How to Use</span>
+                        <span>如何使用</span>
                     </div>
                     <div class="usage-steps">
-                        <div class="usage-step"><strong>Start a Session:</strong> Enter your Gemini API key and click "Start Session"</div>
-                        <div class="usage-step"><strong>Customize:</strong> Choose your profile and language in the settings</div>
-                        <div class="usage-step">
-                            <strong>Position Window:</strong> Use keyboard shortcuts to move the window to your desired location
-                        </div>
-                        <div class="usage-step">
-                            <strong>Click-through Mode:</strong> Use ${this.formatKeybind(this.keybinds.toggleClickThrough)} to make the window
-                            click-through
-                        </div>
-                        <div class="usage-step"><strong>Get AI Help:</strong> The AI will analyze your screen and audio to provide assistance</div>
-                        <div class="usage-step"><strong>Text Messages:</strong> Type questions or requests to the AI using the text input</div>
-                        <div class="usage-step">
-                            <strong>Navigate Responses:</strong> Use ${this.formatKeybind(this.keybinds.previousResponse)} and
-                            ${this.formatKeybind(this.keybinds.nextResponse)} to browse through AI responses
-                        </div>
+                        <div class="usage-step"><strong>输入 API Key：</strong> 在首页输入你的 API Key，点击“开始会话”进行连通性测试并进入窗口。</div>
+                        <div class="usage-step"><strong>选择模型：</strong> 在设置页选择视觉模型与语音识别模型（如 Whisper-Large-v3）。</div>
+                        <div class="usage-step"><strong>截图与下一步：</strong> 使用 ${this.formatKeybind(this.keybinds.nextStep)} 截图并让 AI 给出下一步建议。</div>
+                        <div class="usage-step"><strong>音频录制：</strong> 在面试官开始说话前，使用 ${this.formatKeybind(this.keybinds.audioCapture)} 手动开始录音，结束后自动转写并回答。</div>
+                        <div class="usage-step"><strong>窗口移动：</strong> 用方向键组合移动窗口到合适位置。</div>
+                        <div class="usage-step"><strong>穿透模式：</strong> 使用 ${this.formatKeybind(this.keybinds.toggleClickThrough)} 让窗口可被点击穿透。</div>
+                        <div class="usage-step"><strong>响应浏览：</strong> 使用 ${this.formatKeybind(this.keybinds.previousResponse)} 与 ${this.formatKeybind(this.keybinds.nextResponse)} 浏览响应。</div>
                     </div>
                 </div>
 
                 <div class="option-group">
                     <div class="option-label">
-                        <span>Supported Profiles</span>
+                        <span>支持的档案</span>
                     </div>
                     <div class="profiles-grid">
                         <div class="profile-item">
-                            <div class="profile-name">Job Interview</div>
-                            <div class="profile-description">Get help with interview questions and responses</div>
+                            <div class="profile-name">求职面试</div>
+                            <div class="profile-description">辅助回答面试问题与组织回复</div>
                         </div>
                         <div class="profile-item">
-                            <div class="profile-name">Sales Call</div>
-                            <div class="profile-description">Assistance with sales conversations and objection handling</div>
+                            <div class="profile-name">销售电话</div>
+                            <div class="profile-description">支持销售沟通与异议处理</div>
                         </div>
                         <div class="profile-item">
-                            <div class="profile-name">Business Meeting</div>
-                            <div class="profile-description">Support for professional meetings and discussions</div>
+                            <div class="profile-name">商务会议</div>
+                            <div class="profile-description">支持专业会议与讨论</div>
                         </div>
                         <div class="profile-item">
-                            <div class="profile-name">Presentation</div>
-                            <div class="profile-description">Help with presentations and public speaking</div>
+                            <div class="profile-name">演示与演讲</div>
+                            <div class="profile-description">帮助准备演示与公众表达</div>
                         </div>
                         <div class="profile-item">
-                            <div class="profile-name">Negotiation</div>
-                            <div class="profile-description">Guidance for business negotiations and deals</div>
+                            <div class="profile-name">商务谈判</div>
+                            <div class="profile-description">指导商务谈判与交易</div>
                         </div>
                         <div class="profile-item">
-                            <div class="profile-name">Exam Assistant</div>
-                            <div class="profile-description">Academic assistance for test-taking and exam questions</div>
+                            <div class="profile-name">考试助手</div>
+                            <div class="profile-description">学术类考试题目辅助</div>
                         </div>
                     </div>
                 </div>
 
                 <div class="option-group">
                     <div class="option-label">
-                        <span>Audio Input</span>
+                        <span>音频输入</span>
                     </div>
-                    <div class="description">The AI listens to conversations and provides contextual assistance based on what it hears.</div>
+                    <div class="description">需要用户在面试官开始说话前，手动使用 ${this.formatKeybind(this.keybinds.audioCapture)} 开始录音；录音结束后会自动转写并用于生成回答。</div>
                 </div>
             </div>
         `;

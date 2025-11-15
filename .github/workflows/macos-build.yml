@@ -1,0 +1,27 @@
+name: macos-dmg
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run make
+      - name: Find DMG
+        id: find
+        run: |
+          echo "DMG_PATH=$(find out -name '*.dmg' | head -n 1)" >> $GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: ${{ steps.find.outputs.DMG_PATH }}

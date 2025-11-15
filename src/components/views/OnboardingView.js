@@ -438,31 +438,31 @@ export class OnboardingView extends LitElement {
         const slides = [
             {
                 icon: 'assets/onboarding/welcome.svg',
-                title: 'Welcome to Cheating Daddy',
+                title: '欢迎使用 作弊老爹',
                 content:
-                    'Your AI assistant that listens and watches, then provides intelligent suggestions automatically during interviews and meetings.',
+                    '一个在面试/会议中实时监听与观察，自动给出建议与答案的 AI 助手。',
             },
             {
                 icon: 'assets/onboarding/security.svg',
-                title: 'Completely Private',
-                content: 'Invisible to screen sharing apps and recording software. Your secret advantage stays completely hidden from others.',
+                title: '完全隐身',
+                content: '窗口对屏幕共享与录制软件不可见（内容保护）。你的“外挂”不会被他人看到。',
             },
             {
                 icon: 'assets/onboarding/context.svg',
-                title: 'Add Your Context',
-                content: 'Share relevant information to help the AI provide better, more personalized assistance.',
+                title: '添加上下文',
+                content: '提供与你场景相关的信息，AI 将据此给出更贴合的建议。',
                 showTextarea: true,
             },
             {
                 icon: 'assets/onboarding/customize.svg',
-                title: 'Additional Features',
+                title: '核心操作',
                 content: '',
                 showFeatures: true,
             },
             {
                 icon: 'assets/onboarding/ready.svg',
-                title: 'Ready to Go',
-                content: 'Add your Gemini API key in settings and start getting AI-powered assistance in real-time.',
+                title: '开始使用',
+                content: '在设置中填写 API Base 与 API Key（支持 AIHubMix/CloseAI 等），选择档案、语言、截图间隔与质量，然后开始会话。',
             },
         ];
 
@@ -485,7 +485,7 @@ export class OnboardingView extends LitElement {
                         ? html`
                               <textarea
                                   class="context-textarea"
-                                  placeholder="Paste your resume, job description, or any relevant context here..."
+                                  placeholder="粘贴你的简历、岗位描述、会议议程或其他相关信息……"
                                   .value=${this.contextText}
                                   @input=${this.handleContextInput}
                               ></textarea>
@@ -495,16 +495,16 @@ export class OnboardingView extends LitElement {
                         ? html`
                               <div class="feature-list">
                                   <div class="feature-item">
-                                      <span class="feature-icon">🎨</span>
-                                      Customize AI behavior and responses
+                                      <span class="feature-icon">🎙️</span>
+                                      使用 <span class="key">Ctrl+L</span> 开始/结束录音并自动转写
                                   </div>
                                   <div class="feature-item">
-                                      <span class="feature-icon">📚</span>
-                                      Review conversation history
+                                      <span class="feature-icon">🖼️</span>
+                                      使用 <span class="key">Ctrl+Enter</span> 截图并询问“下一步”
                                   </div>
                                   <div class="feature-item">
-                                      <span class="feature-icon">🔧</span>
-                                      Adjust capture settings and intervals
+                                      <span class="feature-icon">🪟</span>
+                                      方向键移动窗口；<span class="key">Ctrl+\</span> 显示/隐藏；<span class="key">Ctrl+M</span> 穿透
                                   </div>
                               </div>
                           `
@@ -535,7 +535,7 @@ export class OnboardingView extends LitElement {
 
                     <button class="nav-button" @click=${this.nextSlide}>
                         ${this.currentSlide === 4
-                            ? 'Get Started'
+                            ? '开始使用'
                             : html`
                                   <svg width="16px" height="16px" stroke-width="2" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                       <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"></path>

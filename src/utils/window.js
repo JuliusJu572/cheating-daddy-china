@@ -30,6 +30,7 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
     let windowWidth = 1100;
     let windowHeight = 800;
 
+    // 在 createWindow 函数中，添加 macOS 特定配置：
     const mainWindow = new BrowserWindow({
         width: windowWidth,
         height: windowHeight,
@@ -39,9 +40,11 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
         alwaysOnTop: true,
         skipTaskbar: true,
         hiddenInMissionControl: true,
+        vibrancy: process.platform === 'darwin' ? 'under-window' : undefined, // 添加这行
+        visualEffectState: process.platform === 'darwin' ? 'active' : undefined, // 添加这行
         webPreferences: {
             nodeIntegration: true,
-            contextIsolation: false, // TODO: change to true
+            contextIsolation: false,
             backgroundThrottling: false,
             enableBlinkFeatures: 'GetDisplayMedia',
             webSecurity: true,
@@ -73,8 +76,10 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
 
     if (process.platform === 'win32') {
         mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+    } else if (process.platform === 'darwin') {
+        mainWindow.setAlwaysOnTop(true, 'floating');
     }
-
+    
     mainWindow.loadFile(path.join(__dirname, '../index.html'));
 
     // Set window title to random name if provided
@@ -116,7 +121,13 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
 
                     // Apply content protection setting via IPC handler
                     try {
-                        const contentProtection = await mainWindow.webContents.executeJavaScript('cheddar.getContentProtection()');
+                        const contentProtection = await mainWindow.webContents.executeJavaScript(`(() => {
+                            try {
+                                return window.cheddar && typeof cheddar.getContentProtection === 'function'
+                                    ? cheddar.getContentProtection()
+                                    : true;
+                            } catch (e) { return true; }
+                        })()`);
                         mainWindow.setContentProtection(contentProtection);
                         console.log('Content protection loaded from settings:', contentProtection);
                     } catch (error) {
@@ -154,6 +165,7 @@ function getDefaultKeybinds() {
         scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
         scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
         emergencyErase: isMac ? 'Cmd+Shift+E' : 'Ctrl+Shift+E',
+        audioCapture: 'Ctrl+L',
     };
 }
 
@@ -246,14 +258,25 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
             globalShortcut.register(keybinds.nextStep, async () => {
                 console.log('Next step shortcut triggered');
                 try {
-                    // Determine the shortcut key format
-                    const isMac = process.platform === 'darwin';
-                    const shortcutKey = isMac ? 'cmd+enter' : 'ctrl+enter';
-
-                    // Use the new handleShortcut function
-                    mainWindow.webContents.executeJavaScript(`
-                        cheddar.handleShortcut('${shortcutKey}');
-                    `);
+                    // Immediate UI feedback
+                    try { sendToRenderer('update-status', 'capturing, waiting response'); } catch (_) {}
+                    // On first press from Main view: start session then auto capture once ready
+                    await mainWindow.webContents.executeJavaScript(`(async () => {
+                        try {
+                            const view = cheddar.getCurrentView();
+                            if (view === 'main') {
+                                await cheddar.element().handleStart();
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                            }
+                            // Always capture screenshot after starting or if already in assistant view
+                            if (typeof window.captureManualScreenshot === 'function') {
+                                console.log('Calling captureManualScreenshot...');
+                                await window.captureManualScreenshot();
+                            } else {
+                                console.error('captureManualScreenshot function not found!');
+                            }
+                        } catch (e) { console.error('shortcut inline error', e); }
+                    })()`);
                 } catch (error) {
                     console.error('Error handling next step shortcut:', error);
                 }
@@ -341,6 +364,17 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
         } catch (error) {
             console.error(`Failed to register emergencyErase (${keybinds.emergencyErase}):`, error);
         }
+    }
+
+    if (keybinds.audioCapture) {
+        try {
+            globalShortcut.register(keybinds.audioCapture, async () => {
+                try {
+                    sendToRenderer('update-status', 'Recording...');
+                    await mainWindow.webContents.executeJavaScript(`(async () => { if (window.startQuickAudioCapture) { await window.startQuickAudioCapture(); } })()`);
+                } catch (e) {}
+            });
+        } catch (error) {}
     }
 }
 
@@ -473,8 +507,20 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
             // Get current view and layout mode from renderer
             let viewName, layoutMode;
             try {
-                viewName = await event.sender.executeJavaScript('cheddar.getCurrentView()');
-                layoutMode = await event.sender.executeJavaScript('cheddar.getLayoutMode()');
+                viewName = await event.sender.executeJavaScript(`(() => {
+                    try {
+                        return window.cheddar && typeof cheddar.getCurrentView === 'function'
+                            ? cheddar.getCurrentView()
+                            : 'main';
+                    } catch (e) { return 'main'; }
+                })()`);
+                layoutMode = await event.sender.executeJavaScript(`(() => {
+                    try {
+                        return window.cheddar && typeof cheddar.getLayoutMode === 'function'
+                            ? cheddar.getLayoutMode()
+                            : 'normal';
+                    } catch (e) { return 'normal'; }
+                })()`);
             } catch (error) {
                 console.warn('Failed to get view/layout from renderer, using defaults:', error);
                 viewName = 'main';

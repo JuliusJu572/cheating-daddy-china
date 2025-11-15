@@ -124,7 +124,7 @@ export class CheatingDaddyApp extends LitElement {
         this.isRecording = false;
         this.sessionActive = false;
         this.selectedProfile = localStorage.getItem('selectedProfile') || 'interview';
-        this.selectedLanguage = localStorage.getItem('selectedLanguage') || 'en-US';
+        this.selectedLanguage = localStorage.getItem('selectedLanguage') || 'zh-CN';
         this.selectedScreenshotInterval = localStorage.getItem('selectedScreenshotInterval') || '5';
         this.selectedImageQuality = localStorage.getItem('selectedImageQuality') || 'medium';
         this.layoutMode = localStorage.getItem('layoutMode') || 'normal';
@@ -233,13 +233,19 @@ export class CheatingDaddyApp extends LitElement {
         this.requestUpdate();
     }
 
+    // 在 handleClose 函数中，添加 macOS 特定清理：
     async handleClose() {
         if (this.currentView === 'customize' || this.currentView === 'help' || this.currentView === 'history') {
             this.currentView = 'main';
         } else if (this.currentView === 'assistant') {
             cheddar.stopCapture();
 
-            // Close the session
+            // macOS 特定：确保停止 SystemAudioDump
+            if (process.platform === 'darwin' && window.require) {
+                const { ipcRenderer } = window.require('electron');
+                await ipcRenderer.invoke('stop-macos-audio');
+            }
+
             if (window.require) {
                 const { ipcRenderer } = window.require('electron');
                 await ipcRenderer.invoke('close-session');
@@ -248,7 +254,6 @@ export class CheatingDaddyApp extends LitElement {
             this.currentView = 'main';
             console.log('Session closed');
         } else {
-            // Quit the entire application
             if (window.require) {
                 const { ipcRenderer } = window.require('electron');
                 await ipcRenderer.invoke('quit-application');
@@ -265,31 +270,34 @@ export class CheatingDaddyApp extends LitElement {
 
     // Main view event handlers
     async handleStart() {
-        // check if api key is empty do nothing
         const apiKey = localStorage.getItem('apiKey')?.trim();
         if (!apiKey || apiKey === '') {
-            // Trigger the red blink animation on the API key input
-            const mainView = this.shadowRoot.querySelector('main-view');
-            if (mainView && mainView.triggerApiKeyError) {
-                mainView.triggerApiKeyError();
-            }
+            this.setStatus('请先输入有效的License Key');
+            return;
+        }
+        
+        // 启动捕获
+        const persistedModel = (localStorage.getItem('selectedModel') || '').trim();
+        const selectedModel = persistedModel !== '' ? persistedModel : 'aihubmix:qwen3-vl-30b-a3b-instruct';
+        localStorage.setItem('selectedModel', selectedModel);
+        // 然后初始化模型
+        const ok = await cheddar.initializeGemini(this.selectedProfile, this.selectedLanguage);
+        if (!ok) {
+            this.setStatus('模型初始化失败');
             return;
         }
 
-        await cheddar.initializeGemini(this.selectedProfile, this.selectedLanguage);
-        // Pass the screenshot interval as string (including 'manual' option)
-        cheddar.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
+        const intervalForModel = selectedModel.startsWith('aihubmix:') ? 'manual' : this.selectedScreenshotInterval;
+        cheddar.startCapture(intervalForModel, this.selectedImageQuality);
         this.responses = [];
         this.currentResponseIndex = -1;
         this.startTime = Date.now();
         this.currentView = 'assistant';
     }
-
+    
     async handleAPIKeyHelp() {
-        if (window.require) {
-            const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('open-external', 'https://cheatingdaddy.com/help/api-key');
-        }
+        this.currentView = 'help';
+        this.requestUpdate();
     }
 
     // Customize view event handlers

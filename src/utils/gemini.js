@@ -111,8 +111,8 @@ async function sendReconnectionContext() {
 async function getEnabledTools() {
     const tools = [];
 
-    // Check if Google Search is enabled (default: true)
-    const googleSearchEnabled = await getStoredSetting('googleSearchEnabled', 'true');
+    // TODO: Edge Search integration pending; temporarily disable Google Search by default
+    const googleSearchEnabled = await getStoredSetting('googleSearchEnabled', 'false');
     console.log('Google Search enabled:', googleSearchEnabled);
 
     if (googleSearchEnabled === 'true') {
@@ -120,6 +120,7 @@ async function getEnabledTools() {
         console.log('Added Google Search tool');
     } else {
         console.log('Google Search tool disabled');
+        // TODO: Replace with Edge/Bing search tool once implemented
     }
 
     return tools;
@@ -242,7 +243,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
 
     try {
         const session = await client.live.connect({
-            model: 'gemini-live-2.5-flash-preview',
+            model: 'gemini-2.0-flash-live',
             callbacks: {
                 onopen: function () {
                     sendToRenderer('update-status', 'Live session connected');
@@ -399,12 +400,26 @@ async function startMacOSAudioCapture(geminiSessionRef) {
 
     const { app } = require('electron');
     const path = require('path');
+    const fs = require('fs');
 
     let systemAudioPath;
     if (app.isPackaged) {
         systemAudioPath = path.join(process.resourcesPath, 'SystemAudioDump');
     } else {
         systemAudioPath = path.join(__dirname, '../assets', 'SystemAudioDump');
+    }
+
+    // 验证文件存在
+    if (!fs.existsSync(systemAudioPath)) {
+        console.error('SystemAudioDump not found at:', systemAudioPath);
+        return false;
+    }
+
+    // 确保可执行权限
+    try {
+        fs.chmodSync(systemAudioPath, '755');
+    } catch (chmodErr) {
+        console.warn('Could not set executable permissions:', chmodErr);
     }
 
     console.log('SystemAudioDump path:', systemAudioPath);
@@ -561,7 +576,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
-    ipcMain.handle('send-image-content', async (event, { data, debug }) => {
+    ipcMain.handle('send-image-content', async (event, { data, debug, mimeType }) => {
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
 
         try {
@@ -579,7 +594,8 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
 
             process.stdout.write('!');
             await geminiSessionRef.current.sendRealtimeInput({
-                media: { data: data, mimeType: 'image/jpeg' },
+                media: { data: data, mimeType: mimeType || 'image/jpeg' },
+                debug,
             });
 
             return { success: true };

@@ -1,4 +1,5 @@
 import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
+import { t } from '../../i18n/strings.js';
 import { resizeLayout } from '../../utils/windowResize.js';
 
 export class MainView extends LitElement {
@@ -149,6 +150,9 @@ export class MainView extends LitElement {
         isInitializing: { type: Boolean },
         onLayoutModeChange: { type: Function },
         showApiKeyError: { type: Boolean },
+        isValidating: { type: Boolean },
+        isKeyValid: { type: Boolean },
+        _inputValue: { type: String, state: true },  // ✅ 新增：跟踪用户输入
     };
 
     constructor() {
@@ -158,51 +162,182 @@ export class MainView extends LitElement {
         this.isInitializing = false;
         this.onLayoutModeChange = () => {};
         this.showApiKeyError = false;
+        this.isValidating = false;
+        this.isKeyValid = false;
         this.boundKeydownHandler = this.handleKeydown.bind(this);
+        this._validationTimer = null;
+        this._inputValue = '';  // ✅ 新增
     }
 
     connectedCallback() {
         super.connectedCallback();
+        
+        // ✅ 只在首次加载时清空（使用 flag 避免重复清空）
+        if (!sessionStorage.getItem('appInitialized')) {
+            localStorage.removeItem('apiKey');
+            
+            // ⚠️ 添加：如果 onboarding 从未设置，设置为已完成（跳过引导）
+            if (!localStorage.getItem('onboardingCompleted')) {
+                localStorage.setItem('onboardingCompleted', 'true');
+            }
+            
+            sessionStorage.setItem('appInitialized', 'true');
+        }
+        
         window.electron?.ipcRenderer?.on('session-initializing', (event, isInitializing) => {
             this.isInitializing = isInitializing;
         });
-
-        // Add keyboard event listener for Ctrl+Enter (or Cmd+Enter on Mac)
         document.addEventListener('keydown', this.boundKeydownHandler);
-
-        // Load and apply layout mode on startup
         this.loadLayoutMode();
-        // Resize window for this view
         resizeLayout();
     }
 
     disconnectedCallback() {
         super.disconnectedCallback();
+        
+        // ✅ 清理定时器
+        if (this._validationTimer) {
+            clearTimeout(this._validationTimer);
+            this._validationTimer = null;
+        }
+        
         window.electron?.ipcRenderer?.removeAllListeners('session-initializing');
-        // Remove keyboard event listener
         document.removeEventListener('keydown', this.boundKeydownHandler);
     }
 
     handleKeydown(e) {
-        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-        const isStartShortcut = isMac ? e.metaKey && e.key === 'Enter' : e.ctrlKey && e.key === 'Enter';
-
-        if (isStartShortcut) {
+        const isMac = navigator.platform.toLowerCase().includes('mac') || 
+              navigator.userAgent.toLowerCase().includes('mac') ||
+              process.platform === 'darwin';
+        const isStartShortcut = isMac 
+            ? (e.metaKey && !e.ctrlKey && e.key === 'Enter') 
+            : (!e.metaKey && e.ctrlKey && e.key === 'Enter');
+        const isAltEnter = e.altKey && e.key === 'Enter';
+        const isAudioCapture = !e.metaKey && e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === 'l' || e.key === 'L');
+        
+        if ((isStartShortcut || isAltEnter) && this.isKeyValid) {  // ✅ 增加验证检查
             e.preventDefault();
             this.handleStartClick();
         }
-    }
-
-    handleInput(e) {
-        localStorage.setItem('apiKey', e.target.value);
-        // Clear error state when user starts typing
-        if (this.showApiKeyError) {
-            this.showApiKeyError = false;
+        if (isAudioCapture) {
+            e.preventDefault();
+            try { window.startQuickAudioCapture && window.startQuickAudioCapture(); } catch (_) {}
         }
     }
 
+    async handleInput(e) {
+        const v = e.target.value || '';
+        this._inputValue = v;
+        
+        if (this._validationTimer) {
+            clearTimeout(this._validationTimer);
+            this._validationTimer = null;
+        }
+        
+        this.showApiKeyError = false;
+        
+        if (!v.trim()) {
+            this.isKeyValid = false;
+            this.isValidating = false;
+            localStorage.removeItem('apiKey');
+            this.requestUpdate();
+            return;
+        }
+        
+        const s = v.trim();
+        const isLicense = /^CD-/i.test(s);
+        if (!isLicense) {
+            this.showApiKeyError = true;
+            this.isKeyValid = false;
+            this.isValidating = false;
+            localStorage.removeItem('apiKey');
+            this.requestUpdate();
+            return;
+        }
+        
+        this.isValidating = true;
+        this.requestUpdate();
+        
+        this._validationTimer = setTimeout(async () => {
+            try {
+                let ipcRenderer = null;
+                try {
+                    if (window.require) {
+                        ipcRenderer = window.require('electron').ipcRenderer;
+                    } else if (window.electron && window.electron.ipcRenderer) {
+                        ipcRenderer = window.electron.ipcRenderer;
+                    }
+                } catch (_) {}
+                if (!ipcRenderer) {
+                    this.showApiKeyError = true;
+                    this.isKeyValid = false;
+                    this.isValidating = false;
+                    this.requestUpdate();
+                    return;
+                }
+
+                
+                
+                const decryptRes = await ipcRenderer.invoke('decrypt-license-key', s);
+                
+                
+                
+                if (!decryptRes?.success || !decryptRes.apiKey) {
+                    console.log('❌ [MainView] 解密失败');
+                    this.showApiKeyError = true;
+                    this.isKeyValid = false;
+                    this.isValidating = false;
+                    localStorage.removeItem('apiKey');
+                    this.requestUpdate();
+                    return;
+                }
+                
+                const apiKey = decryptRes.apiKey;
+
+                const apiBase = localStorage.getItem('modelApiBase') || 'https://aihubmix.com/v1';
+                
+                
+                const connectRes = await ipcRenderer.invoke('test-model-connection', {
+                    apiBase: apiBase,
+                    headers: { Authorization: `Bearer ${apiKey}` }
+                });
+
+                if (!connectRes?.success) {
+                    console.log('❌ [MainView] API连接测试失败');
+                    this.showApiKeyError = true;
+                    this.isKeyValid = false;
+                    this.isValidating = false;
+                    localStorage.removeItem('apiKey');
+                    this.requestUpdate();
+                    return;
+                }
+
+                
+                
+                // ✅ 存储解密后的真实 API Key
+                localStorage.setItem('apiKey', apiKey);
+                
+                // ✅ 验证存储是否成功
+                const storedKey = localStorage.getItem('apiKey');
+                
+                this.isKeyValid = true;
+                this.showApiKeyError = false;
+
+            } catch (error) {
+                console.error('❌ [MainView] 验证过程出错:', error?.message || error);
+                this.showApiKeyError = true;
+                this.isKeyValid = false;
+                localStorage.removeItem('apiKey');
+            }
+
+            this.isValidating = false;
+            this.requestUpdate();
+        }, 800);
+    }
+
     handleStartClick() {
-        if (this.isInitializing) {
+        // ✅ 只有验证通过才能启动
+        if (this.isInitializing || !this.isKeyValid) {
             return;
         }
         this.onStart();
@@ -236,7 +371,10 @@ export class MainView extends LitElement {
     }
 
     getStartButtonText() {
-        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+        // 在 getStartButtonText() 函数中，修改 isMac 检测：
+        const isMac = navigator.platform.toLowerCase().includes('mac') || 
+                    navigator.userAgent.toLowerCase().includes('mac') ||
+                    process.platform === 'darwin';
 
         const cmdIcon = html`<svg width="14px" height="14px" viewBox="0 0 24 24" stroke-width="2" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M9 6V18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
@@ -275,32 +413,37 @@ export class MainView extends LitElement {
         </svg>`;
 
         if (isMac) {
-            return html`Start Session <span class="shortcut-icons">${cmdIcon}${enterIcon}</span>`;
+            return html`${t('start_session')} <span class="shortcut-icons">${cmdIcon}${enterIcon}</span>`;
         } else {
-            return html`Start Session <span class="shortcut-icons">Ctrl${enterIcon}</span>`;
+            return html`${t('start_session')} <span class="shortcut-icons">Ctrl${enterIcon}</span>`;
         }
     }
 
     render() {
+        // ✅ 使用保存的用户输入值，而不是从 localStorage 读取
         return html`
-            <div class="welcome">Welcome</div>
+            <div class="welcome">${t('welcome')}</div>
 
             <div class="input-group">
                 <input
                     type="password"
-                    placeholder="Enter your Gemini API Key"
-                    .value=${localStorage.getItem('apiKey') || ''}
-                    @input=${this.handleInput}
                     class="${this.showApiKeyError ? 'api-key-error' : ''}"
+                    placeholder="${t('enter_api_key')}"
+                    .value=${this._inputValue}
+                    @input=${e => this.handleInput(e)}
+                    ?disabled=${this.isValidating}
                 />
-                <button @click=${this.handleStartClick} class="start-button ${this.isInitializing ? 'initializing' : ''}">
-                    ${this.getStartButtonText()}
+                <button 
+                    @click=${this.handleStartClick} 
+                    class="start-button ${this.isInitializing || this.isValidating || !this.isKeyValid ? 'initializing' : ''}"
+                    ?disabled=${this.isInitializing || this.isValidating || !this.isKeyValid}
+                >
+                    ${this.isValidating ? '验证中...' : this.getStartButtonText()}
                 </button>
             </div>
-            <p class="description">
-                dont have an api key?
-                <span @click=${this.handleAPIKeyHelpClick} class="link">get one here</span>
-            </p>
+            <div class="description">
+                ${t('api_key_help_prefix')} <span class="link" @click=${this.handleAPIKeyHelpClick.bind(this)}>${t('api_key_help_link')}</span>
+            </div>
         `;
     }
 }
