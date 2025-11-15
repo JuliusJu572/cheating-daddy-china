@@ -1,0 +1,109 @@
+name: Release All Platforms
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - run: npm ci
+      
+      - name: Build Windows
+        run: npm run make -- --platform=win32
+      
+      - name: List Windows build output
+        run: |
+          echo "Windows build files:"
+          Get-ChildItem -Path out -Recurse -Include *.exe,*.msi
+        shell: pwsh
+      
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: out/make/**/*.exe
+      
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: out/make/**/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - run: npm ci
+      
+      - name: Build macOS
+        run: npm run make -- --platform=darwin
+      
+      - name: List macOS build output
+        run: |
+          echo "macOS build files:"
+          find out -name '*.dmg' -type f
+      
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: out/**/*.dmg
+      
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: out/**/*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - run: npm ci
+      
+      - name: Build Linux
+        run: npm run make -- --platform=linux
+      
+      - name: List Linux build output
+        run: |
+          echo "Linux build files:"
+          find out -name '*.deb' -o -name '*.rpm' -type f
+      
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: |
+            out/**/*.deb
+            out/**/*.rpm
+      
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            out/**/*.deb
+            out/**/*.rpm
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
