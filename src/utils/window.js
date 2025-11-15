@@ -38,7 +38,7 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
     const safeMode = (process.env.CD_SAFE === '1') || (process.argv || []).includes('--safe');
     const macStealth = process.platform === 'darwin';
     if (safeMode && macStealth) envStealth = 'visible';
-    const stealthLevel = envStealth || ((cfg && cfg.stealthLevel) ? cfg.stealthLevel : 'visible');
+    const stealthLevel = envStealth || ((cfg && cfg.stealthLevel) ? cfg.stealthLevel : 'balanced');
     console.log('[stealth] platform:', process.platform, 'level:', stealthLevel, 'safeMode:', safeMode);
     const skipTaskbarFlag = macStealth ? (stealthLevel !== 'visible') : true;
     const hiddenMissionFlag = macStealth ? (stealthLevel !== 'visible') : true;
