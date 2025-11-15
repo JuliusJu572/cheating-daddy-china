@@ -3,9 +3,16 @@ const path = require('path');
 const os = require('os');
 
 // Default configuration
+// NOTE (macOS remote debugging convenience):
+// - We set macOS default stealth to `visible` so the window is not hidden
+//   during screen sharing or by Mission Control, which makes remote debugging
+//   easier. On non-macOS platforms the default remains `balanced`.
+// - Users can change this at runtime in Settings → Stealth Profile (persisted
+//   via config). Future modifications only need to adjust this default or
+//   update the level through the UI.
 const DEFAULT_CONFIG = {
     onboarded: false,
-    stealthLevel: "balanced",
+    stealthLevel: os.platform() === 'darwin' ? 'visible' : 'balanced',
     layout: "normal"
 };
 

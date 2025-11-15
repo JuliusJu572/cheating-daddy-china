@@ -3,6 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('os');
 const { applyStealthMeasures, startTitleRandomization } = require('./stealthFeatures');
+const { getLocalConfig } = require('../config');
 
 let mouseEventsIgnored = false;
 let windowResizing = false;
@@ -30,6 +31,14 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
     let windowWidth = 1100;
     let windowHeight = 800;
 
+    // macOS stealth profile mapping
+    // For remote debugging convenience we default macOS to `visible` via config;
+    // users can change it in Settings → Stealth Profile.
+    const cfg = getLocalConfig();
+    const stealthLevel = (cfg && cfg.stealthLevel) ? cfg.stealthLevel : 'visible';
+    const isMac = process.platform === 'darwin';
+    const macVisible = isMac && stealthLevel === 'visible';
+
     // 在 createWindow 函数中，添加 macOS 特定配置：
     const mainWindow = new BrowserWindow({
         width: windowWidth,
@@ -38,8 +47,8 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
         transparent: true,
         hasShadow: false,
         alwaysOnTop: true,
-        skipTaskbar: true,
-        hiddenInMissionControl: true,
+        skipTaskbar: isMac ? !macVisible : true,
+        hiddenInMissionControl: isMac ? !macVisible : true,
         vibrancy: process.platform === 'darwin' ? 'under-window' : undefined, // 添加这行
         visualEffectState: process.platform === 'darwin' ? 'active' : undefined, // 添加这行
         webPreferences: {
@@ -64,7 +73,8 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
     );
 
     mainWindow.setResizable(false);
-    mainWindow.setContentProtection(true);
+    // macOS: content protection depends on stealth profile; others remain enabled
+    mainWindow.setContentProtection(isMac ? !macVisible : true);
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
     // Center window at the top of the screen
@@ -89,10 +99,16 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
     }
 
     // Apply stealth measures
-    applyStealthMeasures(mainWindow);
-
-    // Start periodic title randomization for additional stealth
-    startTitleRandomization(mainWindow);
+    if (isMac) {
+        // Only apply when not `visible`; keeps mac debuggable by default
+        if (!macVisible) {
+            applyStealthMeasures(mainWindow);
+            startTitleRandomization(mainWindow);
+        }
+    } else {
+        applyStealthMeasures(mainWindow);
+        startTitleRandomization(mainWindow);
+    }
 
     // After window is created, check for layout preference and resize if needed
     mainWindow.webContents.once('dom-ready', () => {
@@ -128,8 +144,14 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
                                     : true;
                             } catch (e) { return true; }
                         })()`);
-                        mainWindow.setContentProtection(contentProtection);
-                        console.log('Content protection loaded from settings:', contentProtection);
+                        if (isMac) {
+                            // macOS: preference is governed by stealth profile; `visible` disables protection
+                            mainWindow.setContentProtection(!macVisible);
+                            console.log('Content protection (macOS) set from stealth profile:', !macVisible);
+                        } else {
+                            mainWindow.setContentProtection(contentProtection);
+                            console.log('Content protection loaded from settings:', contentProtection);
+                        }
                     } catch (error) {
                         console.error('Error loading content protection:', error);
                         mainWindow.setContentProtection(true);
