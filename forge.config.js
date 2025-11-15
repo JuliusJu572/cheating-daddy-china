@@ -7,28 +7,15 @@ module.exports = {
         extraResource: ['./src/assets/SystemAudioDump'],
         name: 'Cheating Daddy',
         icon: 'src/assets/logo',
-        // use `security find-identity -v -p codesigning` to find your identity
-        // for macos signing
-        // also fuck apple
-        // osxSign: {
-        //    identity: '<paste your identity here>',
-        //   optionsForFile: (filePath) => {
-        //       return {
-        //           entitlements: 'entitlements.plist',
-        //       };
-        //   },
-        // },
-        // notarize if off cuz i ran this for 6 hours and it still didnt finish
-        // osxNotarize: {
-        //    appleId: 'your apple id',
-        //    appleIdPassword: 'app specific password',
-        //    teamId: 'your team id',
-        // },
+        appBundleId: 'com.cheatingdaddy.app',
+        appCategoryType: 'public.app-category.utilities',
     },
     rebuildConfig: {},
     makers: [
+        // Windows only
         {
             name: '@electron-forge/maker-squirrel',
+            platforms: ['win32'],
             config: {
                 name: 'cheating-daddy',
                 productName: 'Cheating Daddy',
@@ -37,10 +24,16 @@ module.exports = {
                 createStartMenuShortcut: true,
             },
         },
+        // macOS only
         {
             name: '@electron-forge/maker-dmg',
             platforms: ['darwin'],
+            config: {
+                name: 'Cheating Daddy',
+                format: 'ULFO',
+            }
         },
+        // Linux only
         {
             name: '@reforged/maker-appimage',
             platforms: ['linux'],
@@ -61,8 +54,6 @@ module.exports = {
             name: '@electron-forge/plugin-auto-unpack-natives',
             config: {},
         },
-        // Fuses are used to enable/disable various Electron functionality
-        // at package time, before code signing the application
         new FusesPlugin({
             version: FuseVersion.V1,
             [FuseV1Options.RunAsNode]: false,
