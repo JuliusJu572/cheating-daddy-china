@@ -21,7 +21,7 @@ const makers = [
         platforms: ['darwin'],
         config: {
             name: 'Cheating Daddy',
-            format: 'ULFO',
+            format: 'UDZO',
         }
     },
 ];
@@ -52,6 +52,7 @@ module.exports = {
         icon: 'src/assets/logo',
         appBundleId: 'com.cheatingdaddy.app',
         appCategoryType: 'public.app-category.utilities',
+
         // 添加这个配置 - 支持两种架构
         osxUniversal: {
             x64ArchFiles: '*',

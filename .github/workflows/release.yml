@@ -53,7 +53,7 @@ jobs:
       - run: npm ci
       
       - name: Build macOS Universal Binary
-        run: npm run make -- --platform=darwin --arch=x64,arm64
+        run: npm run make -- --platform=darwin --arch=universal
       
       - name: List macOS build output
         run: |
@@ -63,7 +63,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: macos-build
-          path: out/**/*.dmg
+          path: |
+            out/**/*.dmg
+            out/**/*.zip
       
       # Upload artifacts only; publishing is done in a final job after all builds finish
 
