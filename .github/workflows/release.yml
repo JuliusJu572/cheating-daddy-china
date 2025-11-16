@@ -40,6 +40,10 @@ jobs:
 
   build-macos:
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
     steps:
       - uses: actions/checkout@v4
       
@@ -50,51 +54,39 @@ jobs:
       
       - run: npm ci
       
-      # 安装 @electron/universal
-      - name: Install electron/universal
-        run: npm install --save-dev @electron/universal electron-installer-dmg
+      - name: Build macOS for ${{ matrix.arch }}
+        run: npm run make -- --platform=darwin --arch=${{ matrix.arch }}
       
-      # 分别构建两个架构
-      - name: Build macOS x64
-        run: npm run package -- --platform=darwin --arch=x64
-      
-      - name: Build macOS arm64
-        run: npm run package -- --platform=darwin --arch=arm64
-      
-      # 合并成 Universal Binary
-      - name: Create Universal Binary
+      # 重命名文件，添加架构后缀
+      - name: Rename files with architecture suffix
         run: |
-          npx @electron/universal \
-            --x64 "out/Cheating Buddy-darwin-x64/Cheating Buddy.app" \
-            --arm64 "out/Cheating Buddy-darwin-arm64/Cheating Buddy.app" \
-            --output "out/Cheating Buddy-darwin-universal/Cheating Buddy.app"
-      
-      # 验证 Universal Binary
-      - name: Verify Universal Binary
-        run: |
-          echo "Checking architecture:"
-          file "out/Cheating Buddy-darwin-universal/Cheating Buddy.app/Contents/MacOS/Cheating Buddy"
-      
-      # 基于 Universal Binary 创建 DMG
-      - name: Create DMG from Universal Binary
-        run: |
-          mkdir -p "out/make"
-          npx electron-installer-dmg \
-            "out/Cheating Buddy-darwin-universal/Cheating Buddy.app" \
-            "Cheating Buddy" \
-            --out="out/make" \
-            --overwrite \
-            --format=UDZO
+          cd out/make
+          # 重命名 DMG 文件
+          for file in *.dmg; do
+            if [ -f "$file" ]; then
+              newname="${file%.dmg}-${{ matrix.arch }}.dmg"
+              mv "$file" "$newname"
+              echo "Renamed: $file -> $newname"
+            fi
+          done
+          # 重命名 ZIP 文件（如果有）
+          for file in *.zip; do
+            if [ -f "$file" ]; then
+              newname="${file%.zip}-${{ matrix.arch }}.zip"
+              mv "$file" "$newname"
+              echo "Renamed: $file -> $newname"
+            fi
+          done
       
       - name: List macOS build output
         run: |
-          echo "macOS build files:"
-          find out -name '*.dmg' -type f
+          echo "macOS build files for ${{ matrix.arch }}:"
+          find out/make -type f
       
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-build
-          path: out/make/**/*.dmg
+          name: macos-${{ matrix.arch }}
+          path: out/make/*
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
@@ -109,10 +101,16 @@ jobs:
           name: windows-build
           path: dist/windows
 
-      - name: Download macOS artifact
+      - name: Download macOS x64 artifact
         uses: actions/download-artifact@v4
         with:
-          name: macos-build
+          name: macos-x64
+          path: dist/macos
+
+      - name: Download macOS arm64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-arm64
           path: dist/macos
 
       - name: List all files
@@ -133,8 +131,6 @@ jobs:
           tag_name: v${{ env.VERSION }}
           name: Release v${{ env.VERSION }}
           generate_release_notes: true
-          files: |
-            dist/windows/**/*.exe
-            dist/macos/**/*.dmg
+          files: dist/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
