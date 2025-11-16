@@ -40,10 +40,6 @@ jobs:
 
   build-macos:
     runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64, arm64]
     steps:
       - uses: actions/checkout@v4
       
@@ -54,39 +50,19 @@ jobs:
       
       - run: npm ci
       
-      - name: Build macOS for ${{ matrix.arch }}
-        run: npm run make -- --platform=darwin --arch=${{ matrix.arch }}
-      
-      # 重命名文件，添加架构后缀
-      - name: Rename files with architecture suffix
-        run: |
-          cd out/make
-          # 重命名 DMG 文件
-          for file in *.dmg; do
-            if [ -f "$file" ]; then
-              newname="${file%.dmg}-${{ matrix.arch }}.dmg"
-              mv "$file" "$newname"
-              echo "Renamed: $file -> $newname"
-            fi
-          done
-          # 重命名 ZIP 文件（如果有）
-          for file in *.zip; do
-            if [ -f "$file" ]; then
-              newname="${file%.zip}-${{ matrix.arch }}.zip"
-              mv "$file" "$newname"
-              echo "Renamed: $file -> $newname"
-            fi
-          done
+      # 只构建 x64，通过 Rosetta 2 兼容所有 Mac
+      - name: Build macOS (x64, universal via Rosetta 2)
+        run: npm run make -- --platform=darwin --arch=x64
       
       - name: List macOS build output
         run: |
-          echo "macOS build files for ${{ matrix.arch }}:"
+          echo "macOS build files:"
           find out/make -type f
       
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}
-          path: out/make/*
+          name: macos-build
+          path: out/make/*.dmg
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
@@ -99,19 +75,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: windows-build
-          path: dist/windows
+          path: dist
 
-      - name: Download macOS x64 artifact
+      - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
-          name: macos-x64
-          path: dist/macos
-
-      - name: Download macOS arm64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-arm64
-          path: dist/macos
+          name: macos-build
+          path: dist
 
       - name: List all files
         run: |
@@ -131,6 +101,6 @@ jobs:
           tag_name: v${{ env.VERSION }}
           name: Release v${{ env.VERSION }}
           generate_release_notes: true
-          files: dist/**/*
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
