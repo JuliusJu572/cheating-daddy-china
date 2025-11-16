@@ -6,7 +6,7 @@ export const translations = {
     api_key_help_prefix: "没有 API Key?",
     api_key_help_link: "点击帮助",
     header_title_onboarding: "欢迎使用 Cheating Daddy",
-    header_title_main: "作弊老爹",
+    header_title_main: "作弊老铁",
     header_title_customize: "设置",
     header_title_help: "帮助与快捷键",
     header_title_history: "会话历史",

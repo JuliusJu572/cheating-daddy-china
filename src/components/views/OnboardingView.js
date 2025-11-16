@@ -438,7 +438,7 @@ export class OnboardingView extends LitElement {
         const slides = [
             {
                 icon: 'assets/onboarding/welcome.svg',
-                title: '欢迎使用 作弊老爹',
+                title: '欢迎使用 作弊老铁',
                 content:
                     '一个在面试/会议中实时监听与观察，自动给出建议与答案的 AI 助手。',
             },

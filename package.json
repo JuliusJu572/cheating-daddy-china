@@ -1,7 +1,7 @@
 {
     "name": "cheating-daddy",
-    "productName": "作弊老爹",
-    "version": "0.4.0",
+    "productName": "作弊老铁",
+    "version": "0.5.0",
     "description": "面试与学习的 AI 助手",
     "main": "src/index.js",
     "scripts": {
@@ -13,7 +13,7 @@
         "test": "vitest run"
     },
     "keywords": [
-        "作弊老爹",
+        "作弊老铁",
         "AI 助手",
         "面试助手",
         "学习助手",
