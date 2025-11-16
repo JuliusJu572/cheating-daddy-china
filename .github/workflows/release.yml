@@ -52,8 +52,8 @@ jobs:
       
       - run: npm ci
       
-      - name: Build macOS
-        run: npm run make -- --platform=darwin
+      - name: Build macOS Universal Binary
+        run: npm run make -- --platform=darwin --arch=x64,arm64
       
       - name: List macOS build output
         run: |
