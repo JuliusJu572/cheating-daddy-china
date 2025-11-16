@@ -293,9 +293,9 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
                 await mainWindow.webContents.executeJavaScript(`(async () => {
                     try {
                         const view = cheddar.getCurrentView();
-                        if (view === 'main') {
+                        if (view !== 'assistant') {
                             await cheddar.element().handleStart();
-                            await new Promise(resolve => setTimeout(resolve, 500));
+                            await new Promise(resolve => setTimeout(resolve, 700));
                         }
                         if (typeof window.captureManualScreenshot === 'function') {
                             await window.captureManualScreenshot();
