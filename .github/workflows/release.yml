@@ -53,12 +53,13 @@ jobs:
       - run: npm ci
       
       - name: Build macOS Universal Binary
-        run: npm run make -- --platform=darwin --arch=universal
+        run: npm run make -- --platform=darwin --arch=x64
       
       - name: List macOS build output
         run: |
           echo "macOS build files:"
           find out -name '*.dmg' -type f
+          find out -name '*.zip' -type f
       
       - uses: actions/upload-artifact@v4
         with:
