@@ -8,9 +8,9 @@ const makers = [
         name: '@electron-forge/maker-squirrel',
         platforms: ['win32'],
         config: {
-            name: 'cheating-daddy',
-            productName: 'Cheating Daddy',
-            shortcutName: 'Cheating Daddy',
+            name: 'cheating-buddy',
+            productName: 'Cheating Buddy',
+            shortcutName: 'Cheating Buddy',
             createDesktopShortcut: true,
             createStartMenuShortcut: true,
         },
@@ -20,9 +20,9 @@ const makers = [
         name: '@electron-forge/maker-dmg',
         platforms: ['darwin'],
         config: {
-            name: 'Cheating Daddy',
+            name: 'Cheating Buddy',
             format: 'UDZO',
-            artifactName: '${productName}-${version}-${arch}.dmg'
+            artifactName: '${productName}-${version}-${typeof arch !== "undefined" ? arch : "x64"}.dmg'
         }
     },
 ];
@@ -34,8 +34,8 @@ if (process.platform === 'linux') {
         platforms: ['linux'],
         config: {
             options: {
-                name: 'Cheating Daddy',
-                productName: 'Cheating Daddy',
+                name: 'Cheating Buddy',
+                productName: 'Cheating Buddy',
                 genericName: 'AI Assistant',
                 description: 'AI assistant for interviews and learning',
                 categories: ['Development', 'Education'],
@@ -49,7 +49,7 @@ module.exports = {
     packagerConfig: {
         asar: true,
         extraResource: ['./src/assets/SystemAudioDump'],
-        name: 'Cheating Daddy',
+        name: 'Cheating Buddy',
         icon: 'src/assets/logo',
         appBundleId: 'com.cheatingdaddy.app',
         appCategoryType: 'public.app-category.utilities',

@@ -209,7 +209,16 @@ function buildSystemPrompt(promptParts, customPrompt = '', googleSearchEnabled =
         sections.push('\n\n', promptParts.searchUsage);
     }
 
-    sections.push('\n\n', promptParts.content, '\n\nUser-provided context\n-----\n', customPrompt, '\n-----\n\n', promptParts.outputInstructions);
+    sections.push(
+        '\n\n',
+        promptParts.content,
+        '\n\nUser-provided context\n-----\n',
+        customPrompt,
+        '\n-----\n\n',
+        promptParts.outputInstructions,
+        '\n\n',
+        '语言与输出要求：默认使用中文回答；除非题目或问题为英文，或明确要求英文，再使用英文回答。'
+    );
 
     return sections.join('');
 }

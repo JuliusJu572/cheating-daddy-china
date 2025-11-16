@@ -500,7 +500,7 @@ export class OnboardingView extends LitElement {
                                   </div>
                                   <div class="feature-item">
                                       <span class="feature-icon">🖼️</span>
-                                      使用 <span class="key">Ctrl+Enter</span> 截图并询问“下一步”
+                                      使用 <span class="key">${process.platform === 'darwin' ? 'Cmd+K' : 'Ctrl+Enter'}</span> 截图并询问“下一步”
                                   </div>
                                   <div class="feature-item">
                                       <span class="feature-icon">🪟</span>

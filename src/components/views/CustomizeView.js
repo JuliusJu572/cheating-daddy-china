@@ -989,7 +989,7 @@ export class CustomizeView extends LitElement {
                                 placeholder="Add specific instructions for how you want the AI to behave during ${
                                     profileNames[this.selectedProfile] || 'this interaction'
                                 }..."
-                                .value=${localStorage.getItem('customPrompt') || '除非提出的面试问题是英文，不然一律请使用中文回答，如果是代码题，那么直接给出最终代码，以及代码的思路；如果是开放思维题，那么请尽可能多的给出不同的思路和方案。'}
+                                .value=${localStorage.getItem('customPrompt') || '默认使用中文回答；除非题目或问题为英文，或明确要求英文，再使用英文回答。若为代码题，请直接给出最终代码与简要思路；若为开放题，请尽可能多给出不同的思路与方案。'}
                                 rows="4"
                                 @input=${this.handleCustomPromptInput}
                             ></textarea>
