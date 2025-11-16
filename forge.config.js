@@ -22,6 +22,7 @@ const makers = [
         config: {
             name: 'Cheating Daddy',
             format: 'UDZO',
+            artifactName: '${productName}-${version}-${arch}.dmg'
         }
     },
 ];
