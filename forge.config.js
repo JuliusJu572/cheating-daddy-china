@@ -1,7 +1,6 @@
 const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 
-// 根据当前平台动态配置 makers
 const makers = [
     // Windows
     {
@@ -15,19 +14,22 @@ const makers = [
             createStartMenuShortcut: true,
         },
     },
-    // macOS
+    // macOS - ZIP (可选)
+    {
+        name: '@electron-forge/maker-zip',
+        platforms: ['darwin'],
+    },
+    // macOS - DMG
     {
         name: '@electron-forge/maker-dmg',
         platforms: ['darwin'],
         config: {
             name: 'Cheating Buddy',
             format: 'UDZO',
-            artifactName: '${productName}-${version}-${typeof arch !== "undefined" ? arch : "x64"}.dmg'
         }
     },
 ];
 
-// 只在 Linux 上添加 AppImage maker
 if (process.platform === 'linux') {
     makers.push({
         name: '@reforged/maker-appimage',
@@ -53,6 +55,7 @@ module.exports = {
         icon: 'src/assets/logo',
         appBundleId: 'com.cheatingdaddy.app',
         appCategoryType: 'public.app-category.utilities',
+        // ✅ 不需要 osxUniversal，我们手动合并
     },
     rebuildConfig: {},
     makers: makers,
