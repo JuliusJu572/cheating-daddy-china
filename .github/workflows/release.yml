@@ -39,6 +39,67 @@ jobs:
           path: out/make/**/*.exe
 
   build-macos:
+      runs-on: macos-latest
+      steps:
+        - uses: actions/checkout@v4
+        
+        - uses: actions/setup-node@v4
+          with:
+            node-version: '18'
+            cache: 'npm'
+        
+        - run: npm ci
+        
+        # 安装 @electron/universal
+        - name: Install electron/universal
+          run: npm install --save-dev @electron/universal
+        
+        # 分别构建两个架构
+        - name: Build macOS x64
+          run: npm run package -- --platform=darwin --arch=x64
+        
+        - name: Build macOS arm64
+          run: npm run package -- --platform=darwin --arch=arm64
+        
+        # 合并成 Universal Binary
+        - name: Create Universal Binary
+          run: |
+            npx @electron/universal \
+              --x64 "out/Cheating Buddy-darwin-x64/Cheating Buddy.app" \
+              --arm64 "out/Cheating Buddy-darwin-arm64/Cheating Buddy.app" \
+              --output "out/Cheating Buddy-darwin-universal/Cheating Buddy.app"
+        
+        # 验证 Universal Binary
+        - name: Verify Universal Binary
+          run: |
+            echo "Checking architecture:"
+            file "out/Cheating Buddy-darwin-universal/Cheating Buddy.app/Contents/MacOS/Cheating Buddy"
+        
+        # 基于 Universal Binary 创建 DMG
+        - name: Create DMG from Universal Binary
+          run: |
+            # 复制 universal app 到正确位置供 maker 使用
+            mkdir -p "out/make"
+            
+            # 使用 electron-installer-dmg 直接创建 DMG
+            npm install --save-dev electron-installer-dmg
+            npx electron-installer-dmg \
+              "out/Cheating Buddy-darwin-universal/Cheating Buddy.app" \
+              "Cheating Buddy" \
+              --out="out/make" \
+              --overwrite
+        
+        - name: List macOS build output
+          run: |
+            echo "macOS build files:"
+            find out -name '*.dmg' -type f
+            find out -name '*.app' -type d
+        
+        - uses: actions/upload-artifact@v4
+          with:
+            name: macos-build
+            path: out/make/**/*.dmg
+          
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
