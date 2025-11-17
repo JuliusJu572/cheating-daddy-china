@@ -18,7 +18,10 @@ let mainWindow = null;
 // Initialize random process names for stealth
 const randomNames = initializeRandomProcessNames();
 
-function createMainWindow() {
+async function createMainWindow() {
+    if (!app.isReady()) {
+        await app.whenReady();
+    }
     mainWindow = createWindow(sendToRenderer, geminiSessionRef, randomNames);
     return mainWindow;
 }
@@ -27,7 +30,7 @@ app.whenReady().then(async () => {
     // Apply anti-analysis measures with random delay
     await applyAntiAnalysisMeasures();
 
-    createMainWindow();
+    await createMainWindow();
     setupGeminiIpcHandlers(geminiSessionRef);
     setupGeneralIpcHandlers();
 });
@@ -56,10 +59,10 @@ app.on('before-quit', () => {
     }
 });
 
-app.on('activate', () => {
+app.on('activate', async () => {
     // macOS 上点击 Dock 图标时的行为
     if (BrowserWindow.getAllWindows().length === 0) {
-        createMainWindow();
+        await createMainWindow();
     } else {
         // 如果窗口存在但隐藏，显示它
         const windows = BrowserWindow.getAllWindows();
