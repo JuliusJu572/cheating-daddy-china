@@ -661,7 +661,7 @@ async function startQuickAudioCapture() {
     // 如果正在录音，则停止录音
     if (isQuickRecording) {
         try {
-            cheddar.setStatus('Processing...');
+            cheddar.setStatus('⏹️ Stopping recording...');
             
             // 停止录音
             if (quickRecordProcessor) {
@@ -673,24 +673,26 @@ async function startQuickAudioCapture() {
             if (quickRecordStream) {
                 quickRecordStream.getTracks().forEach(track => track.stop());
             }
+            
             // 处理录音数据
+            cheddar.setStatus(`📊 Buffer: ${quickRecordBuffer.length} samples`);
+            await new Promise(r => setTimeout(r, 1000)); // 显示1秒
+            
             if (quickRecordBuffer.length > 0) {
                 const pcm = convertFloat32ToInt16(quickRecordBuffer);
                 const base64 = arrayBufferToBase64(pcm.buffer);
-                cheddar.setStatus('Transcribing...');
-
-                console.log('📊 Audio buffer size:', quickRecordBuffer.length, 'samples');
-                console.log('📊 PCM size:', pcm.length, 'bytes');
+                
+                cheddar.setStatus(`✅ PCM: ${pcm.length} bytes, transcribing...`);
                 
                 const result = await ipcRenderer.invoke('save-audio-and-transcribe', { 
                     pcmBase64: base64, 
                     sampleRate: 16000 
                 });
                 if (!result || !result.success) {
-                    cheddar.setStatus('Error: ' + (result?.error || 'Unknown'));
+                    cheddar.setStatus('❌ Error: ' + (result?.error || 'Unknown'));
                 }
             } else {
-                cheddar.setStatus('No audio recorded');
+                cheddar.setStatus('❌ No audio data in buffer!');
             }
             
             // 重置状态
@@ -702,8 +704,7 @@ async function startQuickAudioCapture() {
             quickRecordStartTime = null;
             
         } catch (error) {
-            console.error('Error stopping audio capture:', error);
-            cheddar.setStatus('Error: ' + error.message);
+            cheddar.setStatus('❌ Stop error: ' + error.message);
             isQuickRecording = false;
         }
         return;
@@ -713,13 +714,15 @@ async function startQuickAudioCapture() {
     try {
         let streamToUse = null;
         
-        // ✅ 所有平台：尝试使用已有的 mediaStream（如果有音频轨道）
+        // ✅ 检查是否有现成的 mediaStream
         if (mediaStream && mediaStream.getAudioTracks().length > 0) {
-            console.log('📻 Using existing mediaStream for recording');
+            cheddar.setStatus('📻 Using existing stream...');
+            await new Promise(r => setTimeout(r, 800));
             streamToUse = mediaStream;
         } else {
-            // ✅ 没有音频轨道，需要请求新的屏幕共享（包含音频）
-            console.log('🎬 Requesting new screen share with audio...');
+            cheddar.setStatus('🎬 Requesting screen share...');
+            await new Promise(r => setTimeout(r, 800));
+            
             try {
                 quickRecordStream = await navigator.mediaDevices.getDisplayMedia({
                     video: {
@@ -736,63 +739,101 @@ async function startQuickAudioCapture() {
                     },
                 });
                 
-                // ✅ 检查是否获取到音频轨道
-                if (quickRecordStream.getAudioTracks().length === 0) {
-                    console.error('❌ No audio track in stream - user may not have checked "Share audio"');
-                    cheddar.setStatus('Error: Please check "Share audio" when prompted');
+                const audioTracks = quickRecordStream.getAudioTracks();
+                
+                if (audioTracks.length === 0) {
+                    cheddar.setStatus('❌ No audio track! Check "Share audio"');
                     quickRecordStream.getTracks().forEach(track => track.stop());
                     quickRecordStream = null;
                     return;
                 }
                 
+                cheddar.setStatus(`✅ Got stream: ${audioTracks[0].label}`);
+                await new Promise(r => setTimeout(r, 800));
                 streamToUse = quickRecordStream;
-                console.log('✅ Screen share with audio granted');
             } catch (getErr) {
-                console.error('❌ Failed to get screen share with audio:', getErr);
-                
-                // ✅ macOS：特别提示用户需要勾选音频
-                if (isMacOS) {
-                    cheddar.setStatus('Error: Screen recording requires "Share audio" checkbox');
-                } else {
-                    cheddar.setStatus('Error: Screen audio capture unavailable');
-                }
+                cheddar.setStatus('❌ Screen share failed: ' + getErr.name);
                 return;
             }
         }
 
         if (!streamToUse) {
-            cheddar.setStatus('Error: No audio stream available');
+            cheddar.setStatus('❌ No stream available!');
             return;
         }
 
         const stopKey = process.platform === 'darwin' ? 'Cmd+L' : 'Ctrl+L';
-        cheddar.setStatus(`Recording system audio... Press ${stopKey} to stop`);
-
+        
+        // ✅ 创建 AudioContext
+        cheddar.setStatus('🎙️ Creating AudioContext...');
+        await new Promise(r => setTimeout(r, 500));
+        
         quickRecordContext = new AudioContext({ sampleRate: 16000 });
+        
+        // ✅ 检查 AudioContext 状态
+        if (quickRecordContext.state === 'suspended') {
+            cheddar.setStatus('⚠️ Resuming AudioContext...');
+            await quickRecordContext.resume();
+            await new Promise(r => setTimeout(r, 500));
+        }
+        
+        cheddar.setStatus(`✅ Context: ${quickRecordContext.state}`);
+        await new Promise(r => setTimeout(r, 500));
+        
         const source = quickRecordContext.createMediaStreamSource(streamToUse);
         quickRecordProcessor = quickRecordContext.createScriptProcessor(8192, 1, 1);
         quickRecordBuffer = [];
         quickRecordStartTime = Date.now();
         isQuickRecording = true;
         
+        // ✅ 计数器跟踪 onaudioprocess 调用
+        let callCount = 0;
+        
         quickRecordProcessor.onaudioprocess = e => {
+            callCount++;
+            
             if (isQuickRecording) {
                 const input = e.inputBuffer.getChannelData(0);
                 quickRecordBuffer.push(...input);
                 
-                // 更新状态显示录音时长
                 const elapsed = Math.floor((Date.now() - quickRecordStartTime) / 1000);
-                const stopKey2 = process.platform === 'darwin' ? 'Cmd+L' : 'Ctrl+L';
-                cheddar.setStatus(`Recording system audio... ${elapsed}s (Press ${stopKey2} to stop)`);
+                
+                // ✅ 每秒显示一次详细信息
+                if (callCount % 10 === 0) {
+                    const hasSound = input.some(s => Math.abs(s) > 0.01);
+                    cheddar.setStatus(
+                        `🎙️ ${elapsed}s | Calls: ${callCount} | Sound: ${hasSound ? '✅' : '❌'} | ${stopKey} to stop`
+                    );
+                } else {
+                    cheddar.setStatus(`🎙️ Recording ${elapsed}s... (${stopKey} to stop)`);
+                }
             }
         };
+        
+        // ✅ 连接音频节点
+        cheddar.setStatus('🔗 Connecting nodes...');
+        await new Promise(r => setTimeout(r, 500));
         
         source.connect(quickRecordProcessor);
         quickRecordProcessor.connect(quickRecordContext.destination);
         
+        cheddar.setStatus(`✅ Recording started! Press ${stopKey} to stop`);
+        
+        // ✅ 5秒后检查是否有数据
+        setTimeout(() => {
+            if (isQuickRecording) {
+                if (callCount === 0) {
+                    cheddar.setStatus('⚠️ No callbacks yet! Check permissions');
+                } else if (quickRecordBuffer.length === 0) {
+                    cheddar.setStatus('⚠️ Callbacks OK but buffer empty!');
+                } else {
+                    cheddar.setStatus(`✅ Buffer: ${quickRecordBuffer.length} samples`);
+                }
+            }
+        }, 5000);
+        
     } catch (error) {
-        console.error('System audio capture error:', error);
-        cheddar.setStatus('Error: ' + error.message);
+        cheddar.setStatus('❌ Capture error: ' + error.message);
         isQuickRecording = false;
     }
 }
