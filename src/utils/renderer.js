@@ -661,50 +661,66 @@ async function startQuickAudioCapture() {
     // 如果正在录音，则停止录音
     if (isQuickRecording) {
         try {
-            cheddar.setStatus('⏹️ Stopping recording...');
-            
-            // 停止录音
-            if (quickRecordProcessor) {
-                quickRecordProcessor.disconnect();
-            }
-            if (quickRecordContext) {
-                await quickRecordContext.close();
-            }
-            if (quickRecordStream) {
-                quickRecordStream.getTracks().forEach(track => track.stop());
-            }
-            
-            // 处理录音数据
-            cheddar.setStatus(`📊 Buffer: ${quickRecordBuffer.length} samples`);
-            await new Promise(r => setTimeout(r, 1000)); // 显示1秒
-            
-            if (quickRecordBuffer.length > 0) {
-                const pcm = convertFloat32ToInt16(quickRecordBuffer);
-                const base64 = arrayBufferToBase64(pcm.buffer);
-                
-                cheddar.setStatus(`✅ PCM: ${pcm.length} bytes, transcribing...`);
-                
-                const result = await ipcRenderer.invoke('save-audio-and-transcribe', { 
-                    pcmBase64: base64, 
-                    sampleRate: 16000 
-                });
-                if (!result || !result.success) {
-                    cheddar.setStatus('❌ Error: ' + (result?.error || 'Unknown'));
+            if (isMacOS) {
+                // macOS: MediaRecorder 方式停止
+                if (window.quickMediaRecorder && window.quickMediaRecorder.state !== 'inactive') {
+                    return new Promise((resolve) => {
+                        window.quickMediaRecorder.onstop = async () => {
+                            if (quickRecordStream) {
+                                quickRecordStream.getTracks().forEach(track => track.stop());
+                            }
+                            
+                            isQuickRecording = false;
+                            quickRecordStream = null;
+                            window.quickMediaRecorder = null;
+                            resolve();
+                        };
+                        
+                        window.quickMediaRecorder.stop();
+                    });
                 }
             } else {
-                cheddar.setStatus('❌ No audio data in buffer!');
+                // Windows/Linux: ScriptProcessor 方式停止
+                if (quickRecordProcessor) {
+                    quickRecordProcessor.disconnect();
+                }
+                if (quickRecordContext) {
+                    await quickRecordContext.close();
+                }
+                if (quickRecordStream) {
+                    quickRecordStream.getTracks().forEach(track => track.stop());
+                }
+                
+                // 处理录音数据
+                if (quickRecordBuffer.length > 0) {
+                    const pcm = convertFloat32ToInt16(quickRecordBuffer);
+                    const base64 = arrayBufferToBase64(pcm.buffer);
+                    
+                    cheddar.setStatus('Transcribing...');
+                    
+                    const result = await ipcRenderer.invoke('save-audio-and-transcribe', { 
+                        pcmBase64: base64, 
+                        sampleRate: 16000 
+                    });
+                    
+                    if (!result || !result.success) {
+                        cheddar.setStatus('Error: ' + (result?.error || 'Unknown'));
+                    }
+                } else {
+                    cheddar.setStatus('No audio recorded');
+                }
+                
+                // 重置状态
+                isQuickRecording = false;
+                quickRecordStream = null;
+                quickRecordContext = null;
+                quickRecordProcessor = null;
+                quickRecordBuffer = [];
+                quickRecordStartTime = null;
             }
             
-            // 重置状态
-            isQuickRecording = false;
-            quickRecordStream = null;
-            quickRecordContext = null;
-            quickRecordProcessor = null;
-            quickRecordBuffer = [];
-            quickRecordStartTime = null;
-            
         } catch (error) {
-            cheddar.setStatus('❌ Stop error: ' + error.message);
+            cheddar.setStatus('Error: ' + error.message);
             isQuickRecording = false;
         }
         return;
@@ -714,15 +730,10 @@ async function startQuickAudioCapture() {
     try {
         let streamToUse = null;
         
-        // ✅ 检查是否有现成的 mediaStream
+        // 检查是否有现成的 mediaStream
         if (mediaStream && mediaStream.getAudioTracks().length > 0) {
-            cheddar.setStatus('📻 Using existing stream...');
-            await new Promise(r => setTimeout(r, 800));
             streamToUse = mediaStream;
         } else {
-            cheddar.setStatus('🎬 Requesting screen share...');
-            await new Promise(r => setTimeout(r, 800));
-            
             try {
                 quickRecordStream = await navigator.mediaDevices.getDisplayMedia({
                     video: {
@@ -742,98 +753,143 @@ async function startQuickAudioCapture() {
                 const audioTracks = quickRecordStream.getAudioTracks();
                 
                 if (audioTracks.length === 0) {
-                    cheddar.setStatus('❌ No audio track! Check "Share audio"');
+                    cheddar.setStatus('Error: No audio track');
                     quickRecordStream.getTracks().forEach(track => track.stop());
                     quickRecordStream = null;
                     return;
                 }
                 
-                cheddar.setStatus(`✅ Got stream: ${audioTracks[0].label}`);
-                await new Promise(r => setTimeout(r, 800));
                 streamToUse = quickRecordStream;
             } catch (getErr) {
-                cheddar.setStatus('❌ Screen share failed: ' + getErr.name);
+                cheddar.setStatus('Error: Permission denied');
                 return;
             }
         }
 
         if (!streamToUse) {
-            cheddar.setStatus('❌ No stream available!');
+            cheddar.setStatus('Error: No audio stream');
             return;
         }
 
         const stopKey = process.platform === 'darwin' ? 'Cmd+L' : 'Ctrl+L';
         
-        // ✅ 创建 AudioContext
-        cheddar.setStatus('🎙️ Creating AudioContext...');
-        await new Promise(r => setTimeout(r, 500));
-        
-        quickRecordContext = new AudioContext({ sampleRate: 16000 });
-        
-        // ✅ 检查 AudioContext 状态
-        if (quickRecordContext.state === 'suspended') {
-            cheddar.setStatus('⚠️ Resuming AudioContext...');
-            await quickRecordContext.resume();
-            await new Promise(r => setTimeout(r, 500));
+        if (isMacOS) {
+            // macOS: 使用 MediaRecorder
+            const chunks = [];
+            let recorder;
+            
+            // 检查支持的格式
+            const mimeTypes = [
+                'audio/webm;codecs=opus',
+                'audio/webm',
+                'audio/mp4',
+            ];
+            
+            let supportedMimeType = null;
+            for (const mime of mimeTypes) {
+                if (MediaRecorder.isTypeSupported(mime)) {
+                    supportedMimeType = mime;
+                    break;
+                }
+            }
+            
+            if (!supportedMimeType) {
+                cheddar.setStatus('Error: No supported audio format');
+                return;
+            }
+            
+            try {
+                recorder = new MediaRecorder(streamToUse, {
+                    mimeType: supportedMimeType
+                });
+            } catch (e) {
+                cheddar.setStatus('Error: MediaRecorder failed');
+                return;
+            }
+            
+            recorder.ondataavailable = e => {
+                if (e.data.size > 0) {
+                    chunks.push(e.data);
+                }
+            };
+            
+            recorder.onstop = async () => {
+                if (chunks.length === 0) {
+                    cheddar.setStatus('No audio recorded');
+                    return;
+                }
+                
+                try {
+                    const audioBlob = new Blob(chunks, { type: supportedMimeType });
+                    const arrayBuffer = await audioBlob.arrayBuffer();
+                    const audioContext = new AudioContext({ sampleRate: 16000 });
+                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    
+                    const channelData = audioBuffer.getChannelData(0);
+                    const pcm = convertFloat32ToInt16(channelData);
+                    const base64 = arrayBufferToBase64(pcm.buffer);
+                    
+                    cheddar.setStatus('Transcribing...');
+                    
+                    const result = await ipcRenderer.invoke('save-audio-and-transcribe', { 
+                        pcmBase64: base64, 
+                        sampleRate: 16000 
+                    });
+                    
+                    if (!result || !result.success) {
+                        cheddar.setStatus('Error: ' + (result?.error || 'Unknown'));
+                    }
+                    
+                } catch (error) {
+                    cheddar.setStatus('Error: ' + error.message);
+                }
+            };
+            
+            recorder.onerror = (e) => {
+                cheddar.setStatus('Error: Recording failed');
+            };
+            
+            try {
+                recorder.start(100);
+                window.quickMediaRecorder = recorder;
+                isQuickRecording = true;
+                quickRecordStartTime = Date.now();
+                
+                cheddar.setStatus(`Recording... (${stopKey} to stop)`);
+                
+            } catch (startErr) {
+                cheddar.setStatus('Error: ' + startErr.message);
+            }
+            
+        } else {
+            // Windows/Linux: 使用 ScriptProcessor
+            quickRecordContext = new AudioContext({ sampleRate: 16000 });
+            
+            if (quickRecordContext.state === 'suspended') {
+                await quickRecordContext.resume();
+            }
+            
+            const source = quickRecordContext.createMediaStreamSource(streamToUse);
+            quickRecordProcessor = quickRecordContext.createScriptProcessor(8192, 1, 1);
+            quickRecordBuffer = [];
+            quickRecordStartTime = Date.now();
+            isQuickRecording = true;
+            
+            quickRecordProcessor.onaudioprocess = e => {
+                if (isQuickRecording) {
+                    const input = e.inputBuffer.getChannelData(0);
+                    quickRecordBuffer.push(...input);
+                }
+            };
+            
+            source.connect(quickRecordProcessor);
+            quickRecordProcessor.connect(quickRecordContext.destination);
+            
+            cheddar.setStatus(`Recording... (${stopKey} to stop)`);
         }
         
-        cheddar.setStatus(`✅ Context: ${quickRecordContext.state}`);
-        await new Promise(r => setTimeout(r, 500));
-        
-        const source = quickRecordContext.createMediaStreamSource(streamToUse);
-        quickRecordProcessor = quickRecordContext.createScriptProcessor(8192, 1, 1);
-        quickRecordBuffer = [];
-        quickRecordStartTime = Date.now();
-        isQuickRecording = true;
-        
-        // ✅ 计数器跟踪 onaudioprocess 调用
-        let callCount = 0;
-        
-        quickRecordProcessor.onaudioprocess = e => {
-            callCount++;
-            
-            if (isQuickRecording) {
-                const input = e.inputBuffer.getChannelData(0);
-                quickRecordBuffer.push(...input);
-                
-                const elapsed = Math.floor((Date.now() - quickRecordStartTime) / 1000);
-                
-                // ✅ 每秒显示一次详细信息
-                if (callCount % 10 === 0) {
-                    const hasSound = input.some(s => Math.abs(s) > 0.01);
-                    cheddar.setStatus(
-                        `🎙️ ${elapsed}s | Calls: ${callCount} | Sound: ${hasSound ? '✅' : '❌'} | ${stopKey} to stop`
-                    );
-                } else {
-                    cheddar.setStatus(`🎙️ Recording ${elapsed}s... (${stopKey} to stop)`);
-                }
-            }
-        };
-        
-        // ✅ 连接音频节点
-        cheddar.setStatus('🔗 Connecting nodes...');
-        await new Promise(r => setTimeout(r, 500));
-        
-        source.connect(quickRecordProcessor);
-        quickRecordProcessor.connect(quickRecordContext.destination);
-        
-        cheddar.setStatus(`✅ Recording started! Press ${stopKey} to stop`);
-        
-        // ✅ 5秒后检查是否有数据
-        setTimeout(() => {
-            if (isQuickRecording) {
-                if (callCount === 0) {
-                    cheddar.setStatus('⚠️ No callbacks yet! Check permissions');
-                } else if (quickRecordBuffer.length === 0) {
-                    cheddar.setStatus('⚠️ Callbacks OK but buffer empty!');
-                } else {
-                    cheddar.setStatus(`✅ Buffer: ${quickRecordBuffer.length} samples`);
-                }
-            }
-        }, 5000);
-        
     } catch (error) {
-        cheddar.setStatus('❌ Capture error: ' + error.message);
+        cheddar.setStatus('Error: ' + error.message);
         isQuickRecording = false;
     }
 }
