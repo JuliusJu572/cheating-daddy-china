@@ -1,10 +1,7 @@
-name: Build macOS DMG
+name: Build macOS DMG (manual)
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
 
 jobs:
   build-macos:
@@ -43,22 +40,4 @@ jobs:
           path: out/make/**/*.dmg
           if-no-files-found: error
       
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: out/make/**/*.dmg
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          body: |
-            ## macOS Installation
-            
-            1. Download the `.dmg` file below
-            2. Open the DMG file
-            3. Drag CheatingDaddy to Applications folder
-            4. Right-click the app and select "Open" (first time only)
-            
-            **Note:** If you see a security warning, go to System Preferences > Security & Privacy and click "Open Anyway"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Removed auto-release to avoid conflicts with Release All workflow
