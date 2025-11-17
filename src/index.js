@@ -14,15 +14,20 @@ const { pcmToWav } = require('./audioUtils');
 const FormData = require('form-data');
 const geminiSessionRef = { current: null };
 let mainWindow = null;
+let creatingWindow = false;
 
 // Initialize random process names for stealth
 const randomNames = initializeRandomProcessNames();
 
 async function createMainWindow() {
+    if (creatingWindow) return mainWindow;
+    if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+    creatingWindow = true;
     if (!app.isReady()) {
         await app.whenReady();
     }
     mainWindow = createWindow(sendToRenderer, geminiSessionRef, randomNames);
+    creatingWindow = false;
     return mainWindow;
 }
 
@@ -61,15 +66,13 @@ app.on('before-quit', () => {
 
 app.on('activate', async () => {
     // macOS 上点击 Dock 图标时的行为
-    if (BrowserWindow.getAllWindows().length === 0) {
-        await createMainWindow();
-    } else {
-        // 如果窗口存在但隐藏，显示它
-        const windows = BrowserWindow.getAllWindows();
-        if (windows.length > 0 && !windows[0].isVisible()) {
-            windows[0].showInactive();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        if (!mainWindow.isVisible()) {
+            mainWindow.showInactive();
         }
+        return;
     }
+    await createMainWindow();
 });
 
 function setupGeneralIpcHandlers() {
