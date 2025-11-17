@@ -178,7 +178,7 @@ function getDefaultKeybinds() {
         moveRight: isMac ? 'Alt+Right' : 'Ctrl+Right',
         toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\',
         toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
-        nextStep: isMac ? 'Cmd+K' : 'Ctrl+Enter',
+        nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
         previousResponse: isMac ? 'Cmd+[' : 'Ctrl+[',
         nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
         scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
@@ -293,9 +293,9 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
                 await mainWindow.webContents.executeJavaScript(`(async () => {
                     try {
                         const view = cheddar.getCurrentView();
-                        if (view !== 'assistant') {
+                        if (view === 'main') {
                             await cheddar.element().handleStart();
-                            await new Promise(resolve => setTimeout(resolve, 700));
+                            await new Promise(resolve => setTimeout(resolve, 500));
                         }
                         if (typeof window.captureManualScreenshot === 'function') {
                             await window.captureManualScreenshot();

@@ -209,6 +209,9 @@ export class MainView extends LitElement {
         const isMac = navigator.platform.toLowerCase().includes('mac') || 
               navigator.userAgent.toLowerCase().includes('mac') ||
               process.platform === 'darwin';
+        // ✅ 修改：添加 Cmd+K 的检测
+        const isCmdK = isMac && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K');
+    
         const isCmdOrCtrlEnter = isMac 
             ? (e.metaKey && !e.ctrlKey && e.key === 'Enter') 
             : (!e.metaKey && e.ctrlKey && e.key === 'Enter');
@@ -217,7 +220,7 @@ export class MainView extends LitElement {
             ? (e.metaKey && !e.ctrlKey) 
             : (!e.metaKey && e.ctrlKey)) && !e.altKey && !e.shiftKey && (e.key === 'l' || e.key === 'L');
 
-        if ((isCmdOrCtrlEnter || isAltEnter) && this.isKeyValid) {
+        if ((isCmdOrCtrlEnter || isAltEnter || isCmdK) && this.isKeyValid) {
             e.preventDefault();
             try {
                 const view = window.cheddar && typeof window.cheddar.getCurrentView === 'function'
