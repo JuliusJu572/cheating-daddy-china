@@ -64,6 +64,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         return { success: false, error: 'macOS only' }
       }
       if (macAudioProcess) {
+        macAudioBuffers = []
         return { success: true }
       }
       const candidates = [
@@ -95,10 +96,17 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
 
   ipcMain.handle('stop-macos-audio', async () => {
     try {
+      let closed = false
       if (macAudioProcess) {
         const p = macAudioProcess
         macAudioProcess = null
+        const waitClose = new Promise((resolve) => {
+          const done = () => { closed = true; resolve() }
+          p.once('close', done)
+          setTimeout(done, 300)
+        })
         try { p.kill('SIGINT') } catch {}
+        await waitClose
       }
       const buf = macAudioBuffers.length ? Buffer.concat(macAudioBuffers) : Buffer.alloc(0)
       macAudioBuffers = []
