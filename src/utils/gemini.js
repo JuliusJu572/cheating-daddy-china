@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const { spawn } = require('child_process')
 let macAudioProcess = null
 let macAudioBuffers = []
-let macAudioSampleRate = 16000
+let macAudioSampleRate = 48000
 
 function sendToRenderer(channel, payload) {
   try {
@@ -82,7 +82,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         return { success: false, error: 'SystemAudioDump not found' }
       }
       macAudioBuffers = []
-      macAudioSampleRate = 16000
+      macAudioSampleRate = 48000
       macAudioProcess = spawn(binPath, ['--sample-rate', String(macAudioSampleRate), '--channels', '1', '--format', 's16le'], { stdio: ['ignore', 'pipe', 'pipe'] })
       macAudioProcess.stdout.on('data', (chunk) => { if (chunk && chunk.length) macAudioBuffers.push(chunk) })
       macAudioProcess.stderr.on('data', () => {})

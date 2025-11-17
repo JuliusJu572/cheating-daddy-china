@@ -390,52 +390,81 @@ function setupGeneralIpcHandlers() {
             const pcmBuffer = Buffer.from(pcmBase64, 'base64');
             const { audioDir } = ensureDataDirectories();
             const ts = Date.now();
-            const wavPath = require('node:path').join(audioDir, `audio_${ts}.wav`);
-            pcmToWav(pcmBuffer, wavPath, sampleRate || 16000, 1, 16);
-            console.log('✅ Audio saved to:', wavPath);
-            
-            const mp3Path = require('node:path').join(audioDir, `audio_${ts}.mp3`);
+            const path = require('node:path');
+            const fs = require('node:fs');
+            const isMac = process.platform === 'darwin';
+            const wavPath = path.join(audioDir, `audio_${ts}.wav`);
+            const mp3Path = path.join(audioDir, `audio_${ts}.mp3`);
             let finalPath = wavPath;
-            
-            try {
-                const { spawn } = require('child_process');
-                await new Promise((resolve) => {
-                    const ffmpeg = spawn('ffmpeg', [
-                        '-y', '-hide_banner', '-loglevel', 'error', 
-                        '-i', wavPath, 
-                        '-ar', String(sampleRate || 16000), 
-                        '-ac', '1', '-b:a', '128k', 
-                        mp3Path
-                    ]);
-                    
-                    let stderr = '';
-                    ffmpeg.stderr.on('data', (data) => { stderr += data.toString(); });
-                    
-                    ffmpeg.on('close', (code) => {
-                        if (code === 0) {
-                            const fs = require('node:fs');
-                            if (fs.existsSync(mp3Path) && fs.statSync(mp3Path).size > 0) {
+
+            if (isMac) {
+                try {
+                    const { spawn } = require('child_process');
+                    await new Promise((resolve) => {
+                        const ffmpeg = spawn('ffmpeg', [
+                            '-y', '-hide_banner', '-loglevel', 'error',
+                            '-f', 's16le',
+                            '-ar', String(sampleRate || 48000),
+                            '-ac', '1',
+                            '-i', '-',
+                            '-ar', '16000',
+                            '-b:a', '128k',
+                            mp3Path,
+                        ]);
+                        let stderr = '';
+                        ffmpeg.stderr.on('data', (data) => { stderr += data.toString(); });
+                        ffmpeg.on('close', (code) => {
+                            if (code === 0 && fs.existsSync(mp3Path) && fs.statSync(mp3Path).size > 0) {
                                 finalPath = mp3Path;
-                                console.log('✅ Audio converted to MP3:', mp3Path);
+                                console.log('✅ Audio encoded to MP3 directly:', mp3Path);
                             } else {
-                                console.warn('⚠️ MP3 file not created, using WAV');
+                                console.warn('⚠️ MP3 direct encode failed, fallback to WAV. Code:', code, 'Err:', stderr);
                             }
-                        } else {
-                            console.warn('⚠️ FFmpeg failed, using WAV. Error:', stderr);
-                        }
-                        resolve();
+                            resolve();
+                        });
+                        ffmpeg.on('error', (err) => {
+                            console.warn('⚠️ FFmpeg error:', err.message, 'fallback to WAV');
+                            resolve();
+                        });
+                        try { ffmpeg.stdin.write(pcmBuffer); ffmpeg.stdin.end(); } catch (e) { console.warn('⚠️ pipe error:', e.message); }
                     });
-                    
-                    ffmpeg.on('error', (err) => {
-                        console.warn('⚠️ FFmpeg error:', err.message, 'using WAV');
-                        resolve();
-                    });
-                });
-            } catch (convErr) {
-                console.warn('⚠️ MP3 conversion failed, using WAV:', convErr.message);
+                } catch (e) {
+                    console.warn('⚠️ Direct MP3 encode failed:', e.message);
+                }
             }
 
-            const fs = require('node:fs');
+            if (finalPath === wavPath) {
+                pcmToWav(pcmBuffer, wavPath, sampleRate || 16000, 1, 16);
+                console.log('✅ Audio saved to WAV:', wavPath);
+                try {
+                    const { spawn } = require('child_process');
+                    await new Promise((resolve) => {
+                        const ffmpeg = spawn('ffmpeg', [
+                            '-y', '-hide_banner', '-loglevel', 'error',
+                            '-i', wavPath,
+                            '-ar', String(sampleRate || 16000),
+                            '-ac', '1', '-b:a', '128k',
+                            mp3Path,
+                        ]);
+                        let stderr = '';
+                        ffmpeg.stderr.on('data', (data) => { stderr += data.toString(); });
+                        ffmpeg.on('close', (code) => {
+                            if (code === 0 && fs.existsSync(mp3Path) && fs.statSync(mp3Path).size > 0) {
+                                finalPath = mp3Path;
+                                console.log('✅ Audio converted to MP3:', mp3Path);
+                                try { fs.unlinkSync(wavPath); } catch {}
+                            } else {
+                                console.warn('⚠️ MP3 conversion failed, using WAV. Code:', code, 'Err:', stderr);
+                            }
+                            resolve();
+                        });
+                        ffmpeg.on('error', (err) => { console.warn('⚠️ FFmpeg error:', err.message, 'using WAV'); resolve(); });
+                    });
+                } catch (convErr) {
+                    console.warn('⚠️ MP3 conversion failed, using WAV:', convErr.message);
+                }
+            }
+
             if (!fs.existsSync(finalPath)) {
                 sendToRenderer('update-status', 'Error');
                 return { success: false, error: 'Audio file not found' };
