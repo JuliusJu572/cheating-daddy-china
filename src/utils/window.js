@@ -172,10 +172,10 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
 function getDefaultKeybinds() {
     const isMac = process.platform === 'darwin';
     return {
-        moveUp: isMac ? 'Alt+Up' : 'Ctrl+Up',
-        moveDown: isMac ? 'Alt+Down' : 'Ctrl+Down',
-        moveLeft: isMac ? 'Alt+Left' : 'Ctrl+Left',
-        moveRight: isMac ? 'Alt+Right' : 'Ctrl+Right',
+        moveUp: isMac ? 'Cmd+Up' : 'Ctrl+Up',
+        moveDown: isMac ? 'Cmd+Down' : 'Ctrl+Down',
+        moveLeft: isMac ? 'Cmd+Left' : 'Ctrl+Left',
+        moveRight: isMac ? 'Cmd+Right' : 'Ctrl+Right',
         toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\',
         toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
         nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
@@ -289,23 +289,54 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
         const handler = async () => {
             console.log('Next step shortcut triggered');
             try {
-                try { sendToRenderer('update-status', 'capturing, waiting response'); } catch (_) {}
-                await mainWindow.webContents.executeJavaScript(`(async () => {
-                    try {
-                        const view = cheddar.getCurrentView();
-                        if (view === 'main') {
+                const view = await mainWindow.webContents.executeJavaScript(
+                    `cheddar && typeof cheddar.getCurrentView === 'function' ? cheddar.getCurrentView() : 'main'`
+                );
+                const wasVisible = mainWindow.isVisible();
+                if (wasVisible) {
+                    mainWindow.hide();
+                    await new Promise(r => setTimeout(r, 300)); // 等待窗口完全隐藏
+                }
+                try { 
+                    sendToRenderer('update-status', 'capturing, waiting response'); 
+                } catch (_) {}
+                if (view === 'main') {
+                    // ✅ 启动会话但阻止窗口显示
+                    await mainWindow.webContents.executeJavaScript(`
+                        (async () => {
+                            const originalView = cheddar.element().currentView;
                             await cheddar.element().handleStart();
-                            await new Promise(resolve => setTimeout(resolve, 500));
-                        }
-                        if (typeof window.captureManualScreenshot === 'function') {
-                            await window.captureManualScreenshot();
-                        } else {
-                            console.error('captureManualScreenshot function not found!');
-                        }
-                    } catch (e) { console.error('shortcut inline error', e); }
-                })()`);
-            } catch (error) {
+                            // 轮询等待 mediaStream 初始化
+                            let attempts = 0;
+                            while (attempts < 50 && !window.mediaStream) {
+                                await new Promise(r => setTimeout(r, 100));
+                                attempts++;
+                            }
+                        })()
+                    `);
+                }
+                // ✅ 确保窗口仍然隐藏，然后截图
+            if (wasVisible && mainWindow.isVisible()) {
+                mainWindow.hide();
+                await new Promise(r => setTimeout(r, 200));
+            }
+            // 执行截图
+            await mainWindow.webContents.executeJavaScript(`
+                (async () => {
+                    if (typeof window.captureManualScreenshot === 'function') {
+                        await window.captureManualScreenshot();
+                    }
+                })()
+            `);
+            
+            // ✅ 截图完成后再显示窗口
+            await new Promise(r => setTimeout(r, 500)); // 等待截图处理完成
+            if (wasVisible) {
+                mainWindow.showInactive();
+            }
+        } catch (error) {
                 console.error('Error handling next step shortcut:', error);
+                try { mainWindow.showInactive(); } catch (_) {}
             }
         };
         try {

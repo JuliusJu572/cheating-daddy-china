@@ -668,7 +668,7 @@ async function startQuickAudioCapture() {
                 quickRecordProcessor.disconnect();
             }
             if (quickRecordContext) {
-                quickRecordContext.close();
+                await quickRecordContext.close();
             }
             if (quickRecordStream) {
                 quickRecordStream.getTracks().forEach(track => track.stop());
@@ -678,6 +678,9 @@ async function startQuickAudioCapture() {
                 const pcm = convertFloat32ToInt16(quickRecordBuffer);
                 const base64 = arrayBufferToBase64(pcm.buffer);
                 cheddar.setStatus('Transcribing...');
+
+                console.log('📊 Audio buffer size:', quickRecordBuffer.length, 'samples');
+                console.log('📊 PCM size:', pcm.length, 'bytes');
                 
                 const result = await ipcRenderer.invoke('save-audio-and-transcribe', { 
                     pcmBase64: base64, 
@@ -709,9 +712,14 @@ async function startQuickAudioCapture() {
     // 开始新的录音
     try {
         let streamToUse = null;
+        
+        // ✅ 所有平台：尝试使用已有的 mediaStream（如果有音频轨道）
         if (mediaStream && mediaStream.getAudioTracks().length > 0) {
+            console.log('📻 Using existing mediaStream for recording');
             streamToUse = mediaStream;
         } else {
+            // ✅ 没有音频轨道，需要请求新的屏幕共享（包含音频）
+            console.log('🎬 Requesting new screen share with audio...');
             try {
                 quickRecordStream = await navigator.mediaDevices.getDisplayMedia({
                     video: {
@@ -727,13 +735,34 @@ async function startQuickAudioCapture() {
                         autoGainControl: false,
                     },
                 });
+                
+                // ✅ 检查是否获取到音频轨道
+                if (quickRecordStream.getAudioTracks().length === 0) {
+                    console.error('❌ No audio track in stream - user may not have checked "Share audio"');
+                    cheddar.setStatus('Error: Please check "Share audio" when prompted');
+                    quickRecordStream.getTracks().forEach(track => track.stop());
+                    quickRecordStream = null;
+                    return;
+                }
+                
                 streamToUse = quickRecordStream;
+                console.log('✅ Screen share with audio granted');
             } catch (getErr) {
-                console.error('Failed to capture system output audio:', getErr);
-                const isMac = process.platform === 'darwin';
-                cheddar.setStatus(isMac ? 'Error: System audio capture requires screen permission' : 'Error: System audio capture unavailable');
+                console.error('❌ Failed to get screen share with audio:', getErr);
+                
+                // ✅ macOS：特别提示用户需要勾选音频
+                if (isMacOS) {
+                    cheddar.setStatus('Error: Screen recording requires "Share audio" checkbox');
+                } else {
+                    cheddar.setStatus('Error: Screen audio capture unavailable');
+                }
                 return;
             }
+        }
+
+        if (!streamToUse) {
+            cheddar.setStatus('Error: No audio stream available');
+            return;
         }
 
         const stopKey = process.platform === 'darwin' ? 'Cmd+L' : 'Ctrl+L';
@@ -741,7 +770,7 @@ async function startQuickAudioCapture() {
 
         quickRecordContext = new AudioContext({ sampleRate: 16000 });
         const source = quickRecordContext.createMediaStreamSource(streamToUse);
-        quickRecordProcessor = quickRecordContext.createScriptProcessor(4096, 1, 1);
+        quickRecordProcessor = quickRecordContext.createScriptProcessor(8192, 1, 1);
         quickRecordBuffer = [];
         quickRecordStartTime = Date.now();
         isQuickRecording = true;

@@ -217,9 +217,9 @@ function setupGeneralIpcHandlers() {
             if (typeof model !== 'string' || model.includes('gemini')) {
                 const session = await initializeGeminiSession(apiKey, customPrompt || '', profile || 'interview', language || 'zh-CN');
                 if (session) {
-                    const gemRef = global.geminiSessionRef || { current: null };
-                    gemRef.current = session;
-                    global.geminiSessionRef = gemRef;
+                    // ✅ 同步到本地与全局引用，确保 IPC 读取到当前会话
+                    geminiSessionRef.current = session;
+                    global.geminiSessionRef = geminiSessionRef;
                     return true;
                 }
                 return false;
