@@ -1,5 +1,10 @@
-const { ipcMain, BrowserWindow } = require('electron')
+const { ipcMain, BrowserWindow, app } = require('electron')
+const path = require('node:path')
+const fs = require('node:fs')
+const { spawn } = require('child_process')
 let macAudioProcess = null
+let macAudioBuffers = []
+let macAudioSampleRate = 16000
 
 function sendToRenderer(channel, payload) {
   try {
@@ -61,6 +66,27 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
       if (macAudioProcess) {
         return { success: true }
       }
+      const candidates = [
+        path.join(process.resourcesPath || '', 'SystemAudioDump'),
+        path.join(process.resourcesPath || '', 'mac', 'SystemAudioDump'),
+        path.join(app.getAppPath(), 'bin', 'mac', 'SystemAudioDump'),
+        path.join(app.getAppPath(), 'resources', 'mac', 'SystemAudioDump'),
+        path.join(__dirname, '../../bin/mac/SystemAudioDump'),
+        path.join(__dirname, '../../resources/mac/SystemAudioDump'),
+      ].filter(p => !!p)
+      let binPath = null
+      for (const p of candidates) {
+        try { if (fs.existsSync(p)) { binPath = p; break } } catch {}
+      }
+      if (!binPath) {
+        return { success: false, error: 'SystemAudioDump not found' }
+      }
+      macAudioBuffers = []
+      macAudioSampleRate = 16000
+      macAudioProcess = spawn(binPath, ['--sample-rate', String(macAudioSampleRate), '--channels', '1', '--format', 's16le'], { stdio: ['ignore', 'pipe', 'pipe'] })
+      macAudioProcess.stdout.on('data', (chunk) => { if (chunk && chunk.length) macAudioBuffers.push(chunk) })
+      macAudioProcess.stderr.on('data', () => {})
+      macAudioProcess.on('close', () => {})
       return { success: true }
     } catch (error) {
       return { success: false, error: error.message }
@@ -70,10 +96,13 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
   ipcMain.handle('stop-macos-audio', async () => {
     try {
       if (macAudioProcess) {
-        macAudioProcess.kill()
+        const p = macAudioProcess
         macAudioProcess = null
+        try { p.kill('SIGINT') } catch {}
       }
-      return { success: true }
+      const buf = macAudioBuffers.length ? Buffer.concat(macAudioBuffers) : Buffer.alloc(0)
+      macAudioBuffers = []
+      return { success: true, pcmBase64: buf.toString('base64'), sampleRate: macAudioSampleRate }
     } catch (error) {
       return { success: false, error: error.message }
     }
@@ -123,12 +152,29 @@ function getCurrentSessionData() {
   return currentSessionData
 }
 
+function formatSpeakerResults(results) {
+  const names = { 1: 'Interviewer', 2: 'Candidate' }
+  return (results || [])
+    .map(r => `[${names[r.speakerId] || 'Speaker'}]: ${r.transcript}`)
+    .join('\n') + (results && results.length ? '\n' : '')
+}
+
 module.exports = {
   setupGeminiIpcHandlers,
-  stopMacOSAudioCapture: () => {},
+  stopMacOSAudioCapture: () => {
+    try {
+      if (macAudioProcess) {
+        const p = macAudioProcess
+        macAudioProcess = null
+        try { p.kill('SIGINT') } catch {}
+      }
+      macAudioBuffers = []
+    } catch {}
+  },
   sendToRenderer,
   initializeGeminiSession,
   initializeNewSession,
   saveConversationTurn,
   getCurrentSessionData,
+  formatSpeakerResults,
 }

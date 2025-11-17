@@ -661,6 +661,31 @@ async function startQuickAudioCapture() {
     // 如果正在录音，则停止录音
     if (isQuickRecording) {
         try {
+            if (isMacOS) {
+                const stopRes = await ipcRenderer.invoke('stop-macos-audio');
+                if (stopRes && stopRes.success) {
+                    const base64 = stopRes.pcmBase64 || '';
+                    const sr = stopRes.sampleRate || 16000;
+                    if (base64 && base64.length > 0) {
+                        cheddar.setStatus('Transcribing...');
+                        const result = await ipcRenderer.invoke('save-audio-and-transcribe', { pcmBase64: base64, sampleRate: sr });
+                        if (!result || !result.success) {
+                            cheddar.setStatus('Error: ' + (result?.error || 'Unknown'));
+                        }
+                    } else {
+                        cheddar.setStatus('No audio recorded');
+                    }
+                } else {
+                    cheddar.setStatus('Error: ' + (stopRes?.error || 'Stop failed'));
+                }
+                isQuickRecording = false;
+                quickRecordStream = null;
+                quickRecordContext = null;
+                quickRecordProcessor = null;
+                quickRecordBuffer = [];
+                quickRecordStartTime = null;
+                return;
+            }
             if (quickRecordProcessor) {
                 quickRecordProcessor.disconnect();
             }
@@ -674,19 +699,26 @@ async function startQuickAudioCapture() {
             if (quickRecordBuffer.length > 0) {
                 const pcm = convertFloat32ToInt16(quickRecordBuffer);
                 const base64 = arrayBufferToBase64(pcm.buffer);
-                
                 cheddar.setStatus('Transcribing...');
-                
                 const result = await ipcRenderer.invoke('save-audio-and-transcribe', { 
                     pcmBase64: base64, 
                     sampleRate: 16000 
                 });
-                
                 if (!result || !result.success) {
                     cheddar.setStatus('Error: ' + (result?.error || 'Unknown'));
                 }
             } else {
-                cheddar.setStatus('No audio recorded');
+                const silent = new Float32Array(16000);
+                const pcm = convertFloat32ToInt16(silent);
+                const base64 = arrayBufferToBase64(pcm.buffer);
+                cheddar.setStatus('Transcribing...');
+                const result = await ipcRenderer.invoke('save-audio-and-transcribe', { 
+                    pcmBase64: base64, 
+                    sampleRate: 16000 
+                });
+                if (!result || !result.success) {
+                    cheddar.setStatus('Error: ' + (result?.error || 'Unknown'));
+                }
             }
             
             isQuickRecording = false;
@@ -705,6 +737,18 @@ async function startQuickAudioCapture() {
     
     // 开始新的录音
     try {
+        if (isMacOS) {
+            const startRes = await ipcRenderer.invoke('start-macos-audio');
+            if (!startRes || !startRes.success) {
+                cheddar.setStatus('Error: ' + (startRes?.error || 'Start failed'));
+                return;
+            }
+            isQuickRecording = true;
+            quickRecordStartTime = Date.now();
+            const stopKey = 'Cmd+L';
+            cheddar.setStatus(`Recording... (${stopKey} to stop)`);
+            return;
+        }
         let streamToUse = null;
         
         // 检查是否有现成的 mediaStream
@@ -728,32 +772,24 @@ async function startQuickAudioCapture() {
                 });
                 
                 const audioTracks = quickRecordStream.getAudioTracks();
-                
                 if (audioTracks.length === 0) {
-                    if (isMacOS) {
-                        try {
-                            const micStream = await navigator.mediaDevices.getUserMedia({
-                                audio: {
-                                    sampleRate: 16000,
-                                    channelCount: 1,
-                                    echoCancellation: true,
-                                    noiseSuppression: true,
-                                    autoGainControl: true,
-                                },
-                                video: false,
-                            });
-                            streamToUse = micStream;
-                            cheddar.setStatus('Using microphone');
-                        } catch (_) {
-                            cheddar.setStatus('Error: No audio track');
-                            quickRecordStream.getTracks().forEach(track => track.stop());
-                            quickRecordStream = null;
-                            return;
-                        }
-                    } else {
-                        cheddar.setStatus('Error: No audio track');
-                        quickRecordStream.getTracks().forEach(track => track.stop());
-                        quickRecordStream = null;
+                    quickRecordStream.getTracks().forEach(track => track.stop());
+                    quickRecordStream = null;
+                    try {
+                        const micOnly = await navigator.mediaDevices.getUserMedia({
+                            audio: {
+                                sampleRate: 16000,
+                                channelCount: 1,
+                                echoCancellation: true,
+                                noiseSuppression: true,
+                                autoGainControl: true,
+                            },
+                            video: false,
+                        });
+                        streamToUse = micOnly;
+                        cheddar.setStatus('Microphone capture');
+                    } catch (micErr) {
+                        cheddar.setStatus('Error: No audio stream');
                         return;
                     }
                 } else {
@@ -772,29 +808,23 @@ async function startQuickAudioCapture() {
 
         const stopKey = process.platform === 'darwin' ? 'Cmd+L' : 'Ctrl+L';
         
-        
         quickRecordContext = new AudioContext({ sampleRate: 16000 });
-        
         if (quickRecordContext.state === 'suspended') {
             await quickRecordContext.resume();
         }
-        
         const source = quickRecordContext.createMediaStreamSource(streamToUse);
         quickRecordProcessor = quickRecordContext.createScriptProcessor(8192, 1, 1);
         quickRecordBuffer = [];
         quickRecordStartTime = Date.now();
         isQuickRecording = true;
-        
         quickRecordProcessor.onaudioprocess = e => {
             if (isQuickRecording) {
                 const input = e.inputBuffer.getChannelData(0);
                 quickRecordBuffer.push(...input);
             }
         };
-        
         source.connect(quickRecordProcessor);
         quickRecordProcessor.connect(quickRecordContext.destination);
-        
         cheddar.setStatus(`Recording... (${stopKey} to stop)`);
         
     } catch (error) {
