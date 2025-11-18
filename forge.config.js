@@ -12,6 +12,7 @@ const makers = [
             shortcutName: 'Cheating Buddy',
             createDesktopShortcut: true,
             createStartMenuShortcut: true,
+            setupExe: 'Cheating.Buddy.exe',
         },
     },
     // macOS - ZIP (可选)

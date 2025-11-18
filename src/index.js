@@ -408,7 +408,6 @@ function setupGeneralIpcHandlers() {
                             '-ac', '1',
                             '-i', '-',
                             '-ar', '16000',
-                            '-codec:a', 'libmp3lame',
                             '-b:a', '128k',
                             mp3Path,
                         ]);
@@ -444,7 +443,7 @@ function setupGeneralIpcHandlers() {
                             '-y', '-hide_banner', '-loglevel', 'error',
                             '-i', wavPath,
                             '-ar', String(sampleRate || 16000),
-                            '-ac', '1', '-codec:a', 'libmp3lame', '-b:a', '128k',
+                            '-ac', '1', '-b:a', '128k',
                             mp3Path,
                         ]);
                         let stderr = '';
