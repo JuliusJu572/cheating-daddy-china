@@ -96,17 +96,7 @@
 2. 如果出现麦克风/屏幕录制权限请求，点击 **"允许"**
 3. Windows 10/11 可能需要在 **设置 → 隐私 → 麦克风/摄像头** 中手动授权
 
-### 步骤 4：获取 API Key
-
-1. 访问 [AIHubMix 官网](https://aihubmix.com) 注册账号
-2. 获取 API Key
-3. 使用提供的 Python 脚本加密 API Key：
-```bash
-   python encrypt_key.py your_api_key_here
-```
-4. 复制加密后的密钥
-
-### 步骤 5：开始使用
+### 步骤 4：开始使用
 
 1. 打开应用程序
 2. 在主界面输入加密后的 API Key
@@ -242,17 +232,7 @@
 
 > **⚠️ 重要提示**：设置权限后需要 **完全退出** 应用（在 Dock 上右键点击图标 → 退出），然后重新打开才能生效。
 
-### 步骤 5：获取 API Key
-
-1. 访问 [AIHubMix 官网](https://aihubmix.com) 注册账号
-2. 获取 API Key
-3. 使用提供的 Python 脚本加密 API Key：
-```bash
-   python3 encrypt_key.py your_api_key_here
-```
-4. 复制加密后的密钥
-
-### 步骤 6：首次启动应用
+### 步骤 5：首次启动应用
 
 1. **打开 "应用程序" 文件夹**
 2. **双击 "Cheating-daddy-CN"**
