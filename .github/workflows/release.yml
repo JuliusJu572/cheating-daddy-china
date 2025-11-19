@@ -51,9 +51,8 @@ jobs:
 
       - name: Build SystemAudioDump (Universal)
         run: |
-          chmod +x build-system-audio-dump.sh
-          ./build-system-audio-dump.sh
-
+          chmod +x scripts/build-system-audio-dump.sh
+          ./scripts/build-system-audio-dump.sh
       # 只构建 x64，通过 Rosetta 2 兼容所有 Mac
       - name: Build macOS (x64, universal via Rosetta 2)
         run: npm run make -- --platform=darwin --arch=x64
