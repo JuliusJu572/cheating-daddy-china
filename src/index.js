@@ -404,7 +404,7 @@ function setupGeneralIpcHandlers() {
                         const ffmpeg = spawn('ffmpeg', [
                             '-y', '-hide_banner', '-loglevel', 'error',
                             '-f', 's16le',
-                            '-ar', String(sampleRate || 48000),
+                            '-ar', String(sampleRate || 24000),
                             '-ac', '1',
                             '-i', '-',
                             '-ar', '16000',
@@ -434,7 +434,7 @@ function setupGeneralIpcHandlers() {
             }
 
             if (finalPath === wavPath) {
-                pcmToWav(pcmBuffer, wavPath, sampleRate || 16000, 1, 16);
+                pcmToWav(pcmBuffer, wavPath, sampleRate || 24000, 1, 16);
                 console.log('✅ Audio saved to WAV:', wavPath);
                 try {
                     const { spawn } = require('child_process');
@@ -442,7 +442,7 @@ function setupGeneralIpcHandlers() {
                         const ffmpeg = spawn('ffmpeg', [
                             '-y', '-hide_banner', '-loglevel', 'error',
                             '-i', wavPath,
-                            '-ar', String(sampleRate || 16000),
+                            '-ar', '16000',
                             '-ac', '1', '-b:a', '128k',
                             mp3Path,
                         ]);

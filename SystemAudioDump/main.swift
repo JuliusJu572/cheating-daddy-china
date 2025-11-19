@@ -127,7 +127,7 @@ final class AudioDumper: NSObject, SCStreamDelegate, SCStreamOutput {
           // target: 24 kHz, Int16 interleaved
           guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16,
                                                sampleRate: 24_000,
-                                               channels: desc.mChannelsPerFrame,
+                                               channels: 1,
                                                interleaved: true) else {
             fputs("Failed to create target format\n", Darwin.stderr)
             return
