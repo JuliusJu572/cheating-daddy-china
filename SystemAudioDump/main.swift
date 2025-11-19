@@ -5,7 +5,7 @@ import CoreMedia
 import AudioToolbox
 
 @main
-@available(macOS 13.0, *)  // ✅ 添加这行
+@available(macOS 13.0, *)
 struct SystemAudioDump {
   static func main() async {
     do {
@@ -53,6 +53,11 @@ struct SystemAudioDump {
       }
       
       cfg.excludesCurrentProcessAudio = true
+      
+      // ✅ 明确设置采样率，避免不同架构的默认值差异
+      cfg.sampleRate = 48000
+      cfg.channelCount = 2  // 使用立体声，后续转为单声道
+      
       print("Created configuration")
 
       // 4) Create and start the stream
@@ -97,133 +102,194 @@ struct SystemAudioDump {
 }
 
 /// A simple SCStreamOutput + SCStreamDelegate that converts to 24 kHz Int16 PCM and writes to stdout
-@available(macOS 13.0, *)  // ✅ 添加这行
+@available(macOS 13.0, *)
 final class AudioDumper: NSObject, SCStreamDelegate, SCStreamOutput {
-  // We'll hold a converter from native rate to 24 kHz, 16-bit, interleaved.
   private var converter: AVAudioConverter?
   private var outputFormat: AVAudioFormat?
+  
+  // ✅ 添加调试标志
+  private var debugLogged = false
 
   func stream(_ stream: SCStream,
               didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
               of outputType: SCStreamOutputType) {
     guard outputType == .audio else { return }
 
-    // Wrap the CMSampleBuffer in an AudioBufferList
-    do {
-      try sampleBuffer.withAudioBufferList { abl, _ in
-        guard let desc = sampleBuffer.formatDescription?.audioStreamBasicDescription else {
-          return
-        }
-
-        // Initialize converter on first buffer
-        if converter == nil {
-          guard let srcFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                            sampleRate: desc.mSampleRate,
-                                            channels: desc.mChannelsPerFrame,
-                                            interleaved: false) else {
-            fputs("Failed to create source format\n", Darwin.stderr)
-            return
-          }
-          // target: 24 kHz, Int16 interleaved
-          guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16,
-                                               sampleRate: 24_000,
-                                               channels: 1,
-                                               interleaved: true) else {
-            fputs("Failed to create target format\n", Darwin.stderr)
-            return
-          }
-          outputFormat = targetFormat
-          converter = AVAudioConverter(from: srcFormat, to: targetFormat)
-        }
-
-        guard let converter = converter,
-              let outFmt = outputFormat else { return }
-
-        // Create source AVAudioPCMBuffer
-        let srcFmt = converter.inputFormat
-        guard let srcBuffer = AVAudioPCMBuffer(pcmFormat: srcFmt,
-                                               frameCapacity: AVAudioFrameCount(sampleBuffer.numSamples)) else {
-          return
-        }
-        srcBuffer.frameLength = AVAudioFrameCount(sampleBuffer.numSamples)
-
-        let srcChannels = Int(desc.mChannelsPerFrame)
-        let frames = Int(sampleBuffer.numSamples)
-        let isFloat = (desc.mFormatFlags & kAudioFormatFlagIsFloat) != 0
-        let isNonInterleaved = (desc.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0
-
-        guard let dstPlanes = srcBuffer.floatChannelData else { return }
-
-        if isFloat {
-          if isNonInterleaved {
-            let channelCount = min(srcChannels, abl.count)
-            for ch in 0..<channelCount {
-              guard let bufData = abl[ch].mData else { continue }
-              let src = bufData.bindMemory(to: Float.self, capacity: frames)
-              dstPlanes[ch].assign(from: src, count: frames)
-            }
-          } else {
-            guard abl.count > 0, let bufData = abl[0].mData else { return }
-            let src = bufData.bindMemory(to: Float.self, capacity: frames * srcChannels)
-            for f in 0..<frames {
-              for ch in 0..<srcChannels {
-                dstPlanes[ch][f] = src[f * srcChannels + ch]
-              }
-            }
-          }
-        } else {
-          if isNonInterleaved {
-            let channelCount = min(srcChannels, abl.count)
-            for ch in 0..<channelCount {
-              guard let bufData = abl[ch].mData else { continue }
-              let src = bufData.bindMemory(to: Int16.self, capacity: frames)
-              for f in 0..<frames {
-                dstPlanes[ch][f] = Float(src[f]) * (1.0 / 32768.0)
-              }
-            }
-          } else {
-            guard abl.count > 0, let bufData = abl[0].mData else { return }
-            let src = bufData.bindMemory(to: Int16.self, capacity: frames * srcChannels)
-            for f in 0..<frames {
-              for ch in 0..<srcChannels {
-                dstPlanes[ch][f] = Float(src[f * srcChannels + ch]) * (1.0 / 32768.0)
-              }
-            }
-          }
-        }
-
-        // Create output buffer with proper capacity calculation
-        let outputFrameCapacity = AVAudioFrameCount(ceil(Double(srcBuffer.frameLength) * outFmt.sampleRate / srcFmt.sampleRate))
-        guard let outBuffer = AVAudioPCMBuffer(pcmFormat: outFmt,
-                                             frameCapacity: outputFrameCapacity) else {
-          return
-        }
-        
-        // Perform conversion
-        var error: NSError?
-        let status = converter.convert(to: outBuffer,
-                                       error: &error) { _, outStatus in
-          outStatus.pointee = .haveData
-          return srcBuffer
-        }
-        
-        guard status != .error, 
-              outBuffer.frameLength > 0,
-              let int16Data = outBuffer.int16ChannelData?[0] else {
-          if let error = error {
-            fputs("Conversion error: \(error)\n", Darwin.stderr)
-          }
-          return
-        }
-
-        // Write raw bytes to stdout
-        let byteCount = Int(outBuffer.frameLength) * Int(outFmt.streamDescription.pointee.mBytesPerFrame)
-        let data = Data(bytes: int16Data, count: byteCount)
-        FileHandle.standardOutput.write(data)
-      }
-    } catch {
-      fputs("Audio processing error: \(error)\n", Darwin.stderr)
+    // ✅ 使用更安全的 CMSampleBuffer 处理方式
+    guard let formatDescription = sampleBuffer.formatDescription else {
+      fputs("No format description\n", Darwin.stderr)
+      return
     }
+    
+    let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)
+    guard let streamDesc = asbd else {
+      fputs("No stream description\n", Darwin.stderr)
+      return
+    }
+    
+    // ✅ 首次执行时打印详细的格式信息
+    if !debugLogged {
+      debugLogged = true
+      fputs("=== Audio Format Info ===\n", Darwin.stderr)
+      fputs("Sample Rate: \(streamDesc.pointee.mSampleRate)\n", Darwin.stderr)
+      fputs("Channels: \(streamDesc.pointee.mChannelsPerFrame)\n", Darwin.stderr)
+      fputs("Format ID: 0x\(String(streamDesc.pointee.mFormatID, radix: 16))\n", Darwin.stderr)
+      fputs("Format Flags: 0x\(String(streamDesc.pointee.mFormatFlags, radix: 16))\n", Darwin.stderr)
+      fputs("Bytes per Frame: \(streamDesc.pointee.mBytesPerFrame)\n", Darwin.stderr)
+      fputs("Bits per Channel: \(streamDesc.pointee.mBitsPerChannel)\n", Darwin.stderr)
+      fputs("=========================\n", Darwin.stderr)
+    }
+
+    // Initialize converter on first buffer
+    if converter == nil {
+      // ✅ 创建源格式 - 使用实际的格式描述
+      guard let srcFormat = AVAudioFormat(cmAudioFormatDescription: formatDescription) else {
+        fputs("Failed to create source format from CMFormatDescription\n", Darwin.stderr)
+        return
+      }
+      
+      // target: 24 kHz, Int16, mono, interleaved
+      guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16,
+                                           sampleRate: 24_000,
+                                           channels: 1,
+                                           interleaved: true) else {
+        fputs("Failed to create target format\n", Darwin.stderr)
+        return
+      }
+      
+      outputFormat = targetFormat
+      converter = AVAudioConverter(from: srcFormat, to: targetFormat)
+      
+      if let conv = converter {
+        fputs("✅ Converter created: \(srcFormat.sampleRate)Hz \(srcFormat.channelCount)ch -> \(targetFormat.sampleRate)Hz \(targetFormat.channelCount)ch\n", Darwin.stderr)
+      }
+    }
+
+    guard let converter = converter,
+          let outFmt = outputFormat else {
+      fputs("Converter not initialized\n", Darwin.stderr)
+      return
+    }
+
+    // ✅ 使用 CMSampleBuffer 的原生方法创建 AVAudioPCMBuffer
+    let srcFmt = converter.inputFormat
+    let numSamples = CMSampleBufferGetNumSamples(sampleBuffer)
+    
+    guard let srcBuffer = AVAudioPCMBuffer(pcmFormat: srcFmt,
+                                           frameCapacity: AVAudioFrameCount(numSamples)) else {
+      fputs("Failed to create source buffer\n", Darwin.stderr)
+      return
+    }
+    srcBuffer.frameLength = AVAudioFrameCount(numSamples)
+
+    // ✅ 使用更安全的方式填充数据
+    var audioBufferList = AudioBufferList()
+    var blockBuffer: CMBlockBuffer?
+    
+    let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+      sampleBuffer,
+      bufferListSizeNeededOut: nil,
+      bufferListOut: &audioBufferList,
+      bufferListSize: MemoryLayout<AudioBufferList>.size,
+      blockBufferAllocator: nil,
+      blockBufferMemoryAllocator: nil,
+      flags: 0,
+      blockBufferOut: &blockBuffer
+    )
+    
+    if status != noErr {
+      fputs("Failed to get audio buffer list: \(status)\n", Darwin.stderr)
+      return
+    }
+    
+    defer {
+      if let block = blockBuffer {
+        // blockBuffer will be released automatically
+        _ = block
+      }
+    }
+    
+    // ✅ 安全地复制数据
+    let channelCount = Int(srcFmt.channelCount)
+    let frameCount = Int(numSamples)
+    
+    // 根据格式选择正确的数据类型
+    if srcFmt.commonFormat == .pcmFormatFloat32 {
+      // Float32 格式
+      guard let dstPlanes = srcBuffer.floatChannelData else {
+        fputs("No float channel data\n", Darwin.stderr)
+        return
+      }
+      
+      if srcFmt.isInterleaved {
+        // 交错格式
+        guard audioBufferList.mNumberBuffers > 0 else { return }
+        let buffer = audioBufferList.mBuffers
+        guard let data = buffer.mData else { return }
+        
+        let samples = data.bindMemory(to: Float.self, capacity: frameCount * channelCount)
+        
+        for frame in 0..<frameCount {
+          for ch in 0..<channelCount {
+            dstPlanes[ch][frame] = samples[frame * channelCount + ch]
+          }
+        }
+      } else {
+        // 非交错格式
+        for ch in 0..<min(channelCount, Int(audioBufferList.mNumberBuffers)) {
+          let bufferPtr = withUnsafePointer(to: audioBufferList.mBuffers) { ptr in
+            UnsafeBufferPointer(start: ptr, count: Int(audioBufferList.mNumberBuffers))
+          }
+          
+          guard ch < bufferPtr.count,
+                let data = bufferPtr[ch].mData else { continue }
+          
+          let samples = data.bindMemory(to: Float.self, capacity: frameCount)
+          dstPlanes[ch].assign(from: samples, count: frameCount)
+        }
+      }
+    } else {
+      // 假设是 Int16 格式
+      fputs("⚠️ Non-float format detected, may need conversion\n", Darwin.stderr)
+    }
+
+    // ✅ 计算输出缓冲区大小（考虑采样率转换）
+    let outputFrameCapacity = AVAudioFrameCount(
+      ceil(Double(srcBuffer.frameLength) * outFmt.sampleRate / srcFmt.sampleRate)
+    ) + 1024  // 添加安全边界
+    
+    guard let outBuffer = AVAudioPCMBuffer(pcmFormat: outFmt,
+                                         frameCapacity: outputFrameCapacity) else {
+      fputs("Failed to create output buffer\n", Darwin.stderr)
+      return
+    }
+    
+    // ✅ 执行转换
+    var error: NSError?
+    let conversionStatus = converter.convert(to: outBuffer, error: &error) { _, outStatus in
+      outStatus.pointee = .haveData
+      return srcBuffer
+    }
+    
+    if conversionStatus == .error {
+      if let err = error {
+        fputs("Conversion error: \(err)\n", Darwin.stderr)
+      } else {
+        fputs("Unknown conversion error\n", Darwin.stderr)
+      }
+      return
+    }
+    
+    guard outBuffer.frameLength > 0,
+          let int16Data = outBuffer.int16ChannelData?[0] else {
+      fputs("No output data\n", Darwin.stderr)
+      return
+    }
+
+    // ✅ 写入标准输出
+    let byteCount = Int(outBuffer.frameLength) * MemoryLayout<Int16>.size
+    let data = Data(bytes: int16Data, count: byteCount)
+    FileHandle.standardOutput.write(data)
   }
   
   func stream(_ stream: SCStream, didStopWithError error: Error) {
