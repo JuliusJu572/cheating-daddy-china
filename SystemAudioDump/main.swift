@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 @preconcurrency import ScreenCaptureKit
 import CoreMedia
+import AudioToolbox
 
 @main
 @available(macOS 13.0, *)  // ✅ 添加这行
@@ -116,7 +117,6 @@ final class AudioDumper: NSObject, SCStreamDelegate, SCStreamOutput {
 
         // Initialize converter on first buffer
         if converter == nil {
-          // source format
           guard let srcFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
                                             sampleRate: desc.mSampleRate,
                                             channels: desc.mChannelsPerFrame,
@@ -145,20 +145,51 @@ final class AudioDumper: NSObject, SCStreamDelegate, SCStreamOutput {
                                                frameCapacity: AVAudioFrameCount(sampleBuffer.numSamples)) else {
           return
         }
-        srcBuffer.frameLength = srcBuffer.frameCapacity
+        srcBuffer.frameLength = AVAudioFrameCount(sampleBuffer.numSamples)
 
-        // Safely copy from AudioBufferList
-        guard srcBuffer.floatChannelData != nil else { return }
-        
-        let channelCount = min(Int(srcFmt.channelCount), abl.count)
-        for i in 0..<channelCount {
-          guard i < abl.count,
-                let channelData = srcBuffer.floatChannelData?[i],
-                let bufferData = abl[i].mData else { continue }
-          
-          let bytesToCopy = min(Int(abl[i].mDataByteSize), 
-                               Int(srcBuffer.frameCapacity) * MemoryLayout<Float>.size)
-          memcpy(channelData, bufferData, bytesToCopy)
+        let srcChannels = Int(desc.mChannelsPerFrame)
+        let frames = Int(sampleBuffer.numSamples)
+        let isFloat = (desc.mFormatFlags & kAudioFormatFlagIsFloat) != 0
+        let isNonInterleaved = (desc.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0
+
+        guard let dstPlanes = srcBuffer.floatChannelData else { return }
+
+        if isFloat {
+          if isNonInterleaved {
+            let channelCount = min(srcChannels, abl.count)
+            for ch in 0..<channelCount {
+              guard let bufData = abl[ch].mData else { continue }
+              let src = bufData.bindMemory(to: Float.self, capacity: frames)
+              dstPlanes[ch].assign(from: src, count: frames)
+            }
+          } else {
+            guard abl.count > 0, let bufData = abl[0].mData else { return }
+            let src = bufData.bindMemory(to: Float.self, capacity: frames * srcChannels)
+            for f in 0..<frames {
+              for ch in 0..<srcChannels {
+                dstPlanes[ch][f] = src[f * srcChannels + ch]
+              }
+            }
+          }
+        } else {
+          if isNonInterleaved {
+            let channelCount = min(srcChannels, abl.count)
+            for ch in 0..<channelCount {
+              guard let bufData = abl[ch].mData else { continue }
+              let src = bufData.bindMemory(to: Int16.self, capacity: frames)
+              for f in 0..<frames {
+                dstPlanes[ch][f] = Float(src[f]) * (1.0 / 32768.0)
+              }
+            }
+          } else {
+            guard abl.count > 0, let bufData = abl[0].mData else { return }
+            let src = bufData.bindMemory(to: Int16.self, capacity: frames * srcChannels)
+            for f in 0..<frames {
+              for ch in 0..<srcChannels {
+                dstPlanes[ch][f] = Float(src[f * srcChannels + ch]) * (1.0 / 32768.0)
+              }
+            }
+          }
         }
 
         // Create output buffer with proper capacity calculation

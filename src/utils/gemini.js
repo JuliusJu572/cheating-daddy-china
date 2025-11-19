@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const { spawn } = require('child_process')
 let macAudioProcess = null
 let macAudioBuffers = []
-let macAudioSampleRate = 48000
+let macAudioSampleRate = 24000
 
 function sendToRenderer(channel, payload) {
   try {
@@ -93,7 +93,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
       }
 
       macAudioBuffers = []
-        macAudioSampleRate = process.arch === 'x64' ? 24000 : 48000
+        macAudioSampleRate = 24000
         const baseArgs = ['--sample-rate', String(macAudioSampleRate), '--channels', '1', '--format', 's16le']
         const spawnOpts = { stdio: ['ignore', 'pipe', 'pipe'] }
         
