@@ -15,18 +15,49 @@ const makers = [
             setupExe: 'Cheating.Buddy.exe',
         },
     },
-    // macOS - ZIP (可选)
+    // macOS - ZIP（主要分发方式）
     {
         name: '@electron-forge/maker-zip',
         platforms: ['darwin'],
     },
-    // macOS - DMG
+    // macOS - DMG（修复配置）
     {
         name: '@electron-forge/maker-dmg',
         platforms: ['darwin'],
         config: {
-            name: 'Cheating Buddy',
+            // ✅ 使用无空格的名称
+            name: 'CheatingBuddy',
+            // ✅ 添加详细配置
+            title: 'Cheating Buddy',
             format: 'UDZO',
+            // ✅ 指定背景和图标（可选）
+            icon: 'src/assets/logo.icns',
+            // ✅ 添加重试逻辑
+            overwrite: true,
+            // ✅ DMG 窗口配置
+            contents: [
+                {
+                    x: 448,
+                    y: 344,
+                    type: 'link',
+                    path: '/Applications'
+                },
+                {
+                    x: 192,
+                    y: 344,
+                    type: 'file',
+                    path: undefined // 会自动填充应用路径
+                }
+            ],
+            // ✅ 额外的 DMG 选项
+            additionalDMGOptions: {
+                window: {
+                    size: {
+                        width: 660,
+                        height: 400
+                    }
+                }
+            }
         }
     },
 ];
@@ -51,18 +82,19 @@ if (process.platform === 'linux') {
 module.exports = {
     packagerConfig: {
         asar: true,
-        // ✅ 改为打包整个 assets 目录（包含 Universal Binary）
         extraResource: [
             './src/assets/SystemAudioDump'
         ],
-        name: 'Cheating Buddy',
+        // ✅ 使用无空格的应用名称
+        name: 'CheatingBuddy',
+        // ✅ 显示名称可以有空格
+        productName: 'Cheating Buddy',
         icon: 'src/assets/logo',
         appBundleId: 'com.cheatingdaddy.app',
         appCategoryType: 'public.app-category.utilities',
-        // ✅ macOS 特定配置
         ...(process.platform === 'darwin' && {
-            osxSign: false, // 如果需要签名，改为 true 并配置证书
-            osxNotarize: false, // 如果需要公证，配置相应参数
+            osxSign: false,
+            osxNotarize: false,
         }),
     },
     rebuildConfig: {},
@@ -82,7 +114,6 @@ module.exports = {
             [FuseV1Options.OnlyLoadAppFromAsar]: true,
         }),
     ],
-    // ✅ 添加打包前的 hook
     hooks: {
         packageAfterPrune: async (config, buildPath, electronVersion, platform, arch) => {
             if (platform === 'darwin') {
