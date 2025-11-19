@@ -15,49 +15,20 @@ const makers = [
             setupExe: 'Cheating.Buddy.exe',
         },
     },
-    // macOS - ZIP（主要分发方式）
+    // macOS - ZIP
     {
         name: '@electron-forge/maker-zip',
         platforms: ['darwin'],
     },
-    // macOS - DMG（修复配置）
+    // macOS - DMG（简化配置）
     {
         name: '@electron-forge/maker-dmg',
         platforms: ['darwin'],
         config: {
-            // ✅ 使用无空格的名称
             name: 'CheatingBuddy',
-            // ✅ 添加详细配置
-            title: 'Cheating Buddy',
             format: 'UDZO',
-            // ✅ 指定背景和图标（可选）
-            icon: 'src/assets/logo.icns',
-            // ✅ 添加重试逻辑
-            overwrite: true,
-            // ✅ DMG 窗口配置
-            contents: [
-                {
-                    x: 448,
-                    y: 344,
-                    type: 'link',
-                    path: '/Applications'
-                },
-                {
-                    x: 192,
-                    y: 344,
-                    type: 'file',
-                    path: undefined // 会自动填充应用路径
-                }
-            ],
-            // ✅ 额外的 DMG 选项
-            additionalDMGOptions: {
-                window: {
-                    size: {
-                        width: 660,
-                        height: 400
-                    }
-                }
-            }
+            // ✅ 移除 contents 配置，让 Forge 自动处理
+            // 或者使用正确的配置格式
         }
     },
 ];
@@ -85,10 +56,7 @@ module.exports = {
         extraResource: [
             './src/assets/SystemAudioDump'
         ],
-        // ✅ 使用无空格的应用名称
         name: 'CheatingBuddy',
-        // ✅ 显示名称可以有空格
-        productName: 'Cheating Buddy',
         icon: 'src/assets/logo',
         appBundleId: 'com.cheatingdaddy.app',
         appCategoryType: 'public.app-category.utilities',
