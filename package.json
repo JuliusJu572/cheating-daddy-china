@@ -10,7 +10,9 @@
         "make": "electron-forge make",
         "publish": "electron-forge publish",
         "lint": "echo \"No linting configured\"",
-        "test": "vitest run"
+        "test": "vitest run",
+        "prebuild": "node -e \"if (process.platform === 'darwin') require('child_process').execSync('./scripts/build-audio-dump.sh', {stdio: 'inherit'})\"",
+        "build": "npm run prebuild && npm run make"
     },
     "keywords": [
         "作弊老铁",

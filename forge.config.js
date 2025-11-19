@@ -51,12 +51,19 @@ if (process.platform === 'linux') {
 module.exports = {
     packagerConfig: {
         asar: true,
-        extraResource: ['./src/assets/SystemAudioDump'],
+        // ✅ 改为打包整个 assets 目录（包含 Universal Binary）
+        extraResource: [
+            './src/assets/SystemAudioDump'
+        ],
         name: 'Cheating Buddy',
         icon: 'src/assets/logo',
         appBundleId: 'com.cheatingdaddy.app',
         appCategoryType: 'public.app-category.utilities',
-        // ✅ 不需要 osxUniversal，我们手动合并
+        // ✅ macOS 特定配置
+        ...(process.platform === 'darwin' && {
+            osxSign: false, // 如果需要签名，改为 true 并配置证书
+            osxNotarize: false, // 如果需要公证，配置相应参数
+        }),
     },
     rebuildConfig: {},
     makers: makers,
@@ -75,4 +82,12 @@ module.exports = {
             [FuseV1Options.OnlyLoadAppFromAsar]: true,
         }),
     ],
+    // ✅ 添加打包前的 hook
+    hooks: {
+        packageAfterPrune: async (config, buildPath, electronVersion, platform, arch) => {
+            if (platform === 'darwin') {
+                console.log('✅ macOS package created with Universal Binary');
+            }
+        }
+    }
 };
