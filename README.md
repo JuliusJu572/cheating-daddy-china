@@ -131,7 +131,7 @@
 
 4. **验证是否成功**：
 ```bash
-   xattr -l /Applications/Cheating-daddy-CN.app
+   xattr -l /Applications/Cheating\ Buddy.app
 ```
    - 如果没有任何输出或只有很少输出，说明成功
    - 如果看到 `com.apple.quarantine`，说明还没清除，重新执行步骤 2
