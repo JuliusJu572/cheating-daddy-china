@@ -398,13 +398,15 @@ function setupGeneralIpcHandlers() {
             let finalPath = wavPath;
 
             if (isMac) {
+                const arch = process.arch;
+                const isIntelMac = arch === 'x64';
                 try {
                     const { spawn } = require('child_process');
                     await new Promise((resolve) => {
                         const ffmpeg = spawn('ffmpeg', [
                             '-y', '-hide_banner', '-loglevel', 'error',
                             '-f', 's16le',
-                            '-ar', String(sampleRate || 24000),
+                            '-ar', String(sampleRate || (isIntelMac ? 24000 : 48000)),
                             '-ac', '1',
                             '-i', '-',
                             '-ar', '16000',
@@ -434,34 +436,38 @@ function setupGeneralIpcHandlers() {
             }
 
             if (finalPath === wavPath) {
-                pcmToWav(pcmBuffer, wavPath, sampleRate || 24000, 1, 16);
-                console.log('✅ Audio saved to WAV:', wavPath);
-                try {
-                    const { spawn } = require('child_process');
-                    await new Promise((resolve) => {
-                        const ffmpeg = spawn('ffmpeg', [
-                            '-y', '-hide_banner', '-loglevel', 'error',
-                            '-i', wavPath,
-                            '-ar', '16000',
-                            '-ac', '1', '-b:a', '128k',
-                            mp3Path,
-                        ]);
-                        let stderr = '';
-                        ffmpeg.stderr.on('data', (data) => { stderr += data.toString(); });
-                        ffmpeg.on('close', (code) => {
-                            if (code === 0 && fs.existsSync(mp3Path) && fs.statSync(mp3Path).size > 0) {
-                                finalPath = mp3Path;
-                                console.log('✅ Audio converted to MP3:', mp3Path);
-                                try { fs.unlinkSync(wavPath); } catch {}
-                            } else {
-                                console.warn('⚠️ MP3 conversion failed, using WAV. Code:', code, 'Err:', stderr);
-                            }
-                            resolve();
+                const arch = process.arch;
+                const isIntelMac = isMac && arch === 'x64';
+                if (!isIntelMac) {
+                    pcmToWav(pcmBuffer, wavPath, sampleRate || 16000, 1, 16);
+                    console.log('✅ Audio saved to WAV:', wavPath);
+                    try {
+                        const { spawn } = require('child_process');
+                        await new Promise((resolve) => {
+                            const ffmpeg = spawn('ffmpeg', [
+                                '-y', '-hide_banner', '-loglevel', 'error',
+                                '-i', wavPath,
+                                '-ar', '16000',
+                                '-ac', '1', '-b:a', '128k',
+                                mp3Path,
+                            ]);
+                            let stderr = '';
+                            ffmpeg.stderr.on('data', (data) => { stderr += data.toString(); });
+                            ffmpeg.on('close', (code) => {
+                                if (code === 0 && fs.existsSync(mp3Path) && fs.statSync(mp3Path).size > 0) {
+                                    finalPath = mp3Path;
+                                    console.log('✅ Audio converted to MP3:', mp3Path);
+                                    try { fs.unlinkSync(wavPath); } catch {}
+                                } else {
+                                    console.warn('⚠️ MP3 conversion failed, using WAV. Code:', code, 'Err:', stderr);
+                                }
+                                resolve();
+                            });
+                            ffmpeg.on('error', (err) => { console.warn('⚠️ FFmpeg error:', err.message, 'using WAV'); resolve(); });
                         });
-                        ffmpeg.on('error', (err) => { console.warn('⚠️ FFmpeg error:', err.message, 'using WAV'); resolve(); });
-                    });
-                } catch (convErr) {
-                    console.warn('⚠️ MP3 conversion failed, using WAV:', convErr.message);
+                    } catch (convErr) {
+                        console.warn('⚠️ MP3 conversion failed, using WAV:', convErr.message);
+                    }
                 }
             }
 
