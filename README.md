@@ -124,7 +124,7 @@
 
 2. **执行以下命令**（复制粘贴后按回车）：
 ```bash
-   sudo xattr -cr /Applications/Cheating-daddy-CN.app
+   sudo xattr -cr /Applications/Cheating\ Buddy.app
 ```
    
 3. **输入你的 Mac 登录密码**（输入时不会显示，直接输入后按回车）
@@ -170,10 +170,10 @@
 
 3. **移动 ffmpeg 到系统路径**：
 ```bash
-   sudo cp ~/Downloads/ffmpeg-*/ffmpeg /usr/local/bin/
+   sudo cp ~/Downloads/ffmpeg /usr/local/bin/
 ```
    - 注意：如果你的 ffmpeg 不在下载文件夹，需要修改路径
-   - 比如在桌面，就改成：`sudo cp ~/Desktop/ffmpeg-*/ffmpeg /usr/local/bin/`
+   - 比如在桌面，就改成：`sudo cp ~/Desktop/ffmpeg /usr/local/bin/`
 
 4. **赋予执行权限**：
 ```bash
@@ -186,24 +186,6 @@
 ```
    - 应该能看到版本信息了
 
-#### 3.4 安装 ffmpeg（简易方式 - 使用 Homebrew）
-
-如果你已经安装了 Homebrew，可以使用更简单的方式：
-
-1. **打开终端，输入**：
-```bash
-   brew install ffmpeg
-```
-
-2. **等待安装完成**（可能需要几分钟）
-
-3. **验证安装**：
-```bash
-   ffmpeg -version
-```
-
-> **什么是 Homebrew？** 如果你不知道 Homebrew 是什么，请使用上面的"命令行方式"安装。
-
 ### 步骤 4：配置系统权限（重要！）
 
 应用需要以下权限才能正常工作：
@@ -213,29 +195,29 @@
 1. 打开 **"系统设置"**（或 **"系统偏好设置"**）
 2. 进入 **"隐私与安全性"** → **"屏幕录制"**
 3. 点击左下角的 **锁图标** 解锁（输入密码）
-4. 找到 **"Cheating-daddy-CN"**，勾选复选框
+4. 找到 **"Cheating Buddy"**，勾选复选框
 5. 如果找不到，点击 **"+"** 号手动添加：
    - 进入 **"应用程序"** 文件夹
-   - 选择 **"Cheating-daddy-CN"**
+   - 选择 **"Cheating Buddy"**
    - 点击 **"打开"**
 
 #### 4.2 麦克风权限
 
 1. 在 **"系统设置"** 中
 2. 进入 **"隐私与安全性"** → **"麦克风"**
-3. 同样找到 **"Cheating-daddy-CN"** 并勾选
+3. 同样找到 **"Cheating Buddy"** 并勾选
 
 #### 4.3 辅助功能权限（如果需要）
 
 1. 进入 **"隐私与安全性"** → **"辅助功能"**
-2. 添加 **"Cheating-daddy-CN"** 并勾选
+2. 添加 **"Cheating Buddy"** 并勾选
 
 > **⚠️ 重要提示**：设置权限后需要 **完全退出** 应用（在 Dock 上右键点击图标 → 退出），然后重新打开才能生效。
 
 ### 步骤 5：首次启动应用
 
 1. **打开 "应用程序" 文件夹**
-2. **双击 "Cheating-daddy-CN"**
+2. **双击 "Cheating Buddy"**
 3. 如果出现 **"无法打开"** 提示：
    - **右键点击** 应用图标
    - 按住 **Option** 键
