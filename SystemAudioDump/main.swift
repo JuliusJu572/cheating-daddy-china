@@ -4,6 +4,7 @@ import AVFoundation
 import CoreMedia
 
 @main
+@available(macOS 13.0, *)  // ✅ 添加这行
 struct SystemAudioDump {
   static func main() async {
     do {
@@ -37,15 +38,20 @@ struct SystemAudioDump {
 
       // 2) Build a filter for that display (video is ignored below)
       let filter = SCContentFilter(display: display,
-                                   excludingApplications: [], // don't exclude any
+                                   excludingApplications: [],
                                    exceptingWindows: [])
       print("Created filter")
 
       // 3) Build a stream config that only captures audio
       let cfg = SCStreamConfiguration()
       cfg.capturesAudio = true
-      cfg.captureMicrophone = false
-      cfg.excludesCurrentProcessAudio = true  // don't capture our own output
+      
+      // ✅ 条件检查 macOS 15.0+ 的功能
+      if #available(macOS 15.0, *) {
+        cfg.captureMicrophone = false
+      }
+      
+      cfg.excludesCurrentProcessAudio = true
       print("Created configuration")
 
       // 4) Create and start the stream
@@ -90,6 +96,7 @@ struct SystemAudioDump {
 }
 
 /// A simple SCStreamOutput + SCStreamDelegate that converts to 24 kHz Int16 PCM and writes to stdout
+@available(macOS 13.0, *)  // ✅ 添加这行
 final class AudioDumper: NSObject, SCStreamDelegate, SCStreamOutput {
   // We'll hold a converter from native rate to 24 kHz, 16-bit, interleaved.
   private var converter: AVAudioConverter?
