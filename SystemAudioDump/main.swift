@@ -56,7 +56,7 @@ struct SystemAudioDump {
       
       // ✅ 明确设置采样率，避免不同架构的默认值差异
       cfg.sampleRate = 48000
-      cfg.channelCount = 2  // 使用立体声，后续转为单声道
+      cfg.channelCount = 2  // 使用立体声,后续转为单声道
       
       print("Created configuration")
 
@@ -142,11 +142,8 @@ final class AudioDumper: NSObject, SCStreamDelegate, SCStreamOutput {
 
     // Initialize converter on first buffer
     if converter == nil {
-      // ✅ 创建源格式 - 使用实际的格式描述
-      guard let srcFormat = AVAudioFormat(cmAudioFormatDescription: formatDescription) else {
-        fputs("Failed to create source format from CMFormatDescription\n", Darwin.stderr)
-        return
-      }
+      // ✅ 创建源格式 - 直接使用，不需要 guard let
+      let srcFormat = AVAudioFormat(cmAudioFormatDescription: formatDescription)
       
       // target: 24 kHz, Int16, mono, interleaved
       guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16,
@@ -160,7 +157,8 @@ final class AudioDumper: NSObject, SCStreamDelegate, SCStreamOutput {
       outputFormat = targetFormat
       converter = AVAudioConverter(from: srcFormat, to: targetFormat)
       
-      if let conv = converter {
+      // ✅ 修复：不使用 if let
+      if converter != nil {
         fputs("✅ Converter created: \(srcFormat.sampleRate)Hz \(srcFormat.channelCount)ch -> \(targetFormat.sampleRate)Hz \(targetFormat.channelCount)ch\n", Darwin.stderr)
       }
     }
@@ -245,12 +243,49 @@ final class AudioDumper: NSObject, SCStreamDelegate, SCStreamOutput {
                 let data = bufferPtr[ch].mData else { continue }
           
           let samples = data.bindMemory(to: Float.self, capacity: frameCount)
-          dstPlanes[ch].assign(from: samples, count: frameCount)
+          // ✅ 使用 update 代替 assign
+          dstPlanes[ch].update(from: samples, count: frameCount)
         }
       }
     } else {
       // 假设是 Int16 格式
       fputs("⚠️ Non-float format detected, may need conversion\n", Darwin.stderr)
+      
+      // ✅ 添加 Int16 格式的处理
+      guard let dstPlanes = srcBuffer.floatChannelData else {
+        fputs("No float channel data for conversion\n", Darwin.stderr)
+        return
+      }
+      
+      if srcFmt.isInterleaved {
+        guard audioBufferList.mNumberBuffers > 0 else { return }
+        let buffer = audioBufferList.mBuffers
+        guard let data = buffer.mData else { return }
+        
+        let samples = data.bindMemory(to: Int16.self, capacity: frameCount * channelCount)
+        
+        for frame in 0..<frameCount {
+          for ch in 0..<channelCount {
+            let sample = samples[frame * channelCount + ch]
+            dstPlanes[ch][frame] = Float(sample) / 32768.0
+          }
+        }
+      } else {
+        for ch in 0..<min(channelCount, Int(audioBufferList.mNumberBuffers)) {
+          let bufferPtr = withUnsafePointer(to: audioBufferList.mBuffers) { ptr in
+            UnsafeBufferPointer(start: ptr, count: Int(audioBufferList.mNumberBuffers))
+          }
+          
+          guard ch < bufferPtr.count,
+                let data = bufferPtr[ch].mData else { continue }
+          
+          let samples = data.bindMemory(to: Int16.self, capacity: frameCount)
+          
+          for frame in 0..<frameCount {
+            dstPlanes[ch][frame] = Float(samples[frame]) / 32768.0
+          }
+        }
+      }
     }
 
     // ✅ 计算输出缓冲区大小（考虑采样率转换）
