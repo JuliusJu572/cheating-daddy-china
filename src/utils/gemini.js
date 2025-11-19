@@ -73,6 +73,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         path.join(app.getAppPath(), 'resources', 'mac', 'SystemAudioDump'),
         path.join(__dirname, '../../bin/mac/SystemAudioDump'),
         path.join(__dirname, '../../resources/mac/SystemAudioDump'),
+        path.join(app.getAppPath(), 'src', 'assets', 'SystemAudioDump'),  // ✅ 开发环境
       ].filter(p => !!p)
       let binPath = null
       for (const p of candidates) {
@@ -81,17 +82,43 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
       if (!binPath) {
         return { success: false, error: 'SystemAudioDump not found' }
       }
+      
+      // ✅ 验证是否为通用二进制
+      const { execSync } = require('child_process')
+      try {
+          const archInfo = execSync(`lipo -info "${binPath}"`).toString()
+          console.log('Binary architectures:', archInfo)
+      } catch (e) {
+          console.warn('Could not verify binary architecture:', e.message)
+      }
+
       macAudioBuffers = []
-      macAudioSampleRate = 48000
-      macAudioProcess = spawn(binPath, ['--sample-rate', String(macAudioSampleRate), '--channels', '1', '--format', 's16le'], { stdio: ['ignore', 'pipe', 'pipe'] })
-      macAudioProcess.stdout.on('data', (chunk) => { if (chunk && chunk.length) macAudioBuffers.push(chunk) })
-      macAudioProcess.stderr.on('data', () => {})
-      macAudioProcess.on('close', () => {})
-      return { success: true }
+        macAudioSampleRate = 48000
+        const baseArgs = ['--sample-rate', String(macAudioSampleRate), '--channels', '1', '--format', 's16le']
+        const spawnOpts = { stdio: ['ignore', 'pipe', 'pipe'] }
+        
+        // ✅ 不再需要 Rosetta 回退，通用二进制会自动工作
+        const proc = spawn(binPath, baseArgs, spawnOpts)
+        
+        macAudioProcess = proc
+        macAudioProcess.stdout.on('data', (chunk) => { 
+            if (chunk && chunk.length) macAudioBuffers.push(chunk) 
+        })
+        macAudioProcess.stderr.on('data', (data) => {
+            console.log('SystemAudioDump stderr:', data.toString())
+        })
+        macAudioProcess.on('close', (code) => {
+            console.log('SystemAudioDump exited with code:', code)
+        })
+        macAudioProcess.on('error', (err) => {
+            console.error('SystemAudioDump error:', err)
+        })
+        
+        return { success: true }
     } catch (error) {
-      return { success: false, error: error.message }
+        return { success: false, error: error.message }
     }
-  })
+})
 
   ipcMain.handle('stop-macos-audio', async () => {
     try {
