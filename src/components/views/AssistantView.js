@@ -307,6 +307,7 @@ export class AssistantView extends LitElement {
         this.selectedProfile = 'interview';
         this.onSendText = () => {};
         this._lastAnimatedWordCount = 0;
+        this.handleGlobalKeydown = this.handleGlobalKeydown.bind(this);
         // Load saved responses from localStorage
         try {
             this.savedResponses = JSON.parse(localStorage.getItem('savedResponses') || '[]');
@@ -441,6 +442,9 @@ export class AssistantView extends LitElement {
 
         // Load and apply font size
         this.loadFontSize();
+        
+        // Add global keydown listener
+        document.addEventListener('keydown', this.handleGlobalKeydown);
 
         // Set up IPC listeners for keyboard shortcuts
         if (window.require) {
@@ -475,6 +479,9 @@ export class AssistantView extends LitElement {
 
     disconnectedCallback() {
         super.disconnectedCallback();
+
+        // Remove global keydown listener
+        document.removeEventListener('keydown', this.handleGlobalKeydown);
 
         // Clean up IPC listeners
         if (window.require) {
@@ -533,6 +540,28 @@ export class AssistantView extends LitElement {
             // Save to localStorage for persistence
             localStorage.setItem('savedResponses', JSON.stringify(this.savedResponses));
             this.requestUpdate();
+        }
+    }
+
+    async clearHistory() {
+        try {
+            if (window.require) {
+                const { ipcRenderer } = window.require('electron');
+                await ipcRenderer.invoke('clear-chat-history');
+            }
+            this.responses = [];
+            this.currentResponseIndex = -1;
+            this.requestUpdate();
+        } catch (error) {
+            console.error('Failed to clear history:', error);
+        }
+    }
+
+    handleGlobalKeydown(e) {
+        // Ctrl+B or Cmd+B to clear history
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+            e.preventDefault();
+            this.clearHistory();
         }
     }
 
@@ -613,6 +642,26 @@ export class AssistantView extends LitElement {
                 </button>
 
                 ${this.responses.length > 0 ? html` <span class="response-counter">${responseCounter}</span> ` : ''}
+
+                <button
+                    class="save-button"
+                    @click=${this.clearHistory}
+                    title="Clear history"
+                >
+                    <?xml version="1.0" encoding="UTF-8"?><svg
+                        width="24px"
+                        height="24px"
+                        stroke-width="1.7"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                    >
+                        <path d="M19 11V20.4C19 20.7314 18.7314 21 18.4 21H5.6C5.26863 21 5 20.7314 5 20.4V11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
+                        <path d="M10 17V11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
+                        <path d="M14 17V11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
+                        <path d="M21 7L16 7M3 7L8 7M8 7V3.6C8 3.26863 8.26863 3 8.6 3H15.4C15.7314 3 16 3.26863 16 3.6V7M8 7H16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                </button>
 
                 <button
                     class="save-button ${isSaved ? 'saved' : ''}"
