@@ -690,5 +690,13 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language 
         closed = true;
     }
 
-    return { sendRealtimeInput, close };
+    function clearHistory() {
+        console.log('🧹 Clearing Aihubmix session history...');
+        messages.length = 0;
+        if (systemPrompt && systemPrompt.length > 0) {
+            messages.push({ role: 'system', content: systemPrompt });
+        }
+    }
+
+    return { sendRealtimeInput, close, clearHistory };
 }

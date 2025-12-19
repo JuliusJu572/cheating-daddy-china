@@ -135,6 +135,20 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     }
   })
 
+  ipcMain.handle('clear-chat-history', async () => {
+    try {
+      if (geminiSessionRef?.current && typeof geminiSessionRef.current.clearHistory === 'function') {
+        geminiSessionRef.current.clearHistory();
+      }
+      // Also clear local session data if any
+      currentSessionData = { history: [] };
+      return { success: true };
+    } catch (error) {
+      console.error('clear-chat-history error:', error);
+      return { success: false, error: error.message };
+    }
+  })
+
   ipcMain.handle('close-session', async () => {
     try {
       if (geminiSessionRef?.current && typeof geminiSessionRef.current.close === 'function') {
@@ -165,7 +179,10 @@ function initializeGeminiSession(apiKey, prompt, profile, language) {
     }
   }
   async function close() {}
-  return { sendRealtimeInput, close }
+  function clearHistory() {
+      messages.length = 0;
+  }
+  return { sendRealtimeInput, close, clearHistory }
 }
 
 let currentSessionData = { history: [] }
