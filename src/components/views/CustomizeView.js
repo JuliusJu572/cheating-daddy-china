@@ -713,6 +713,11 @@ export class CustomizeView extends LitElement {
                 name: t('keybind_audio_capture_name'),
                 description: t('keybind_audio_capture_desc'),
             },
+            {
+                key: 'clearHistory',
+                name: '清除历史记录',
+                description: '清空对话历史并重置上下文',
+            },
         ];
     }
 

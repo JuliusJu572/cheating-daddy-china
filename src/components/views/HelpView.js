@@ -374,6 +374,10 @@ export class HelpView extends LitElement {
                                 <span class="shortcut-description">响应向下滚动</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.scrollDown)}</div>
                             </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-description">清除历史记录</span>
+                                <div class="shortcut-keys">${this.formatKeybind(this.keybinds.clearHistory)}</div>
+                            </div>
                         </div>
 
                         <div class="keyboard-group">
