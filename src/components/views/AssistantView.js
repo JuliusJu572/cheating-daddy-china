@@ -470,10 +470,16 @@ export class AssistantView extends LitElement {
                 this.scrollResponseDown();
             };
 
+            this.handleClearHistoryTrigger = () => {
+                console.log('Received clear-history-trigger message');
+                this.clearHistory();
+            };
+
             ipcRenderer.on('navigate-previous-response', this.handlePreviousResponse);
             ipcRenderer.on('navigate-next-response', this.handleNextResponse);
             ipcRenderer.on('scroll-response-up', this.handleScrollUp);
             ipcRenderer.on('scroll-response-down', this.handleScrollDown);
+            ipcRenderer.on('clear-history-trigger', this.handleClearHistoryTrigger);
         }
     }
 
@@ -497,6 +503,9 @@ export class AssistantView extends LitElement {
             }
             if (this.handleScrollDown) {
                 ipcRenderer.removeListener('scroll-response-down', this.handleScrollDown);
+            }
+            if (this.handleClearHistoryTrigger) {
+                ipcRenderer.removeListener('clear-history-trigger', this.handleClearHistoryTrigger);
             }
         }
     }
@@ -558,9 +567,10 @@ export class AssistantView extends LitElement {
     }
 
     handleGlobalKeydown(e) {
-        // Ctrl+B or Cmd+B to clear history
-        if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+        // Ctrl+' or Cmd+' to clear history
+        if ((e.ctrlKey || e.metaKey) && e.key === "'") {
             e.preventDefault();
+            console.log("Ctrl+' detected, clearing history...");
             this.clearHistory();
         }
     }

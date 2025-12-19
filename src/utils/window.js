@@ -185,6 +185,7 @@ function getDefaultKeybinds() {
         scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
         emergencyErase: isMac ? 'Cmd+Shift+E' : 'Ctrl+Shift+E',
         audioCapture: isMac ? 'Cmd+L' : 'Ctrl+L',
+        clearHistory: isMac ? "Cmd+'" : "Ctrl+'",
     };
 }
 
@@ -444,6 +445,19 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
                 } catch (e) {}
             });
         } catch (error) {}
+    }
+
+    // Register clear history shortcut
+    if (keybinds.clearHistory) {
+        try {
+            globalShortcut.register(keybinds.clearHistory, () => {
+                console.log('Clear history shortcut triggered');
+                sendToRenderer('clear-history-trigger');
+            });
+            console.log(`Registered clearHistory: ${keybinds.clearHistory}`);
+        } catch (error) {
+            console.error(`Failed to register clearHistory (${keybinds.clearHistory}):`, error);
+        }
     }
 }
 

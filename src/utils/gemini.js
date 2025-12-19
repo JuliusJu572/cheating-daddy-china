@@ -141,7 +141,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         geminiSessionRef.current.clearHistory();
       }
       // Also clear local session data if any
-      currentSessionData = { history: [] };
+      currentSessionData.history = []; // Clear the array in place
       return { success: true };
     } catch (error) {
       console.error('clear-chat-history error:', error);
