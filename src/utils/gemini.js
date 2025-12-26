@@ -162,7 +162,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
   })
 }
 
-function initializeGeminiSession(apiKey, prompt, profile, language) {
+function initializeGeminiSession(apiKey, prompt, profile, language, maxTokens) {
   const messages = []
   async function sendRealtimeInput(payload) {
     if (payload?.text) {

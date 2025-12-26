@@ -175,6 +175,7 @@ async function initializeGemini(profile = 'interview', language = 'zh-CN') {
             apiKey,
             apiBase,
             customPrompt: localStorage.getItem('customPrompt') || '',
+            maxTokens: parseInt(localStorage.getItem('maxTokens') || '2048', 10),
             profile,
             language,
         });

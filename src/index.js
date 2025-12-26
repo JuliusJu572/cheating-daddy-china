@@ -205,7 +205,7 @@ function setupGeneralIpcHandlers() {
 
     ipcMain.handle('initialize-model', async (event, payload) => {
         try {
-            const { model, apiKey, apiBase, customPrompt, profile, language } = payload || {};
+            const { model, apiKey, apiBase, customPrompt, profile, language, maxTokens } = payload || {};
             if (!apiKey) {
                 console.log('❌ No API key provided');
                 return false;
@@ -215,7 +215,7 @@ function setupGeneralIpcHandlers() {
             
             // ✅ 不需要再次解密，直接使用
             if (typeof model !== 'string' || model.includes('gemini')) {
-                const session = await initializeGeminiSession(apiKey, customPrompt || '', profile || 'interview', language || 'zh-CN');
+                const session = await initializeGeminiSession(apiKey, customPrompt || '', profile || 'interview', language || 'zh-CN', maxTokens);
                 if (session) {
                     // ✅ 同步到本地与全局引用，确保 IPC 读取到当前会话
                     geminiSessionRef.current = session;
@@ -233,6 +233,7 @@ function setupGeneralIpcHandlers() {
                 apiBase: apiBase || 'https://aihubmix.com/v1',
                 systemPrompt: sysPrompt,
                 language: language || 'zh-CN',
+                maxTokens: maxTokens,
             });
             const gemRef = global.geminiSessionRef || { current: null };
             gemRef.current = session;
@@ -585,10 +586,11 @@ function setupGeneralIpcHandlers() {
 
 }
 
-function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language }) {
+function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language, maxTokens }) {
     console.log('🔵 [createAihubmixSession] 创建 session...');
     console.log('🔵 [createAihubmixSession] Model:', model);
     console.log('🔵 [createAihubmixSession] API Base:', apiBase);
+    console.log('🔵 [createAihubmixSession] Max Tokens:', maxTokens);
     
     
     const messages = [];
@@ -614,6 +616,7 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language 
             model,
             messages,
             stream: false,
+            max_tokens: maxTokens,
         };
         
         
