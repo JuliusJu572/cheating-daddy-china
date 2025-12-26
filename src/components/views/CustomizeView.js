@@ -422,9 +422,10 @@ export class CustomizeView extends LitElement {
         modelApiBase: { type: String },
         modelApiKey: { type: String },
         modelTestStatus: { type: String },
+        maxTokens: { type: Number },
     };
 
-  constructor() {
+    constructor() {
         super();
         this.selectedProfile = 'interview';
         this.selectedLanguage = 'zh-CN';
@@ -457,6 +458,7 @@ export class CustomizeView extends LitElement {
         this.modelApiBase = localStorage.getItem('modelApiBase') || '';
         this.modelApiKey = localStorage.getItem('modelApiKey') || '';
         this.modelTestStatus = '';
+        this.maxTokens = parseInt(localStorage.getItem('maxTokens') || '2048', 10);
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
@@ -936,6 +938,14 @@ export class CustomizeView extends LitElement {
         localStorage.setItem('modelApiKey', this.modelApiKey);
     }
 
+    handleMaxTokensChange(e) {
+        const val = parseInt(e.target.value, 10);
+        if (!isNaN(val)) {
+            this.maxTokens = val;
+            localStorage.setItem('maxTokens', this.maxTokens.toString());
+        }
+    }
+
     async handleTestModelConnection() {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
@@ -1319,6 +1329,23 @@ export class CustomizeView extends LitElement {
                                 <select class="form-control" .value=${this.transcriptionModel} @change=${this.handleTranscriptionModelSelect}>
                                     ${this.getTranscriptionModelOptions().map(opt => html`<option value=${opt.value} ?selected=${this.transcriptionModel === opt.value}>${opt.name}</option>`)}
                                 </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">模型回复最大Tokens</label>
+                                <input
+                                    type="number"
+                                    class="form-control"
+                                    .value=${this.maxTokens}
+                                    @input=${this.handleMaxTokensChange}
+                                    placeholder="2048"
+                                    min="1"
+                                    max="32000"
+                                />
+                                <div class="form-description">
+                                    限制模型单次回复的最大长度，较大的值允许更长的回答，但可能增加延迟。
+                                </div>
                             </div>
                         </div>
                         
