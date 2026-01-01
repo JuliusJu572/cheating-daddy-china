@@ -607,6 +607,7 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
         console.log('📡 [callChatCompletions] 准备调用 API...');
         console.log('📡 [callChatCompletions] Endpoint:', endpoint);
         
+        sendToRenderer('update-status', 'Answering...');
         
         const headers = {
             'Content-Type': 'application/json',
@@ -634,7 +635,7 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
         const content = data?.choices?.[0]?.message?.content || '';
         messages.push({ role: 'assistant', content });
         sendToRenderer('update-response', content);
-        sendToRenderer('update-status', 'Listening...');
+        sendToRenderer('update-status', 'Live');
     }
 
     async function sendRealtimeInput(payload) {

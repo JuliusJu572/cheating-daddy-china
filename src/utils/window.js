@@ -186,6 +186,7 @@ function getDefaultKeybinds() {
         emergencyErase: isMac ? 'Cmd+Shift+E' : 'Ctrl+Shift+E',
         audioCapture: isMac ? 'Cmd+L' : 'Ctrl+L',
         clearHistory: isMac ? "Cmd+'" : "Ctrl+'",
+        windowsAudioCapture: !isMac ? 'Ctrl+K' : undefined,
     };
 }
 
@@ -457,6 +458,19 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
             console.log(`Registered clearHistory: ${keybinds.clearHistory}`);
         } catch (error) {
             console.error(`Failed to register clearHistory (${keybinds.clearHistory}):`, error);
+        }
+    }
+
+    // Register Windows Audio Capture shortcut
+    if (keybinds.windowsAudioCapture && process.platform === 'win32') {
+        try {
+            globalShortcut.register(keybinds.windowsAudioCapture, () => {
+                console.log('Windows audio capture shortcut triggered (Ctrl+K)');
+                mainWindow.webContents.send('toggle-windows-audio-capture');
+            });
+            console.log(`Registered windowsAudioCapture: ${keybinds.windowsAudioCapture}`);
+        } catch (error) {
+            console.error(`Failed to register windowsAudioCapture (${keybinds.windowsAudioCapture}):`, error);
         }
     }
 }

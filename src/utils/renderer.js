@@ -1,6 +1,17 @@
 // renderer.js
 const { ipcRenderer } = require('electron');
 
+// Initialize Windows Audio Recorder (if on Windows)
+if (process.platform === 'win32') {
+    try {
+        const { initialize } = require('./windowsAudioRecorder');
+        initialize();
+        console.log('Windows Audio Recorder initialized');
+    } catch (e) {
+        console.error('Failed to initialize Windows Audio Recorder:', e);
+    }
+}
+
 // Initialize random display name for UI components
 window.randomDisplayName = null;
 

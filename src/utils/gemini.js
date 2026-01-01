@@ -58,6 +58,27 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     return { success: true }
   })
 
+  ipcMain.handle('send-windows-audio-data', async (event, { audioData, sampleRate, mimeType }) => {
+    try {
+        const session = geminiSessionRef?.current
+        if (session && typeof session.sendRealtimeInput === 'function') {
+            await session.sendRealtimeInput({
+                media: {
+                    mimeType: mimeType || 'audio/pcm',
+                    data: audioData
+                }
+            })
+            return { success: true }
+        } else {
+            console.warn('No active Gemini session to send audio to.')
+            return { success: false, error: 'No active session' }
+        }
+    } catch (error) {
+        console.error('Error sending windows audio:', error)
+        return { success: false, error: error.message }
+    }
+  })
+
   ipcMain.handle('start-macos-audio', async () => {
     try {
       if (process.platform !== 'darwin') {
