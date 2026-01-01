@@ -613,6 +613,8 @@ export class CustomizeView extends LitElement {
             scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
             scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
             audioCapture: isMac ? 'Cmd+L' : 'Ctrl+L',
+            windowsAudioCapture: 'Ctrl+K',
+            clearHistory: isMac ? "Cmd+'" : "Ctrl+'",
         };
     }
 
@@ -716,9 +718,14 @@ export class CustomizeView extends LitElement {
                 description: t('keybind_audio_capture_desc'),
             },
             {
+                key: 'windowsAudioCapture',
+                name: t('keybind_windows_audio_capture_name'),
+                description: t('keybind_windows_audio_capture_desc'),
+            },
+            {
                 key: 'clearHistory',
-                name: '清除历史记录',
-                description: '清空对话历史并重置上下文',
+                name: t('keybind_clear_history_name'),
+                description: t('keybind_clear_history_desc'),
             },
         ];
     }

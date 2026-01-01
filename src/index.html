@@ -107,5 +107,16 @@
 
         <cheating-daddy-app id="cheddar"></cheating-daddy-app>
         <script src="utils/renderer.js"></script>
+        <script>
+            if (process.platform === 'win32') {
+                try {
+                    const windowsAudioRecorder = require('./utils/windowsAudioRecorder');
+                    windowsAudioRecorder.initialize();
+                    console.log('Windows Audio Recorder initialized in renderer');
+                } catch (e) {
+                    console.error('Failed to initialize Windows Audio Recorder in renderer:', e);
+                }
+            }
+        </script>
     </body>
 </html>

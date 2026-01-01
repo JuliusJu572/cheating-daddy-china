@@ -25,7 +25,7 @@
 
 ### 第一步：下载安装包
 
-1. 访问 [Releases 页面](https://github.com/JuliusJu572/Cheating-daddy-CN/releases/tag/v1.0.0)
+1. 访问 [Releases 页面](https://github.com/JuliusJu572/cheating-daddy-china/releases/tag/v1.1.0)
 2. 根据你的操作系统选择对应的安装包：
    - **Windows 用户**：下载 `.exe` 文件
    - **macOS 用户**：下载 `.dmg` 文件
@@ -239,6 +239,11 @@
 | 音频录制/暂停 | `Ctrl + L` | `Cmd + L` |
 | 截屏 | `Ctrl + Enter` | `Cmd + Enter` |
 | 发送文本消息 | `Enter` | `Enter` |
+| 录制麦克风 (仅Windows) | `Ctrl + K` | 暂不支持 |
+| 删除历史对话 | `Ctrl + '` | `Cmd + '` |
+
+> [!NOTE]
+> `Ctrl + K` 录制麦克风功能目前仅支持 Windows 系统，macOS 版本尚未适配。
 
 ---
 
