@@ -1,0 +1,50 @@
+{
+    "name": "cheating-buddy",
+    "productName": "作弊老铁",
+    "version": "2.0.0",
+    "description": "面试与学习的 AI 助手",
+    "main": "src/index.js",
+    "scripts": {
+        "start": "electron-forge start",
+        "package": "electron-forge package",
+        "make": "electron-forge make",
+        "publish": "electron-forge publish",
+        "lint": "echo \"No linting configured\"",
+        "test": "vitest run",
+        "build:audio": "bash build-system-audio-dump.sh",
+        "prebuild": "npm run build:audio"
+    },
+    "keywords": [
+        "作弊老铁",
+        "AI 助手",
+        "面试助手",
+        "学习助手",
+        "桌面应用"
+    ],
+    "author": {
+        "name": "sohzm",
+        "email": "sohambharambe9@gmail.com"
+    },
+    "license": "GPL-3.0",
+    "dependencies": {
+        "@google/genai": "^1.2.0",
+        "electron-squirrel-startup": "^1.0.1",
+        "form-data": "^4.0.4",
+        "tesseract.js": "^6.0.1"
+    },
+    "devDependencies": {
+        "@electron-forge/cli": "^7.8.1",
+        "@electron-forge/maker-deb": "^7.8.1",
+        "@electron-forge/maker-dmg": "^7.8.1",
+        "@electron-forge/maker-rpm": "^7.8.1",
+        "@electron-forge/maker-squirrel": "^7.8.1",
+        "@electron-forge/maker-zip": "^7.8.1",
+        "@electron-forge/plugin-auto-unpack-natives": "^7.8.1",
+        "@electron-forge/plugin-fuses": "^7.8.1",
+        "@electron/fuses": "^1.8.0",
+        "@reforged/maker-appimage": "^5.0.0",
+        "electron": "^30.0.5",
+        "jsdom": "^23.2.0",
+        "vitest": "^1.6.1"
+    }
+}
