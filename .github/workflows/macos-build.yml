@@ -1,0 +1,43 @@
+name: Build macOS DMG (manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build DMG
+        run: npm run make
+      
+      - name: Find all DMG files
+        id: find_dmg
+        run: |
+          DMG_FILES=$(find out/make -name '*.dmg' -type f)
+          echo "Found DMG files:"
+          echo "$DMG_FILES"
+          echo "dmg_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$DMG_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Upload DMG artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg-${{ github.sha }}
+          path: out/make/**/*.dmg
+          if-no-files-found: error
+      
+      # Removed auto-release to avoid conflicts with Release All workflow
