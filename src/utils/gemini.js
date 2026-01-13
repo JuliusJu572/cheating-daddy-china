@@ -33,7 +33,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
       } else {
         console.warn('⚠️ [send-image-content] 无有效 session');
         sendToRenderer('update-response', '[Mock] 收到图片，未配置实时模型')
-        sendToRenderer('update-status', 'Listening...')
+        sendToRenderer('update-status', '正在监听...')
       }
       return { success: true }
     } catch (error) {
@@ -55,7 +55,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
       } else {
         console.warn('⚠️ [send-text-message] 无有效 session');
         sendToRenderer('update-response', `[Mock] 文本: ${text}`)
-        sendToRenderer('update-status', 'Listening...')
+        sendToRenderer('update-status', '正在监听...')
       }
       return { success: true }
     } catch (error) {
@@ -203,13 +203,13 @@ function initializeGeminiSession(apiKey, prompt, profile, language, maxTokens) {
     if (payload?.text) {
       messages.push({ role: 'user', content: payload.text })
       sendToRenderer('update-response', `[Mock Gemini] ${payload.text}`)
-      sendToRenderer('update-status', 'Listening...')
+      sendToRenderer('update-status', '正在监听...')
       return
     }
     if (payload?.media?.data) {
       messages.push({ role: 'user', content: '收到图片' })
       sendToRenderer('update-response', '[Mock Gemini] 已接收截图')
-      sendToRenderer('update-status', 'Listening...')
+      sendToRenderer('update-status', '正在监听...')
       return
     }
   }

@@ -188,7 +188,7 @@ async function initializeGemini(profile = 'interview', language = 'zh-CN') {
             apiKey,
             apiBase,
             customPrompt: localStorage.getItem('customPrompt') || '',
-            maxTokens: parseInt(localStorage.getItem('maxTokens') || '2048', 10),
+            maxTokens: parseInt(localStorage.getItem('maxTokens') || '4096', 10),
             profile,
             language,
         });
@@ -196,9 +196,9 @@ async function initializeGemini(profile = 'interview', language = 'zh-CN') {
         console.log('🚀 [renderer] initialize-model 结果:', success);
 
         if (success) {
-            cheddar.setStatus('Live');
+            cheddar.setStatus('就绪');
         } else {
-            cheddar.setStatus('error');
+            cheddar.setStatus('初始化失败');
         }
         return success;
     }
