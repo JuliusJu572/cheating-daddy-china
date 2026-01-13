@@ -3,7 +3,22 @@ if (require('electron-squirrel-startup')) {
 }
 
 const { app, BrowserWindow, shell, ipcMain } = require('electron');
+const path = require('node:path');
 const crypto = require('node:crypto');
+
+// ✅ 修复Windows上Electron缓存和quota数据库错误
+// 设置一个纯英文的userData路径，避免中文字符导致的缓存问题
+if (process.platform === 'win32') {
+    const appDataPath = process.env.APPDATA || path.join(process.env.USERPROFILE, 'AppData', 'Roaming');
+    const customUserDataPath = path.join(appDataPath, 'CheatingBuddy');
+    app.setPath('userData', customUserDataPath);
+    console.log('🔧 [Windows] 设置userData路径:', customUserDataPath);
+
+    // 同时设置其他相关路径
+    app.setPath('appData', customUserDataPath);
+    app.setPath('userCache', path.join(process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE, 'AppData', 'Local'), 'CheatingBuddy', 'Cache'));
+    app.setPath('logs', path.join(customUserDataPath, 'logs'));
+}
 const { createWindow, updateGlobalShortcuts, ensureDataDirectories } = require('./utils/window');
 const { setupGeminiIpcHandlers, stopMacOSAudioCapture, sendToRenderer, initializeGeminiSession } = require('./utils/gemini');
 const { getSystemPrompt } = require('./utils/prompts');
