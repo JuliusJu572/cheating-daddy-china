@@ -5,6 +5,7 @@ if (require('electron-squirrel-startup')) {
 const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 
 function configureWindowsPaths() {
     if (process.platform !== 'win32') return;
