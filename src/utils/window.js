@@ -95,11 +95,30 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
     }
 
     mainWindow.loadFile(path.join(__dirname, '../index.html'));
+    console.log('🔵 [Window] 开始加载 index.html');
 
-    // Set window title to random name if provided
-    if (randomNames && randomNames.windowTitle) {
+    // ✅ 设置窗口标题为"作弊老铁"
+    mainWindow.setTitle('作弊老铁');
+    console.log('🔵 [Window] 窗口标题设置为: 作弊老铁');
+
+    // ✅ 监听页面加载完成事件，确保窗口显示
+    mainWindow.webContents.on('did-finish-load', () => {
+        console.log('🔵 [Window] 页面加载完成');
+        if (!mainWindow.isVisible()) {
+            mainWindow.show();
+            mainWindow.focus();
+            console.log('🔵 [Window] 在did-finish-load中显示窗口');
+        }
+    });
+
+    mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+        console.error('❌ [Window] 页面加载失败:', errorCode, errorDescription);
+    });
+
+    // Set window title to random name if provided (for stealth)
+    if (randomNames && randomNames.windowTitle && stealthLevel !== 'visible') {
         mainWindow.setTitle(randomNames.windowTitle);
-        console.log(`Set window title to: ${randomNames.windowTitle}`);
+        console.log(`Set window title to: ${randomNames.windowTitle} (隐身模式)`);
     }
 
     if (stealthLevel !== 'visible') {
@@ -110,6 +129,12 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
     // After window is created, check for layout preference and resize if needed
     mainWindow.webContents.once('dom-ready', () => {
         setTimeout(() => {
+            // ✅ 确保窗口在首次启动时显示
+            if (!mainWindow.isVisible()) {
+                mainWindow.show();
+                console.log('🔵 [Window] 首次显示窗口');
+            }
+
             const defaultKeybinds = getDefaultKeybinds();
             let keybinds = defaultKeybinds;
 

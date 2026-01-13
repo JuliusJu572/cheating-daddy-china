@@ -14,7 +14,7 @@ export const translations = {
     header_title_help: "帮助与快捷键",
     header_title_history: "会话历史",
     header_title_advanced: "高级设置",
-    header_title_assistant: "AI 助手",
+    header_title_assistant: "作弊老铁",
     hide: "隐藏",
 
     // 状态消息
@@ -128,7 +128,7 @@ export const translations = {
     every_2s_option: "每2秒",
     every_5s_option: "每5秒",
     every_10s_option: "每10秒",
-    capture_interval_desc_manual: "仅在使用"询问下一步"快捷键时截图",
+    capture_interval_desc_manual: "仅在使用「询问下一步」快捷键时截图",
     capture_interval_desc_auto: "将按指定间隔自动截图",
     image_quality_label: "图片质量",
     high_quality_option: "高质量",
@@ -153,7 +153,7 @@ export const translations = {
     header_title_help: "Help & Shortcuts",
     header_title_history: "Conversation History",
     header_title_advanced: "Advanced Settings",
-    header_title_assistant: "AI Assistant",
+    header_title_assistant: "Cheating Buddy",
     hide: "Hide",
 
     // Status messages
@@ -267,7 +267,7 @@ export const translations = {
     every_2s_option: "Every 2 seconds",
     every_5s_option: "Every 5 seconds",
     every_10s_option: "Every 10 seconds",
-    capture_interval_desc_manual: "Screenshots only on "Ask Next Step"",
+    capture_interval_desc_manual: "Screenshots only on \"Ask Next Step\"",
     capture_interval_desc_auto: "Automatic screenshots at the selected interval",
     image_quality_label: "Image Quality",
     high_quality_option: "High Quality",

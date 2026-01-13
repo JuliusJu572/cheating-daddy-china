@@ -1,5 +1,4 @@
 import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
-import { t } from '../../i18n/strings.js';
 import { resizeLayout } from '../../utils/windowResize.js';
 
 export class MainView extends LitElement {
@@ -39,12 +38,6 @@ export class MainView extends LitElement {
             color: #fbbf24;
         }
 
-        .status-display.error {
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            color: #ef4444;
-        }
-
         .status-icon {
             font-size: 18px;
         }
@@ -79,27 +72,6 @@ export class MainView extends LitElement {
 
         input::placeholder {
             color: var(--placeholder-color);
-        }
-
-        /* Red blink animation for invalid API key */
-        input.api-key-error {
-            animation: blink-red 1s ease-in-out;
-            border-color: #ff4444;
-        }
-
-        @keyframes blink-red {
-            0%, 100% {
-                border-color: var(--button-border);
-                background: var(--input-background);
-            }
-            25%, 75% {
-                border-color: #ff4444;
-                background: rgba(255, 68, 68, 0.1);
-            }
-            50% {
-                border-color: #ff6666;
-                background: rgba(255, 68, 68, 0.15);
-            }
         }
 
         .start-button {
@@ -183,6 +155,38 @@ export class MainView extends LitElement {
             opacity: 0.8;
         }
 
+        .error-message {
+            color: #ef4444;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
+        .status-message {
+            margin-top: 8px;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        .status-success {
+            background: rgba(34, 197, 94, 0.1);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.2);
+        }
+
+        .status-error {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .status-info {
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
         :host {
             height: 100%;
             display: flex;
@@ -198,12 +202,11 @@ export class MainView extends LitElement {
         isInitializing: { type: Boolean },
         onLayoutModeChange: { type: Function },
         onOpenSettings: { type: Function },
-        showApiKeyError: { type: Boolean },
+        _licenseKeyValue: { type: String, state: true },
+        hasApiKey: { type: Boolean },
         isValidating: { type: Boolean },
-        isKeyValid: { type: Boolean },
-        hasSavedKey: { type: Boolean },
-        validationError: { type: String },
-        _inputValue: { type: String, state: true },
+        _statusMessage: { type: String, state: true },
+        _statusType: { type: String, state: true },
     };
 
     constructor() {
@@ -213,83 +216,19 @@ export class MainView extends LitElement {
         this.onOpenSettings = () => {};
         this.isInitializing = false;
         this.onLayoutModeChange = () => {};
-        this.showApiKeyError = false;
+        this._licenseKeyValue = '';
+        this.hasApiKey = !!localStorage.getItem('apiKey');
         this.isValidating = false;
-        this.isKeyValid = false;
-        this.hasSavedKey = false;
-        this.validationError = '';
+        this._statusMessage = '';
+        this._statusType = '';
         this.boundKeydownHandler = this.handleKeydown.bind(this);
-        this._validationTimer = null;
-        this._inputValue = '';
-
-        // 检查是否有已保存的API key
-        this.checkSavedApiKey();
-    }
-
-    async checkSavedApiKey() {
-        const savedKey = localStorage.getItem('apiKey');
-        this.hasSavedKey = !!savedKey;
-        if (this.hasSavedKey) {
-            // 有已保存的key，自动验证
-            await this.validateSavedApiKey();
-        }
-        this.requestUpdate();
-    }
-
-    async validateSavedApiKey() {
-        this.isValidating = true;
-        this.validationError = '';
-        this.requestUpdate();
-
-        try {
-            const apiKey = localStorage.getItem('apiKey');
-            const apiBase = 'https://open.bigmodel.cn/api/paas/v4';
-
-            let ipcRenderer = null;
-            try {
-                if (window.require) {
-                    ipcRenderer = window.require('electron').ipcRenderer;
-                } else if (window.electron && window.electron.ipcRenderer) {
-                    ipcRenderer = window.electron.ipcRenderer;
-                }
-            } catch (_) {}
-
-            if (!ipcRenderer) {
-                this.validationError = '无法连接到主进程';
-                this.isKeyValid = false;
-                return;
-            }
-
-            // 测试连接
-            const connectRes = await ipcRenderer.invoke('test-model-connection', {
-                apiBase: apiBase,
-                headers: { Authorization: `Bearer ${apiKey}` }
-            });
-
-            if (!connectRes?.success) {
-                this.validationError = 'API key已过期或无效，请重新配置';
-                this.isKeyValid = false;
-                // 清除无效的key
-                localStorage.removeItem('apiKey');
-                this.hasSavedKey = false;
-            } else {
-                this.isKeyValid = true;
-                console.log('✅ [MainView] 已保存的API key验证成功');
-            }
-        } catch (error) {
-            console.error('❌ [MainView] 验证已保存的API key出错:', error);
-            this.validationError = '验证失败: ' + (error?.message || '未知错误');
-            this.isKeyValid = false;
-            localStorage.removeItem('apiKey');
-            this.hasSavedKey = false;
-        } finally {
-            this.isValidating = false;
-            this.requestUpdate();
-        }
     }
 
     connectedCallback() {
         super.connectedCallback();
+
+        // Check if we already have a valid API key
+        this.hasApiKey = !!localStorage.getItem('apiKey');
 
         window.electron?.ipcRenderer?.on('session-initializing', (event, isInitializing) => {
             this.isInitializing = isInitializing;
@@ -301,12 +240,6 @@ export class MainView extends LitElement {
 
     disconnectedCallback() {
         super.disconnectedCallback();
-
-        if (this._validationTimer) {
-            clearTimeout(this._validationTimer);
-            this._validationTimer = null;
-        }
-
         window.electron?.ipcRenderer?.removeAllListeners('session-initializing');
         document.removeEventListener('keydown', this.boundKeydownHandler);
     }
@@ -318,147 +251,115 @@ export class MainView extends LitElement {
         const isCmdOrCtrlEnter = isMac
             ? (e.metaKey && !e.ctrlKey && e.key === 'Enter')
             : (!e.metaKey && e.ctrlKey && e.key === 'Enter');
-        const isAltEnter = e.altKey && e.key === 'Enter';
-        const isAudioCapture = (isMac
-            ? (e.metaKey && !e.ctrlKey)
-            : (!e.metaKey && e.ctrlKey)) && !e.altKey && !e.shiftKey && (e.key === 'l' || e.key === 'L');
 
-        if ((isCmdOrCtrlEnter || isAltEnter) && this.isKeyValid) {
+        if (isCmdOrCtrlEnter && this.hasApiKey) {
             e.preventDefault();
             this.handleStartClick();
             return;
         }
-        if (isAudioCapture) {
-            e.preventDefault();
-            try { window.startQuickAudioCapture && window.startQuickAudioCapture(); } catch (_) {}
-        }
     }
 
     async handleInput(e) {
-        const v = e.target.value || '';
-        this._inputValue = v;
+        this._licenseKeyValue = e.target.value || '';
+        this._statusMessage = '';
+        this.requestUpdate();
+    }
 
-        if (this._validationTimer) {
-            clearTimeout(this._validationTimer);
-            this._validationTimer = null;
+    async handleStartClick() {
+        if (this.isInitializing) {
+            return;
         }
 
-        this.showApiKeyError = false;
-        this.validationError = '';
+        // If we already have a valid API key, just start
+        if (this.hasApiKey && !this._licenseKeyValue.trim()) {
+            this.onStart();
+            return;
+        }
 
-        if (!v.trim()) {
-            this.isKeyValid = false;
-            this.isValidating = false;
-            localStorage.removeItem('apiKey');
+        // Otherwise, validate and save the License Key
+        const key = this._licenseKeyValue.trim();
+
+        if (!key) {
+            this._statusMessage = '请输入License Key';
+            this._statusType = 'error';
             this.requestUpdate();
             return;
         }
 
-        const s = v.trim();
-        const isLicense = /^CD-/i.test(s);
-        if (!isLicense) {
-            this.validationError = '请输入有效的License Key (格式: CD-xxxxx)';
-            this.showApiKeyError = true;
-            this.isKeyValid = false;
-            this.isValidating = false;
-            localStorage.removeItem('apiKey');
+        if (!/^CD-/i.test(key)) {
+            this._statusMessage = 'License Key格式无效，应以CD-开头';
+            this._statusType = 'error';
             this.requestUpdate();
             return;
         }
 
         this.isValidating = true;
+        this._statusMessage = '正在验证License Key...';
+        this._statusType = 'info';
         this.requestUpdate();
 
-        this._validationTimer = setTimeout(async () => {
-            try {
-                let ipcRenderer = null;
-                try {
-                    if (window.require) {
-                        ipcRenderer = window.require('electron').ipcRenderer;
-                    } else if (window.electron && window.electron.ipcRenderer) {
-                        ipcRenderer = window.electron.ipcRenderer;
-                    }
-                } catch (_) {}
-                if (!ipcRenderer) {
-                    this.validationError = '无法连接到主进程';
-                    this.showApiKeyError = true;
-                    this.isKeyValid = false;
-                    this.isValidating = false;
-                    this.requestUpdate();
-                    return;
-                }
-
-                const decryptRes = await ipcRenderer.invoke('decrypt-license-key', s);
-
-                if (!decryptRes?.success || !decryptRes.apiKey) {
-                    console.log('❌ [MainView] License Key解密失败');
-                    this.validationError = 'License Key无效，请检查输入';
-                    this.showApiKeyError = true;
-                    this.isKeyValid = false;
-                    this.isValidating = false;
-                    localStorage.removeItem('apiKey');
-                    this.requestUpdate();
-                    return;
-                }
-
-                const apiKey = decryptRes.apiKey;
-                const apiBase = 'https://open.bigmodel.cn/api/paas/v4';
-
-                const connectRes = await ipcRenderer.invoke('test-model-connection', {
-                    apiBase: apiBase,
-                    headers: { Authorization: `Bearer ${apiKey}` }
-                });
-
-                if (!connectRes?.success) {
-                    console.log('❌ [MainView] API连接测试失败');
-                    this.validationError = 'API连接失败，请检查网络或联系支持';
-                    this.showApiKeyError = true;
-                    this.isKeyValid = false;
-                    this.isValidating = false;
-                    localStorage.removeItem('apiKey');
-                    this.requestUpdate();
-                    return;
-                }
-
-                // 保存解密后的真实 API Key
-                localStorage.setItem('apiKey', apiKey);
-                localStorage.setItem('licenseKey', s);
-
-                this.isKeyValid = true;
-                this.hasSavedKey = true;
-                this.showApiKeyError = false;
-                this.validationError = '';
-                console.log('✅ [MainView] API key验证并保存成功');
-
-            } catch (error) {
-                console.error('❌ [MainView] 验证过程出错:', error?.message || error);
-                this.validationError = '验证失败: ' + (error?.message || '未知错误');
-                this.showApiKeyError = true;
-                this.isKeyValid = false;
-                localStorage.removeItem('apiKey');
+        try {
+            let ipcRenderer = null;
+            if (window.require) {
+                ipcRenderer = window.require('electron').ipcRenderer;
+            } else if (window.electron?.ipcRenderer) {
+                ipcRenderer = window.electron.ipcRenderer;
             }
 
+            if (!ipcRenderer) {
+                throw new Error('无法连接到主进程');
+            }
+
+            // 解密License Key
+            const decryptRes = await ipcRenderer.invoke('decrypt-license-key', key);
+
+            if (!decryptRes?.success || !decryptRes.apiKey) {
+                this._statusMessage = 'License Key无效，解密失败';
+                this._statusType = 'error';
+                this.requestUpdate();
+                return;
+            }
+
+            const apiKey = decryptRes.apiKey;
+            const apiBase = 'https://open.bigmodel.cn/api/paas/v4';
+
+            // 测试连接
+            const connectRes = await ipcRenderer.invoke('test-model-connection', {
+                apiBase: apiBase,
+                headers: { Authorization: `Bearer ${apiKey}` }
+            });
+
+            if (!connectRes?.success) {
+                this._statusMessage = 'API连接测试失败，请检查License Key';
+                this._statusType = 'error';
+                this.requestUpdate();
+                return;
+            }
+
+            // 保存解密后的API Key
+            localStorage.setItem('apiKey', apiKey);
+            localStorage.setItem('licenseKey', key);
+
+            this._statusMessage = '✅ License Key验证成功！';
+            this._statusType = 'success';
+            this.hasApiKey = true;
+            this._licenseKeyValue = '';
+
+            // 2秒后开始会话
+            setTimeout(() => {
+                this._statusMessage = '';
+                this.requestUpdate();
+                this.onStart();
+            }, 1000);
+
+        } catch (error) {
+            console.error('验证License Key错误:', error);
+            this._statusMessage = '验证失败: ' + (error?.message || '未知错误');
+            this._statusType = 'error';
+        } finally {
             this.isValidating = false;
             this.requestUpdate();
-        }, 800);
-    }
-
-    handleStartClick() {
-        if (this.isInitializing || !this.isKeyValid) {
-            return;
         }
-        this.onStart();
-    }
-
-    handleReconfigureClick() {
-        // 清除已保存的key，返回配置状态
-        localStorage.removeItem('apiKey');
-        localStorage.removeItem('licenseKey');
-        this.hasSavedKey = false;
-        this.isKeyValid = false;
-        this._inputValue = '';
-        this.validationError = '';
-        this.requestUpdate();
     }
 
     handleOpenSettingsClick() {
@@ -518,105 +419,79 @@ export class MainView extends LitElement {
         </svg>`;
 
         if (isMac) {
-            return html`${t('start_session')} <span class="shortcut-icons">${cmdIcon}${enterIcon}</span>`;
+            return html`开始会话 <span class="shortcut-icons">${cmdIcon}${enterIcon}</span>`;
         } else {
-            return html`${t('start_session')} <span class="shortcut-icons">Ctrl${enterIcon}</span>`;
+            return html`开始会话 <span class="shortcut-icons">Ctrl${enterIcon}</span>`;
         }
     }
 
     render() {
         // 状态显示
         let statusDisplay = html``;
-        if (this.isValidating) {
-            statusDisplay = html`
-                <div class="status-display no-key">
-                    <span class="status-icon">⏳</span>
-                    <span>正在验证License Key...</span>
-                </div>
-            `;
-        } else if (this.hasSavedKey && this.isKeyValid) {
+        if (this.hasApiKey && !this._licenseKeyValue.trim()) {
             statusDisplay = html`
                 <div class="status-display has-key">
                     <span class="status-icon">✅</span>
-                    <span>License Key已验证，可以开始使用</span>
-                </div>
-            `;
-        } else if (this.validationError) {
-            statusDisplay = html`
-                <div class="status-display error">
-                    <span class="status-icon">❌</span>
-                    <span>${this.validationError}</span>
+                    <span>License Key已配置，可以开始使用</span>
                 </div>
             `;
         } else {
             statusDisplay = html`
                 <div class="status-display no-key">
                     <span class="status-icon">🔑</span>
-                    <span>请输入License Key以继续</span>
+                    <span>请输入License Key</span>
+                </div>
+            `;
+        }
+
+        // 状态消息显示
+        let statusMessageDisplay = html``;
+        if (this._statusMessage) {
+            const messageClass = this._statusType === 'error'
+                ? 'status-error'
+                : this._statusType === 'success'
+                ? 'status-success'
+                : 'status-info';
+
+            statusMessageDisplay = html`
+                <div class="status-message ${messageClass}">
+                    ${this._statusMessage}
                 </div>
             `;
         }
 
         // 输入框和按钮
-        let inputSection = html``;
-        if (this.hasSavedKey && this.isKeyValid) {
-            // 已有有效key，显示快捷操作
-            inputSection = html`
-                <div class="input-group">
-                    <button
-                        @click=${this.handleStartClick}
-                        class="start-button ${this.isInitializing ? 'disabled' : ''}"
-                        ?disabled=${this.isInitializing}
-                    >
-                        ${this.isInitializing ? '初始化中...' : this.getStartButtonText()}
-                    </button>
-                    <button
-                        @click=${this.handleReconfigureClick}
-                        class="secondary-button"
-                    >
-                        重新配置
-                    </button>
-                    <button
-                        @click=${this.handleOpenSettingsClick}
-                        class="secondary-button"
-                    >
-                        打开设置
-                    </button>
-                </div>
-            `;
-        } else {
-            // 需要输入或重新输入key
-            inputSection = html`
-                <div class="input-group">
-                    <input
-                        type="password"
-                        class="${this.showApiKeyError ? 'api-key-error' : ''}"
-                        placeholder="${t('enter_api_key')}"
-                        .value=${this._inputValue}
-                        @input=${e => this.handleInput(e)}
-                        ?disabled=${this.isValidating}
-                    />
-                    <button
-                        @click=${this.handleStartClick}
-                        class="start-button ${this.isInitializing || this.isValidating || !this.isKeyValid ? 'disabled' : ''}"
-                        ?disabled=${this.isInitializing || this.isValidating || !this.isKeyValid}
-                    >
-                        ${this.isValidating ? '验证中...' : this.getStartButtonText()}
-                    </button>
-                </div>
-            `;
-        }
+        const inputSection = html`
+            <div class="input-group">
+                <input
+                    type="password"
+                    placeholder="请输入License Key (格式: CD-xxxxx)"
+                    .value=${this._licenseKeyValue}
+                    @input=${e => this.handleInput(e)}
+                    ?disabled=${this.isValidating}
+                />
+                <button
+                    @click=${this.handleStartClick}
+                    class="start-button ${this.isInitializing || this.isValidating ? 'disabled' : ''}"
+                    ?disabled=${this.isInitializing || this.isValidating}
+                >
+                    ${this.isValidating ? '验证中...' : (this.isInitializing ? '初始化中...' : this.getStartButtonText())}
+                </button>
+            </div>
+            ${statusMessageDisplay}
+            <div style="display: flex; gap: 8px; margin-bottom: 20px;">
+                <button @click=${this.handleOpenSettingsClick} class="secondary-button">
+                    打开设置
+                </button>
+            </div>
+        `;
 
         return html`
-            <div class="welcome">${t('welcome')}</div>
+            <div class="welcome">欢迎使用作弊老铁</div>
 
             ${statusDisplay}
 
             ${inputSection}
-
-            <div class="description">
-                ${t('api_key_help_prefix')} <span class="link" @click=${this.handleAPIKeyHelpClick.bind(this)}>${t('api_key_help_link')}</span>
-            </div>
         `;
     }
 }

@@ -209,6 +209,89 @@ function setupGeneralIpcHandlers() {
         }
     });
 
+    ipcMain.handle('clear-cheddar-cache', async () => {
+        try {
+            const fs = require('fs');
+            const os = require('os');
+            const path = require('path');
+
+            // 清理cheddar目录
+            const homeDir = os.homedir();
+            const cheddarDir = path.join(homeDir, 'cheddar');
+
+            if (!fs.existsSync(cheddarDir)) {
+                return { success: true, deletedFiles: 0, freedSpace: '0 B' };
+            }
+
+            let deletedFiles = 0;
+            let totalSize = 0;
+
+            // 递归删除目录
+            function deleteDirectory(dirPath) {
+                const files = fs.readdirSync(dirPath);
+                files.forEach(file => {
+                    const filePath = path.join(dirPath, file);
+                    const stats = fs.statSync(filePath);
+
+                    if (stats.isDirectory()) {
+                        deleteDirectory(filePath);
+                    } else {
+                        totalSize += stats.size;
+                        fs.unlinkSync(filePath);
+                        deletedFiles++;
+                    }
+                });
+
+                // 删除空目录
+                try {
+                    fs.rmdirSync(dirPath);
+                } catch (e) {
+                    // 目录可能不为空或有其他问题，忽略
+                }
+            }
+
+            // 清理 data/audio 目录
+            const audioDir = path.join(cheddarDir, 'data', 'audio');
+            if (fs.existsSync(audioDir)) {
+                deleteDirectory(audioDir);
+            }
+
+            // 清理 data/screenshots 目录
+            const screenshotsDir = path.join(cheddarDir, 'data', 'screenshots');
+            if (fs.existsSync(screenshotsDir)) {
+                deleteDirectory(screenshotsDir);
+            }
+
+            // 清理 data 目录本身（如果为空）
+            try {
+                const dataDir = path.join(cheddarDir, 'data');
+                const remainingFiles = fs.readdirSync(dataDir);
+                if (remainingFiles.length === 0) {
+                    fs.rmdirSync(dataDir);
+                }
+            } catch (e) {
+                // 忽略
+            }
+
+            // 格式化释放的空间
+            function formatBytes(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+
+            const freedSpace = formatBytes(totalSize);
+            console.log(`🗑️ [clear-cheddar-cache] 清理完成: ${deletedFiles} 个文件, 释放 ${freedSpace}`);
+
+            return { success: true, deletedFiles, freedSpace };
+        } catch (error) {
+            console.error('❌ [clear-cheddar-cache] 清理失败:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
     ipcMain.handle('get-random-display-name', async event => {
         try {
             return randomNames ? randomNames.displayName : 'System Monitor';
@@ -645,9 +728,9 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
     const messages = [];
     const glmEndpoint = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
 
-    // 智谱AI模型配置
-    const glmTextModel = 'glm-4-flash';      // GLM-4.7 用于文本
-    const glmVisionModel = 'glm-4v-flash';   // GLM-4.6V 用于截图
+    // 智谱AI模型配置 - 使用官方模型名称
+    const glmTextModel = 'glm-4.7';      // GLM-4 用于文本
+    const glmVisionModel = 'glm-4.6v';   // GLM-4V 用于截图
 
     if (systemPrompt && systemPrompt.length > 0) {
         messages.push({ role: 'system', content: systemPrompt });
@@ -661,24 +744,33 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
         console.log('📡 [callChatCompletions] Endpoint:', glmEndpoint);
         console.log('📡 [callChatCompletions] Model:', model);
         console.log('📡 [callChatCompletions] Messages count:', messagesList.length);
+        console.log('📡 [callChatCompletions] API Key length:', apiKey ? apiKey.length : 0);
+        // 不显示API key的明文，只显示长度
 
         sendToRenderer('update-status', 'Answering...');
 
         const headers = {
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/json; charset=utf-8',
             'Authorization': `Bearer ${apiKey}`,
         };
 
+        // 构建请求体
         const body = {
             model: model,
             messages: messagesList,
             stream: false,
             max_tokens: maxTokens,
+            thinking: { type: 'disabled' },
         };
 
-        console.log('📤 [callChatCompletions] Request body:', JSON.stringify(body, null, 2));
+        // 只打印请求的基本信息，不打印完整内容
+        console.log('📤 [callChatCompletions] Request prepared - model:', model, 'messages:', messagesList.length, 'max_tokens:', maxTokens, 'thinking: disabled');
 
-        const res = await fetch(glmEndpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+        const res = await fetch(glmEndpoint, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+        });
 
         console.log('📡 [callChatCompletions] Response status:', res.status);
 
@@ -689,7 +781,7 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
         }
 
         const data = await res.json();
-        console.log('✅ [callChatCompletions] Response received:', JSON.stringify(data, null, 2));
+        console.log('✅ [callChatCompletions] Response received');
 
         const content = data?.choices?.[0]?.message?.content || '';
         messages.push({ role: 'assistant', content });

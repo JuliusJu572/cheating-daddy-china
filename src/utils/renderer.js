@@ -550,9 +550,22 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
         });
 
         // Lazy init of canvas based on video dimensions
+        // ✅ 限制图片尺寸以符合智谱AI API要求
+        const maxWidth = 1280;
+        const maxHeight = 1280;
+        let width = hiddenVideo.videoWidth;
+        let height = hiddenVideo.videoHeight;
+
+        // 计算缩放比例
+        const scale = Math.min(maxWidth / width, maxHeight / height, 1);
+        const scaledWidth = Math.floor(width * scale);
+        const scaledHeight = Math.floor(height * scale);
+
+        console.log(`📐 原始尺寸: ${width}x${height}, 缩放后: ${scaledWidth}x${scaledHeight}`);
+
         offscreenCanvas = document.createElement('canvas');
-        offscreenCanvas.width = hiddenVideo.videoWidth;
-        offscreenCanvas.height = hiddenVideo.videoHeight;
+        offscreenCanvas.width = scaledWidth;
+        offscreenCanvas.height = scaledHeight;
         offscreenContext = offscreenCanvas.getContext('2d');
     }
 
@@ -681,13 +694,13 @@ async function startQuickAudioCapture() {
                     const base64 = stopRes.pcmBase64 || '';
                     const sr = stopRes.sampleRate || 16000;
                     if (base64 && base64.length > 0) {
-                        cheddar.setStatus('Transcribing...');
+                        cheddar.setStatus('🔊 转写系统音频中...');
                         const result = await ipcRenderer.invoke('save-audio-and-transcribe', { pcmBase64: base64, sampleRate: sr });
                         if (!result || !result.success) {
                             cheddar.setStatus('Error: ' + (result?.error || 'Unknown'));
                         }
                     } else {
-                        cheddar.setStatus('No audio recorded');
+                        cheddar.setStatus('未录制到音频');
                     }
                 } else {
                     cheddar.setStatus('Error: ' + (stopRes?.error || 'Stop failed'));
@@ -709,47 +722,37 @@ async function startQuickAudioCapture() {
             if (quickRecordStream) {
                 quickRecordStream.getTracks().forEach(track => track.stop());
             }
-            
+
             if (quickRecordBuffer.length > 0) {
                 const pcm = convertFloat32ToInt16(quickRecordBuffer);
                 const base64 = arrayBufferToBase64(pcm.buffer);
-                cheddar.setStatus('Transcribing...');
-                const result = await ipcRenderer.invoke('save-audio-and-transcribe', { 
-                    pcmBase64: base64, 
-                    sampleRate: 16000 
+                cheddar.setStatus('🔊 转写系统音频中...');
+                const result = await ipcRenderer.invoke('save-audio-and-transcribe', {
+                    pcmBase64: base64,
+                    sampleRate: 16000
                 });
                 if (!result || !result.success) {
                     cheddar.setStatus('Error: ' + (result?.error || 'Unknown'));
                 }
             } else {
-                const silent = new Float32Array(16000);
-                const pcm = convertFloat32ToInt16(silent);
-                const base64 = arrayBufferToBase64(pcm.buffer);
-                cheddar.setStatus('Transcribing...');
-                const result = await ipcRenderer.invoke('save-audio-and-transcribe', { 
-                    pcmBase64: base64, 
-                    sampleRate: 16000 
-                });
-                if (!result || !result.success) {
-                    cheddar.setStatus('Error: ' + (result?.error || 'Unknown'));
-                }
+                cheddar.setStatus('未录制到音频');
             }
-            
+
             isQuickRecording = false;
             quickRecordStream = null;
             quickRecordContext = null;
             quickRecordProcessor = null;
             quickRecordBuffer = [];
             quickRecordStartTime = null;
-            
+
         } catch (error) {
             cheddar.setStatus('Error: ' + error.message);
             isQuickRecording = false;
         }
         return;
     }
-    
-    // 开始新的录音
+
+    // 开始新的录音 - 系统音频
     try {
         if (isMacOS) {
             const startRes = await ipcRenderer.invoke('start-macos-audio');
@@ -760,15 +763,19 @@ async function startQuickAudioCapture() {
             isQuickRecording = true;
             quickRecordStartTime = Date.now();
             const stopKey = 'Cmd+L';
-            cheddar.setStatus(`Recording... (${stopKey} to stop)`);
+            cheddar.setStatus(`🔊 录制系统音频... (${stopKey} 停止)`);
             return;
         }
+
+        // Windows/Linux - 获取系统音频
         let streamToUse = null;
-        
-        // 检查是否有现成的 mediaStream
+
+        // 检查是否有现成的 mediaStream (系统音频)
         if (mediaStream && mediaStream.getAudioTracks().length > 0) {
             streamToUse = mediaStream;
+            console.log('✅ 使用现有系统音频流');
         } else {
+            // 尝试获取系统音频
             try {
                 quickRecordStream = await navigator.mediaDevices.getDisplayMedia({
                     video: {
@@ -784,44 +791,30 @@ async function startQuickAudioCapture() {
                         autoGainControl: false,
                     },
                 });
-                
+
                 const audioTracks = quickRecordStream.getAudioTracks();
                 if (audioTracks.length === 0) {
+                    // 没有系统音频，清理并提示用户
                     quickRecordStream.getTracks().forEach(track => track.stop());
                     quickRecordStream = null;
-                    try {
-                        const micOnly = await navigator.mediaDevices.getUserMedia({
-                            audio: {
-                                sampleRate: 16000,
-                                channelCount: 1,
-                                echoCancellation: true,
-                                noiseSuppression: true,
-                                autoGainControl: true,
-                            },
-                            video: false,
-                        });
-                        streamToUse = micOnly;
-                        cheddar.setStatus('Microphone capture');
-                    } catch (micErr) {
-                        cheddar.setStatus('Error: No audio stream');
-                        return;
-                    }
-                } else {
-                    streamToUse = quickRecordStream;
+                    cheddar.setStatus('⚠️ 无法获取系统音频，请先启动会话');
+                    return;
                 }
+                streamToUse = quickRecordStream;
+                console.log('✅ 获取到新的系统音频流');
             } catch (getErr) {
-                cheddar.setStatus('Error: Permission denied');
+                cheddar.setStatus('⚠️ 无法获取系统音频: ' + getErr.message);
                 return;
             }
         }
 
         if (!streamToUse) {
-            cheddar.setStatus('Error: No audio stream');
+            cheddar.setStatus('⚠️ 无系统音频流');
             return;
         }
 
         const stopKey = process.platform === 'darwin' ? 'Cmd+L' : 'Ctrl+L';
-        
+
         quickRecordContext = new AudioContext({ sampleRate: 16000 });
         if (quickRecordContext.state === 'suspended') {
             await quickRecordContext.resume();
@@ -839,8 +832,8 @@ async function startQuickAudioCapture() {
         };
         source.connect(quickRecordProcessor);
         quickRecordProcessor.connect(quickRecordContext.destination);
-        cheddar.setStatus(`Recording... (${stopKey} to stop)`);
-        
+        cheddar.setStatus(`🔊 录制系统音频... (${stopKey} 停止)`);
+
     } catch (error) {
         cheddar.setStatus('Error: ' + error.message);
         isQuickRecording = false;
