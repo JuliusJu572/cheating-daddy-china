@@ -327,7 +327,7 @@ function setupGeneralIpcHandlers() {
                     apiKey,
                     systemPrompt: sysPrompt,
                     language: language || 'zh-CN',
-                    maxTokens: maxTokens || 2048,
+                    maxTokens: maxTokens || 4096,
                 });
 
                 geminiSessionRef.current = session;
@@ -364,7 +364,7 @@ function setupGeneralIpcHandlers() {
             gemRef.current = session;
             geminiSessionRef.current = session;
             global.geminiSessionRef = geminiSessionRef;
-            sendToRenderer('update-status', 'Live session connected');
+            sendToRenderer('update-status', '连接成功！');
             console.log('✅ [initialize-model] aihubmix session 创建成功');
             return true;
         } catch (error) {
@@ -513,7 +513,7 @@ function setupGeneralIpcHandlers() {
             }
             const targetWindow = windows[0];
             
-            sendToRenderer('update-status', 'Transcribing...');
+            sendToRenderer('update-status', '⏳ 处理音频中...');
             const pcmBuffer = Buffer.from(pcmBase64, 'base64');
             const { audioDir } = ensureDataDirectories();
             const ts = Date.now();
@@ -593,13 +593,13 @@ function setupGeneralIpcHandlers() {
             }
 
             if (!fs.existsSync(finalPath)) {
-                sendToRenderer('update-status', 'Error');
+                sendToRenderer('update-status', '出错！');
                 return { success: false, error: 'Audio file not found' };
             }
             
             const fileSize = fs.statSync(finalPath).size;
             if (fileSize === 0) {
-                sendToRenderer('update-status', 'Error');
+                sendToRenderer('update-status', '出错！');
                 return { success: false, error: 'Audio file is empty' };
             }
             
@@ -701,11 +701,13 @@ function setupGeneralIpcHandlers() {
             
             if (text && geminiSessionRef.current) {
                 console.log('🚀 Sending transcription to model:', text);
-                sendToRenderer('update-status', 'Answering...');
-                await geminiSessionRef.current.sendRealtimeInput({ text });
-                sendToRenderer('update-status', 'Done');
+                sendToRenderer('update-status', '回答中...');
+                // 传递 skipFinalStatus: true，让 sendRealtimeInput 不设置最终状态
+                // 由这里统一设置 "完成"
+                await geminiSessionRef.current.sendRealtimeInput({ text }, { skipFinalStatus: true });
+                sendToRenderer('update-status', '完成');
             } else if (!text) {
-                sendToRenderer('update-status', 'No speech detected');
+                sendToRenderer('update-status', '没有检测到语音');
             }
             
             return { success: true, path: finalPath, text };
@@ -739,7 +741,8 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
 
     let closed = false;
 
-    async function callChatCompletions(model, messagesList) {
+    async function callChatCompletions(model, messagesList, options = {}) {
+        const { skipFinalStatus = false } = options || {};
         console.log('📡 [callChatCompletions] 准备调用智谱AI API...');
         console.log('📡 [callChatCompletions] Endpoint:', glmEndpoint);
         console.log('📡 [callChatCompletions] Model:', model);
@@ -747,7 +750,7 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
         console.log('📡 [callChatCompletions] API Key length:', apiKey ? apiKey.length : 0);
         // 不显示API key的明文，只显示长度
 
-        sendToRenderer('update-status', 'Answering...');
+        sendToRenderer('update-status', '回答中...');
 
         const headers = {
             'Content-Type': 'application/json; charset=utf-8',
@@ -786,12 +789,16 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
         const content = data?.choices?.[0]?.message?.content || '';
         messages.push({ role: 'assistant', content });
         sendToRenderer('update-response', content);
-        sendToRenderer('update-status', 'Live');
+        // 只有在 skipFinalStatus 为 false 时才设置最终状态
+        if (!skipFinalStatus) {
+            sendToRenderer('update-status', '就绪');
+        }
 
         return content;
     }
 
-    async function sendRealtimeInput(payload) {
+    async function sendRealtimeInput(payload, options = {}) {
+        const { skipFinalStatus = false } = options || {};
         console.log('🔵 [sendRealtimeInput] called, closed:', closed);
         console.log('🔵 [sendRealtimeInput] payload keys:', Object.keys(payload || {}));
 
@@ -806,7 +813,7 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
                 console.log('📝 [sendRealtimeInput] Processing text message with GLM-4.7...');
                 console.log('📝 [sendRealtimeInput] Text:', payload.text);
                 messages.push({ role: 'user', content: payload.text });
-                await callChatCompletions(glmTextModel, messages);
+                await callChatCompletions(glmTextModel, messages, { skipFinalStatus });
                 console.log('✅ [sendRealtimeInput] Text message processed');
                 return;
             }
@@ -894,11 +901,12 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
     const lowerModel = (model || '').toLowerCase();
     const supportsImage = /gemini.*image|qwen.*vl|qwen2-?vl|qwen.*vision/.test(lowerModel);
 
-    async function callChatCompletions() {
+    async function callChatCompletions(options = {}) {
+        const { skipFinalStatus = false } = options || {};
         console.log('📡 [callChatCompletions] 准备调用 API...');
         console.log('📡 [callChatCompletions] Endpoint:', endpoint);
 
-        sendToRenderer('update-status', 'Answering...');
+        sendToRenderer('update-status', '回答中...');
 
         const headers = {
             'Content-Type': 'application/json',
@@ -926,17 +934,21 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
         const content = data?.choices?.[0]?.message?.content || '';
         messages.push({ role: 'assistant', content });
         sendToRenderer('update-response', content);
-        sendToRenderer('update-status', 'Live');
+        // 只有在 skipFinalStatus 为 false 时才设置最终状态
+        if (!skipFinalStatus) {
+            sendToRenderer('update-status', '就绪');
+        }
     }
 
-    async function sendRealtimeInput(payload) {
+    async function sendRealtimeInput(payload, options = {}) {
+        const { skipFinalStatus = false } = options || {};
         console.log('🔵 sendRealtimeInput called, closed:', closed);
         console.log('🔵 payload keys:', Object.keys(payload || {}));
         if (closed) return;
         try {
             if (payload?.text) {
                 messages.push({ role: 'user', content: payload.text });
-                await callChatCompletions();
+                await callChatCompletions({ skipFinalStatus });
                 return;
             }
             if (payload?.videoUrl) {

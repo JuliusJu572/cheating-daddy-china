@@ -157,22 +157,22 @@ async function stopRecording() {
 
     // 使用 save-audio-and-transcribe 替代 send-windows-audio-data
     // 这个 IPC handler 在 index.js 中，它负责保存文件并调用 STT (Speech-to-Text)
+    // index.js 会自动将转录结果发送给 LLM，并更新状态为"完成"或"回答中"
     ipcRenderer.invoke('save-audio-and-transcribe', {
         pcmBase64: base64Audio,
         sampleRate: TARGET_SAMPLE_RATE // 16000
     }).then(result => {
         if (!result || !result.success) {
             console.error('[WindowsAudioRecorder] Transcription failed:', result?.error);
+            // 转写失败，更新状态
             ipcRenderer.send('update-status', '❌ 转写失败');
-        } else {
-            // 转录成功，index.js 会处理后续逻辑（比如发送文本给 LLM）
-            // 或者它只是返回文本，我们需要在这里发送？
-            // 让我们检查一下 renderer.js 是怎么做的。
-            // renderer.js 调用 invoke 后好像没有处理返回值发送给 LLM？
-            // 等等，index.js 的 save-audio-and-transcribe 实现里并没有调用 LLM。
-            // 它是调用了 Whisper 还是什么？
-            // 让我们再确认一下 index.js 的 save-audio-and-transcribe。
         }
+        // 转写成功时，不需要更新状态
+        // index.js 中的 save-audio-and-transcribe 会处理：
+        // 1. 发送文本给 LLM
+        // 2. 更新状态为 "回答中..."
+        // 3. LLM 响应完成后更新状态为 "完成"
+        // 这里不需要额外操作，避免状态冲突
     }).catch(err => {
         console.error('[WindowsAudioRecorder] Error invoking save-audio-and-transcribe:', err);
         ipcRenderer.send('update-status', '❌ 错误');
