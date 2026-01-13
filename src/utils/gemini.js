@@ -20,32 +20,46 @@ function sendToRenderer(channel, payload) {
 function setupGeminiIpcHandlers(geminiSessionRef) {
   ipcMain.handle('send-image-content', async (event, { data, mimeType, debug }) => {
     try {
+      console.log('🖼️ [send-image-content] 收到图片内容...');
+      console.log('🖼️ [send-image-content] MIME type:', mimeType);
+      console.log('🖼️ [send-image-content] Data length:', data?.length);
+      console.log('🖼️ [send-image-content] Debug text:', debug);
+
       const session = geminiSessionRef?.current
       if (session && typeof session.sendRealtimeInput === 'function') {
+        console.log('✅ [send-image-content] 发送到 session (GLM-4.6V)...');
         await session.sendRealtimeInput({ media: { data, mimeType }, debug })
+        console.log('✅ [send-image-content] 发送成功');
       } else {
+        console.warn('⚠️ [send-image-content] 无有效 session');
         sendToRenderer('update-response', '[Mock] 收到图片，未配置实时模型')
         sendToRenderer('update-status', 'Listening...')
       }
       return { success: true }
     } catch (error) {
-      console.error('send-image-content error:', error)
+      console.error('❌ [send-image-content] error:', error)
       return { success: false, error: error.message }
     }
   })
 
   ipcMain.handle('send-text-message', async (event, text) => {
     try {
+      console.log('📝 [send-text-message] 收到文本消息...');
+      console.log('📝 [send-text-message] Text:', text);
+
       const session = geminiSessionRef?.current
       if (session && typeof session.sendRealtimeInput === 'function') {
+        console.log('✅ [send-text-message] 发送到 session (GLM-4.7)...');
         await session.sendRealtimeInput({ text })
+        console.log('✅ [send-text-message] 发送成功');
       } else {
+        console.warn('⚠️ [send-text-message] 无有效 session');
         sendToRenderer('update-response', `[Mock] 文本: ${text}`)
         sendToRenderer('update-status', 'Listening...')
       }
       return { success: true }
     } catch (error) {
-      console.error('send-text-message error:', error)
+      console.error('❌ [send-text-message] error:', error)
       return { success: false, error: error.message }
     }
   })

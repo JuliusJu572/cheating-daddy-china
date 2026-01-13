@@ -1,22 +1,47 @@
 export const translations = {
   zh: {
+    // 基础
     welcome: "欢迎",
-    enter_api_key: "请输入 API Key",
+    enter_api_key: "请输入 License Key (格式: CD-xxxxx)",
     start_session: "开始会话",
-    api_key_help_prefix: "没有 API Key?",
+    api_key_help_prefix: "没有 License Key?",
     api_key_help_link: "点击帮助",
+
+    // 头部标题
     header_title_onboarding: "欢迎使用 Cheating Buddy",
     header_title_main: "作弊老铁",
     header_title_customize: "设置",
     header_title_help: "帮助与快捷键",
     header_title_history: "会话历史",
-    header_title_advanced: "高级工具",
-    header_title_assistant: "Cheating Buddy",
+    header_title_advanced: "高级设置",
+    header_title_assistant: "AI 助手",
     hide: "隐藏",
+
+    // 状态消息
+    status_listening: "👂 正在监听...",
+    status_processing: "⚙️ 正在处理...",
+    status_answering: "💬 正在回答...",
+    status_ready: "✅ 就绪",
+    status_error: "❌ 错误",
+    status_transcribing: "🎙️ 正在转写音频...",
+    status_live: "🔴 直播中",
+    status_connecting: "🔄 连接中...",
+    status_connected: "✅ 已连接",
+    status_disconnected: "❌ 已断开",
+
+    // API Key 相关
+    api_key_valid: "✅ License Key 已验证",
+    api_key_invalid: "❌ License Key 无效",
+    api_key_expired: "⚠️ License Key 已过期，请重新配置",
+    api_key_verifying: "⏳ 正在验证 License Key...",
+
+    // Google 搜索
     google_search_section: "网络搜索",
     google_search_enable_label: "启用网络搜索",
     google_search_desc: "允许 AI 在对话中进行在线搜索以获取最新信息",
     settings_saved_note: "设置会自动保存，部分更改在下次会话生效",
+
+    // 自定义设置
     customize_ai_profile_section: "AI 档案与行为",
     customize_profile_type_label: "档案类型",
     customize_custom_instructions_label: "自定义 AI 指令",
@@ -33,16 +58,38 @@ export const translations = {
     customize_keyboard_shortcuts_section: "键盘快捷键",
     reset_to_defaults: "恢复默认",
     reset_to_defaults_desc: "恢复所有快捷键到默认值",
+
+    // 高级模式
     advanced_mode_section: "⚠️ 高级模式",
     advanced_mode_enable_label: "启用高级模式",
+
+    // 模型设置
     model_settings_section: "模型设置",
     model_select_label: "选择模型",
+    model_zhipu_label: "智谱 AI (GLM-4.7/GLM-4.6V)",
     model_api_base_label: "API Base URL",
     model_api_key_label: "API Key",
     model_test_button: "测试连接",
     model_test_status_success: "连接成功",
     model_test_status_fail: "连接失败",
     transcription_model_label: "语音识别模型",
+    transcription_model_zhipu: "GLM-ASR-2512 (智谱AI)",
+
+    // API Key 管理
+    api_key_management_section: "🔑 API Key 管理",
+    api_key_management_desc: "管理您的智谱AI License Key。首次使用时请输入License Key，之后会自动保存。",
+    api_key_input_placeholder: "输入 License Key (格式: CD-xxxxx)",
+    api_key_save_button: "💾 保存 License Key",
+    api_key_clear_button: "🗑️ 清除已保存的 Key",
+    api_key_configured: "✅ 已配置有效的 License Key",
+    api_key_not_configured: "⚠️ 未配置 License Key",
+    api_key_format_error: "License Key 格式无效，应以 CD- 开头",
+    api_key_decrypt_error: "License Key 无效，解密失败",
+    api_key_connection_error: "API 连接测试失败，请检查 License Key",
+    api_key_save_success: "✅ License Key 验证并保存成功！",
+    api_key_cleared: "✅ License Key 已清除",
+
+    // 快捷键
     keybind_action_header: "操作",
     keybind_shortcut_header: "快捷键",
     keybind_move_up_name: "窗口上移",
@@ -73,13 +120,15 @@ export const translations = {
     keybind_windows_audio_capture_desc: "录制麦克风声音 (Windows)",
     keybind_clear_history_name: "删除历史对话",
     keybind_clear_history_desc: "清空当前会话的历史记录",
+
+    // 截图设置
     capture_interval_label: "采集间隔",
     manual_option: "手动（按需）",
     every_1s_option: "每1秒",
     every_2s_option: "每2秒",
     every_5s_option: "每5秒",
     every_10s_option: "每10秒",
-    capture_interval_desc_manual: "仅在使用“询问下一步”快捷键时截图",
+    capture_interval_desc_manual: "仅在使用"询问下一步"快捷键时截图",
     capture_interval_desc_auto: "将按指定间隔自动截图",
     image_quality_label: "图片质量",
     high_quality_option: "高质量",
@@ -90,23 +139,48 @@ export const translations = {
     image_quality_desc_low: "较低质量，消耗更少tokens"
   },
   en: {
+    // Basic
     welcome: "Welcome",
-    enter_api_key: "Enter your API Key",
+    enter_api_key: "Enter your License Key (format: CD-xxxxx)",
     start_session: "Start Session",
-    api_key_help_prefix: "don’t have an API key?",
+    api_key_help_prefix: "don't have a License key?",
     api_key_help_link: "get one here",
+
+    // Header titles
     header_title_onboarding: "Welcome to Cheating Buddy",
     header_title_main: "Cheating Buddy",
     header_title_customize: "Customize",
     header_title_help: "Help & Shortcuts",
     header_title_history: "Conversation History",
-    header_title_advanced: "Advanced Tools",
-    header_title_assistant: "Cheating Buddy",
+    header_title_advanced: "Advanced Settings",
+    header_title_assistant: "AI Assistant",
     hide: "Hide",
+
+    // Status messages
+    status_listening: "👂 Listening...",
+    status_processing: "⚙️ Processing...",
+    status_answering: "💬 Answering...",
+    status_ready: "✅ Ready",
+    status_error: "❌ Error",
+    status_transcribing: "🎙️ Transcribing audio...",
+    status_live: "🔴 Live",
+    status_connecting: "🔄 Connecting...",
+    status_connected: "✅ Connected",
+    status_disconnected: "❌ Disconnected",
+
+    // API Key related
+    api_key_valid: "✅ License Key verified",
+    api_key_invalid: "❌ Invalid License Key",
+    api_key_expired: "⚠️ License Key expired, please reconfigure",
+    api_key_verifying: "⏳ Verifying License Key...",
+
+    // Google Search
     google_search_section: "Web Search",
     google_search_enable_label: "Enable Web Search",
     google_search_desc: "Allow AI to perform online search for up-to-date information",
     settings_saved_note: "Settings are saved automatically; some changes take effect next session",
+
+    // Customize settings
     customize_ai_profile_section: "AI Profile & Behavior",
     customize_profile_type_label: "Profile Type",
     customize_custom_instructions_label: "Custom AI Instructions",
@@ -123,16 +197,38 @@ export const translations = {
     customize_keyboard_shortcuts_section: "Keyboard Shortcuts",
     reset_to_defaults: "Reset to Defaults",
     reset_to_defaults_desc: "Restore all keyboard shortcuts to their default values",
+
+    // Advanced mode
     advanced_mode_section: "⚠️ Advanced Mode",
     advanced_mode_enable_label: "Enable Advanced Mode",
+
+    // Model settings
     model_settings_section: "Model Settings",
     model_select_label: "Model",
+    model_zhipu_label: "Zhipu AI (GLM-4.7/GLM-4.6V)",
     model_api_base_label: "API Base URL",
     model_api_key_label: "API Key",
     model_test_button: "Test Connection",
     model_test_status_success: "Connected",
     model_test_status_fail: "Connection Failed",
     transcription_model_label: "Transcription Model",
+    transcription_model_zhipu: "GLM-ASR-2512 (ZhipuAI)",
+
+    // API Key Management
+    api_key_management_section: "🔑 API Key Management",
+    api_key_management_desc: "Manage your ZhipuAI License Key. Enter it on first use, and it will be saved automatically.",
+    api_key_input_placeholder: "Enter License Key (format: CD-xxxxx)",
+    api_key_save_button: "💾 Save License Key",
+    api_key_clear_button: "🗑️ Clear Saved Key",
+    api_key_configured: "✅ Valid License Key configured",
+    api_key_not_configured: "⚠️ No License Key configured",
+    api_key_format_error: "Invalid License Key format, should start with CD-",
+    api_key_decrypt_error: "Invalid License Key, decryption failed",
+    api_key_connection_error: "API connection test failed, please check License Key",
+    api_key_save_success: "✅ License Key verified and saved!",
+    api_key_cleared: "✅ License Key cleared",
+
+    // Keyboard shortcuts
     keybind_action_header: "Action",
     keybind_shortcut_header: "Shortcut",
     keybind_move_up_name: "Move Window Up",
@@ -163,13 +259,15 @@ export const translations = {
     keybind_windows_audio_capture_desc: "Record microphone audio (Windows only)",
     keybind_clear_history_name: "Clear Conversation History",
     keybind_clear_history_desc: "Clear the history of current session",
+
+    // Capture settings
     capture_interval_label: "Capture Interval",
     manual_option: "Manual (On demand)",
     every_1s_option: "Every 1 second",
     every_2s_option: "Every 2 seconds",
     every_5s_option: "Every 5 seconds",
     every_10s_option: "Every 10 seconds",
-    capture_interval_desc_manual: "Screenshots only on \"Ask Next Step\"",
+    capture_interval_desc_manual: "Screenshots only on "Ask Next Step"",
     capture_interval_desc_auto: "Automatic screenshots at the selected interval",
     image_quality_label: "Image Quality",
     high_quality_option: "High Quality",
