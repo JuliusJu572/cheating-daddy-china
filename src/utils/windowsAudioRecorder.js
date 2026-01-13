@@ -23,24 +23,21 @@ async function toggleRecording() {
 
 async function startRecording() {
     try {
-        // 立即给用户反馈
         ipcRenderer.send('update-status', '初始化麦克风...');
         console.log('[WindowsAudioRecorder] Starting Microphone Capture...');
         recordedChunks = [];
 
-        // 使用 getUserMedia 获取麦克风音频
         const stream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 sampleRate: TARGET_SAMPLE_RATE,
                 channelCount: 1,
                 echoCancellation: true,
                 noiseSuppression: true,
-                autoGainControl: true
+                autoGainControl: true,
             },
-            video: false
+            video: false,
         });
 
-        // 检查是否有音频轨道
         if (stream.getAudioTracks().length === 0) {
             console.error('[WindowsAudioRecorder] No audio track found in stream');
             ipcRenderer.send('update-status', '❌ 未找到麦克风');
@@ -50,31 +47,23 @@ async function startRecording() {
 
         mediaStream = stream;
 
-        // 设置 AudioContext
         audioContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
         const audioTrack = stream.getAudioTracks()[0];
         const audioStream = new MediaStream([audioTrack]);
 
         sourceNode = audioContext.createMediaStreamSource(audioStream);
-
-        // 创建 ScriptProcessor
-        // 16kHz sample rate, buffer size 4096 => ~256ms latency
-        // buffer size 8192 => ~512ms latency
-        // renderer.js uses 8192 for 16kHz, sticking to 4096 for lower latency if possible, or align with renderer
-        // Let's use 8192 to match renderer.js stability
         processor = audioContext.createScriptProcessor(8192, 1, 1);
 
         sourceNode.connect(processor);
-        processor.connect(audioContext.destination); // 必须连接到 destination 才能运行
+        processor.connect(audioContext.destination);
 
-        processor.onaudioprocess = (e) => {
+        processor.onaudioprocess = e => {
             if (!isRecording) return;
 
             const inputData = e.inputBuffer.getChannelData(0);
             const pcmData = new Int16Array(inputData.length);
 
             for (let i = 0; i < inputData.length; i++) {
-                // Float32 转 Int16
                 const s = Math.max(-1, Math.min(1, inputData[i]));
                 pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
@@ -84,17 +73,14 @@ async function startRecording() {
 
         isRecording = true;
 
-        // 通知 UI 更新状态
         const stopKey = 'Ctrl+K';
         ipcRenderer.send('update-status', `🎙️ 录制麦克风... (${stopKey} 停止)`);
         console.log('[WindowsAudioRecorder] Microphone Recording Started');
 
-        // 监听流结束事件
         stream.getAudioTracks()[0].onended = () => {
             console.log('[WindowsAudioRecorder] Microphone stream ended');
             stopRecording();
         };
-
     } catch (error) {
         console.error('[WindowsAudioRecorder] Failed to start recording:', error);
         ipcRenderer.send('update-status', '❌ 麦克风录制失败: ' + error.message);
