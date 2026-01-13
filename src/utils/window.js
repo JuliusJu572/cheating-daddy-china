@@ -218,43 +218,30 @@ function getDefaultKeybinds() {
 function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessionRef) {
     console.log('Updating global shortcuts with:', keybinds);
 
-    // Unregister all existing shortcuts
     globalShortcut.unregisterAll();
 
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.workAreaSize;
     const moveIncrement = Math.floor(Math.min(width, height) * 0.1);
 
-    // Register window movement shortcuts
+    function moveWindow(dx, dy) {
+        if (!mainWindow.isVisible()) return;
+        const [currentX, currentY] = mainWindow.getPosition();
+        mainWindow.setPosition(currentX + dx, currentY + dy);
+    }
+
     const movementActions = {
-        moveUp: () => {
-            if (!mainWindow.isVisible()) return;
-            const [currentX, currentY] = mainWindow.getPosition();
-            mainWindow.setPosition(currentX, currentY - moveIncrement);
-        },
-        moveDown: () => {
-            if (!mainWindow.isVisible()) return;
-            const [currentX, currentY] = mainWindow.getPosition();
-            mainWindow.setPosition(currentX, currentY + moveIncrement);
-        },
-        moveLeft: () => {
-            if (!mainWindow.isVisible()) return;
-            const [currentX, currentY] = mainWindow.getPosition();
-            mainWindow.setPosition(currentX - moveIncrement, currentY);
-        },
-        moveRight: () => {
-            if (!mainWindow.isVisible()) return;
-            const [currentX, currentY] = mainWindow.getPosition();
-            mainWindow.setPosition(currentX + moveIncrement, currentY);
-        },
+        moveUp: () => moveWindow(0, -moveIncrement),
+        moveDown: () => moveWindow(0, moveIncrement),
+        moveLeft: () => moveWindow(-moveIncrement, 0),
+        moveRight: () => moveWindow(moveIncrement, 0),
     };
 
-    // Register each movement shortcut
-    Object.keys(movementActions).forEach(action => {
+    Object.entries(movementActions).forEach(([action, handler]) => {
         const keybind = keybinds[action];
         if (keybind) {
             try {
-                globalShortcut.register(keybind, movementActions[action]);
+                globalShortcut.register(keybind, handler);
                 console.log(`Registered ${action}: ${keybind}`);
             } catch (error) {
                 console.error(`Failed to register ${action} (${keybind}):`, error);
@@ -262,27 +249,22 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
         }
     });
 
-    // Register toggle visibility shortcut
     if (keybinds.toggleVisibility) {
         try {
             globalShortcut.register(keybinds.toggleVisibility, () => {
                 if (mainWindow.isVisible()) {
-                    // ✅ 隐藏窗口的正确顺序
-                    mainWindow.hide();  // 先隐藏
+                    mainWindow.hide();
                     if (process.platform === 'darwin') {
-                        // macOS: 移除置顶和跨工作区可见性
                         mainWindow.setAlwaysOnTop(false);
                         mainWindow.setVisibleOnAllWorkspaces(false);
                     }
                 } else {
-                    // ✅ 显示窗口的正确顺序
                     if (process.platform === 'darwin') {
-                        // macOS: 先恢复属性，再显示
-                        mainWindow.setVisibleOnAllWorkspaces(false); // ✅ 改为 false，只在当前桌面显示
+                        mainWindow.setVisibleOnAllWorkspaces(false);
                         mainWindow.setAlwaysOnTop(true, 'floating');
                     }
-                    mainWindow.show();  // 最后显示
-                    mainWindow.blur(); // 不抢夺焦点
+                    mainWindow.show();
+                    mainWindow.blur();
                 }
             });
             console.log(`Registered toggleVisibility: ${keybinds.toggleVisibility}`);

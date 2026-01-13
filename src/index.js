@@ -6,19 +6,25 @@ const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-// ✅ 修复Windows上Electron缓存和quota数据库错误
-// 设置一个纯英文的userData路径，避免中文字符导致的缓存问题
-if (process.platform === 'win32') {
+function configureWindowsPaths() {
+    if (process.platform !== 'win32') return;
+
     const appDataPath = process.env.APPDATA || path.join(process.env.USERPROFILE, 'AppData', 'Roaming');
     const customUserDataPath = path.join(appDataPath, 'CheatingBuddy');
-    app.setPath('userData', customUserDataPath);
-    console.log('🔧 [Windows] 设置userData路径:', customUserDataPath);
 
-    // 同时设置其他相关路径
+    app.setPath('userData', customUserDataPath);
     app.setPath('appData', customUserDataPath);
-    app.setPath('userCache', path.join(process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE, 'AppData', 'Local'), 'CheatingBuddy', 'Cache'));
+    app.setPath('userCache', path.join(
+        process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE, 'AppData', 'Local'),
+        'CheatingBuddy',
+        'Cache'
+    ));
     app.setPath('logs', path.join(customUserDataPath, 'logs'));
+
+    console.log('🔧 [Windows] 设置userData路径:', customUserDataPath);
 }
+
+configureWindowsPaths();
 const { createWindow, updateGlobalShortcuts, ensureDataDirectories } = require('./utils/window');
 const { setupGeminiIpcHandlers, stopMacOSAudioCapture, sendToRenderer, initializeGeminiSession } = require('./utils/gemini');
 const { getSystemPrompt } = require('./utils/prompts');
@@ -55,28 +61,85 @@ app.whenReady().then(async () => {
     setupGeneralIpcHandlers();
 });
 
+async function transcribeAudio(filePath, apiKey) {
+    const glmAsrEndpoint = 'https://open.bigmodel.cn/api/paas/v4/audio/transcriptions';
+    const FormData = require('form-data');
+
+    const fd = new FormData();
+    const fileStream = fs.createReadStream(filePath);
+    const fileName = path.basename(filePath);
+
+    fd.append('model', 'glm-asr-2512');
+    fd.append('file', fileStream, fileName);
+
+    return new Promise((resolve, reject) => {
+        const url = new URL(glmAsrEndpoint);
+
+        fd.submit({
+            protocol: url.protocol,
+            host: url.hostname,
+            port: url.port || (url.protocol === 'https:' ? 443 : 80),
+            path: url.pathname + url.search,
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                ...fd.getHeaders()
+            }
+        }, (err, res) => {
+            if (err) {
+                console.error('❌ [GLM-ASR] Request failed:', err.message);
+                reject(err);
+                return;
+            }
+
+            console.log('📡 [GLM-ASR] Response status:', res.statusCode);
+            let data = '';
+            res.on('data', chunk => { data += chunk; });
+            res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                    try {
+                        console.log('✅ [GLM-ASR] Response received, length:', data.length);
+                        resolve({ success: true, data: JSON.parse(data) });
+                    } catch (parseErr) {
+                        console.error('❌ [GLM-ASR] Failed to parse response:', parseErr.message);
+                        reject(new Error('Failed to parse response: ' + data));
+                    }
+                } else {
+                    console.error('❌ [GLM-ASR] HTTP error:', res.statusCode, data);
+                    reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+                }
+            });
+            res.on('error', (e) => {
+                console.error('❌ [GLM-ASR] Response error:', e.message);
+                reject(e);
+            });
+        });
+    });
+}
+
+function clearSensitiveLocalStorage() {
+    const windows = BrowserWindow.getAllWindows();
+    const keysToRemove = ['apiKey', 'modelApiKey', 'licenseKey'];
+
+    windows.forEach(win => {
+        if (!win.isDestroyed()) {
+            win.webContents.executeJavaScript(`
+                try {
+                    ${keysToRemove.map(key => `localStorage.removeItem('${key}');`).join('\n                    ')}
+                } catch(e) {}
+            `).catch(() => {});
+        }
+    });
+}
+
 app.on('window-all-closed', () => {
     stopMacOSAudioCapture();
-    // macOS 上也应该退出，因为这是工具应用而非常规应用
     app.quit();
 });
 
 app.on('before-quit', () => {
     stopMacOSAudioCapture();
-    
-    // ✅ 退出前清空所有窗口的 localStorage
-    const windows = BrowserWindow.getAllWindows();
-    for (const win of windows) {
-        if (!win.isDestroyed()) {
-            win.webContents.executeJavaScript(`
-                try { 
-                    localStorage.removeItem('apiKey');
-                    localStorage.removeItem('modelApiKey');
-                    localStorage.removeItem('licenseKey');
-                } catch(e) {}
-            `).catch(() => {});
-        }
-    }
+    clearSensitiveLocalStorage();
 });
 
 app.on('activate', async () => {
@@ -151,21 +214,7 @@ function setupGeneralIpcHandlers() {
     ipcMain.handle('quit-application', async event => {
         try {
             stopMacOSAudioCapture();
-            
-            // ✅ 退出前清空所有窗口的 localStorage
-            const windows = BrowserWindow.getAllWindows();
-            for (const win of windows) {
-                if (!win.isDestroyed()) {
-                    await win.webContents.executeJavaScript(`
-                        try { 
-                            localStorage.removeItem('apiKey');
-                            localStorage.removeItem('modelApiKey');
-                            localStorage.removeItem('licenseKey');
-                        } catch(e) {}
-                    `).catch(() => {});
-                }
-            }
-            
+            clearSensitiveLocalStorage();
             app.quit();
             return { success: true };
         } catch (error) {
@@ -405,52 +454,39 @@ function setupGeneralIpcHandlers() {
     ipcMain.handle('decrypt-license-key', async (event, licenseKey) => {
         try {
             console.log('🔐 [decrypt-license-key] 开始解密...');
-            
+
             if (!licenseKey || typeof licenseKey !== 'string') {
                 return { success: false, error: 'Invalid license' };
             }
-            
-            let s = licenseKey.trim();
-            if (s.startsWith('CD-')) s = s.slice(3);
-            s = s.replace(/-/g, '');
-            
-            const cipherBuf = Buffer.from(s, 'base64');
-            
-            const key = require('node:crypto').scryptSync(
-                'CheatingDaddy-2024-Secret-Key-JuliusJu-Version-572', 
-                'salt', 
-                32
-            );
+
+            const cleanedKey = licenseKey.trim().replace(/^CD-/, '').replace(/-/g, '');
+            const cipherBuf = Buffer.from(cleanedKey, 'base64');
+
+            const key = crypto.scryptSync('CheatingDaddy-2024-Secret-Key-JuliusJu-Version-572', 'salt', 32);
             const iv = Buffer.alloc(16, 0);
-            const decipher = require('node:crypto').createDecipheriv('aes-256-cbc', key, iv);
-            decipher.setAutoPadding(false); // ✅ 关闭自动去除 padding
-            
+            const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+            decipher.setAutoPadding(false);
+
             const decrypted = Buffer.concat([decipher.update(cipherBuf), decipher.final()]);
-            
-            // ✅ 手动去除 PKCS7 padding
             const lastByte = decrypted[decrypted.length - 1];
-            
-            // 验证 padding 是否有效（必须在 1-16 之间）
+
             if (lastByte < 1 || lastByte > 16) {
                 return { success: false, error: 'Invalid padding' };
             }
-            
-            // 验证所有 padding 字节是否一致
+
             for (let i = 0; i < lastByte; i++) {
                 if (decrypted[decrypted.length - 1 - i] !== lastByte) {
                     return { success: false, error: 'Invalid padding bytes' };
                 }
             }
-            
+
             const plain = decrypted.slice(0, decrypted.length - lastByte).toString('utf8');
-            
-            
-            
+
             if (plain.length < 10) {
                 console.log('❌ 解密后的明文太短');
                 return { success: false, error: 'Decrypted text too short' };
             }
-            
+
             return { success: true, apiKey: plain };
         } catch (error) {
             console.error('❌ [decrypt-license-key] 解密失败:', error?.message || error);
@@ -622,79 +658,14 @@ function setupGeneralIpcHandlers() {
                     token = decrypted.slice(0, decrypted.length - pad).toString('utf8');
                 }
             } catch (_) {}
-            // ✅ 直接读取解密后的 API Key
             const apiKey = await targetWindow.webContents.executeJavaScript(
                 `(function(){ try { return localStorage.getItem('apiKey') || ''; } catch(e){ return ''; } })()`
             );
-            
-            const apiBase = await targetWindow.webContents.executeJavaScript(
-                `(function(){ try { return (localStorage.getItem('modelApiBase') || 'https://aihubmix.com/v1').trim(); } catch(e){ return 'https://aihubmix.com/v1'; } })()`
-            );
-            
-            // ✅ 智谱AI音频转写API - 使用GLM-ASR-2512模型
-            const glmAsrEndpoint = 'https://open.bigmodel.cn/api/paas/v4/audio/transcriptions';
-            const transcriptionModel = 'glm-asr-2512';
 
-            // ✅ 使用 FormData 但通过 http/https 模块发送
-            const FormData = require('form-data');
-            const fd = new FormData();
-            const fileStream = fs.createReadStream(finalPath);
-            const fileName = finalPath.endsWith('.mp3') ? 'audio.mp3' : 'audio.wav';
+            console.log('🌐 [GLM-ASR] Sending transcription request...');
+            console.log('📤 [GLM-ASR] File:', finalPath, '(', fileSize, 'bytes)');
 
-            fd.append('model', transcriptionModel);
-            fd.append('file', fileStream, fileName);
-
-            console.log('🌐 [GLM-ASR] Sending transcription request to:', glmAsrEndpoint);
-            console.log('📤 [GLM-ASR] Model:', transcriptionModel);
-            console.log('📤 [GLM-ASR] File:', fileName, '(', fileSize, 'bytes)');
-            
-            // ✅ 使用 form-data 的内置 submit 方法
-            const result = await new Promise((resolve, reject) => {
-                const url = new URL(glmAsrEndpoint);
-            const options = {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    ...fd.getHeaders()
-                }
-            };
-                
-                fd.submit({
-                    protocol: url.protocol,
-                    host: url.hostname,
-                    port: url.port || (url.protocol === 'https:' ? 443 : 80),
-                    path: url.pathname + url.search,
-                    ...options
-                }, (err, res) => {
-                    if (err) {
-                        console.error('❌ [GLM-ASR] Request failed:', err.message);
-                        reject(err);
-                        return;
-                    }
-
-                    console.log('📡 [GLM-ASR] Response status:', res.statusCode);
-                    let data = '';
-                    res.on('data', chunk => { data += chunk; });
-                    res.on('end', () => {
-                        if (res.statusCode >= 200 && res.statusCode < 300) {
-                            try {
-                                console.log('✅ [GLM-ASR] Response received, length:', data.length);
-                                resolve({ success: true, data: JSON.parse(data) });
-                            } catch (parseErr) {
-                                console.error('❌ [GLM-ASR] Failed to parse response:', parseErr.message);
-                                reject(new Error('Failed to parse response: ' + data));
-                            }
-                        } else {
-                            console.error('❌ [GLM-ASR] HTTP error:', res.statusCode, data);
-                            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
-                        }
-                    });
-                    res.on('error', (e) => {
-                        console.error('❌ [GLM-ASR] Response error:', e.message);
-                        reject(e);
-                    });
-                });
-            });
+            const result = await transcribeAudio(finalPath, apiKey);
 
             const text = result.data?.text || '';
             console.log('📝 [GLM-ASR] Transcription result:', text);
@@ -729,10 +700,8 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
 
     const messages = [];
     const glmEndpoint = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-
-    // 智谱AI模型配置 - 使用官方模型名称
-    const glmTextModel = 'glm-4.7';      // GLM-4 用于文本
-    const glmVisionModel = 'glm-4.6v';   // GLM-4V 用于截图
+    const glmTextModel = 'glm-4.7';
+    const glmVisionModel = 'glm-4.6v';
 
     if (systemPrompt && systemPrompt.length > 0) {
         messages.push({ role: 'system', content: systemPrompt });
@@ -742,13 +711,12 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
     let closed = false;
 
     async function callChatCompletions(model, messagesList, options = {}) {
-        const { skipFinalStatus = false } = options || {};
+        const { skipFinalStatus = false } = options;
+
         console.log('📡 [callChatCompletions] 准备调用智谱AI API...');
         console.log('📡 [callChatCompletions] Endpoint:', glmEndpoint);
         console.log('📡 [callChatCompletions] Model:', model);
         console.log('📡 [callChatCompletions] Messages count:', messagesList.length);
-        console.log('📡 [callChatCompletions] API Key length:', apiKey ? apiKey.length : 0);
-        // 不显示API key的明文，只显示长度
 
         sendToRenderer('update-status', '回答中...');
 
@@ -757,17 +725,13 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
             'Authorization': `Bearer ${apiKey}`,
         };
 
-        // 构建请求体
         const body = {
-            model: model,
+            model,
             messages: messagesList,
             stream: false,
             max_tokens: maxTokens,
             thinking: { type: 'disabled' },
         };
-
-        // 只打印请求的基本信息，不打印完整内容
-        console.log('📤 [callChatCompletions] Request prepared - model:', model, 'messages:', messagesList.length, 'max_tokens:', maxTokens, 'thinking: disabled');
 
         const res = await fetch(glmEndpoint, {
             method: 'POST',
@@ -789,7 +753,7 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
         const content = data?.choices?.[0]?.message?.content || '';
         messages.push({ role: 'assistant', content });
         sendToRenderer('update-response', content);
-        // 只有在 skipFinalStatus 为 false 时才设置最终状态
+
         if (!skipFinalStatus) {
             sendToRenderer('update-status', '就绪');
         }
@@ -798,7 +762,8 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
     }
 
     async function sendRealtimeInput(payload, options = {}) {
-        const { skipFinalStatus = false } = options || {};
+        const { skipFinalStatus = false } = options;
+
         console.log('🔵 [sendRealtimeInput] called, closed:', closed);
         console.log('🔵 [sendRealtimeInput] payload keys:', Object.keys(payload || {}));
 
@@ -808,39 +773,39 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
         }
 
         try {
-            // 文本消息 - 使用 GLM-4.7
             if (payload?.text) {
                 console.log('📝 [sendRealtimeInput] Processing text message with GLM-4.7...');
-                console.log('📝 [sendRealtimeInput] Text:', payload.text);
                 messages.push({ role: 'user', content: payload.text });
                 await callChatCompletions(glmTextModel, messages, { skipFinalStatus });
                 console.log('✅ [sendRealtimeInput] Text message processed');
                 return;
             }
 
-            // 视频URL
             if (payload?.videoUrl) {
                 console.log('🎬 [sendRealtimeInput] Processing video URL with GLM-4.6V...');
-                const parts = [];
-                parts.push({ type: 'video_url', video_url: { url: payload.videoUrl } });
-                const text = payload.debug || '请结合视频与图片或文本生成回答。';
-                parts.push({ type: 'text', text });
+                const parts = [
+                    { type: 'video_url', video_url: { url: payload.videoUrl } },
+                    { type: 'text', text: payload.debug || '请结合视频与图片或文本生成回答。' }
+                ];
+
                 if (payload?.media?.data) {
                     const dataUrl = `data:${payload.media.mimeType || 'image/jpeg'};base64,${payload.media.data}`;
                     parts.push({ type: 'image_url', image_url: { url: dataUrl } });
                 }
+
                 messages.push({ role: 'user', content: parts });
                 await callChatCompletions(glmVisionModel, messages);
                 console.log('✅ [sendRealtimeInput] Video URL processed');
                 return;
             }
 
-            // 截图/图片 - 使用 GLM-4.6V
             if (payload?.media?.data) {
                 console.log('🖼️ [sendRealtimeInput] Processing image with GLM-4.6V...');
                 console.log('🖼️ [sendRealtimeInput] Image data length:', payload.media.data?.length);
+
                 const dataUrl = `data:${payload.media.mimeType || 'image/jpeg'};base64,${payload.media.data}`;
                 const text = payload.debug || '这是截图+文本联合测试：请结合图片与这段文字生成回答。';
+
                 messages.push({
                     role: 'user',
                     content: [
@@ -848,15 +813,14 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
                         { type: 'image_url', image_url: { url: dataUrl } },
                     ],
                 });
+
                 await callChatCompletions(glmVisionModel, messages);
                 console.log('✅ [sendRealtimeInput] Image processed');
                 return;
             }
 
-            // 音频 - 智谱AI不支持通过chat completions处理音频，使用ASR
             if (payload?.audio?.data) {
                 console.log('🎤 [sendRealtimeInput] Audio data received, should use ASR endpoint');
-                // Audio should be transcribed via ASR endpoint before reaching here
                 return;
             }
 
@@ -890,9 +854,9 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
     console.log('🔵 [createAihubmixSession] API Base:', apiBase);
     console.log('🔵 [createAihubmixSession] Max Tokens:', maxTokens);
 
-
     const messages = [];
     const endpoint = `${apiBase.replace(/\/$/, '')}/chat/completions`;
+
     if (systemPrompt && systemPrompt.length > 0) {
         messages.push({ role: 'system', content: systemPrompt });
     }
@@ -902,7 +866,8 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
     const supportsImage = /gemini.*image|qwen.*vl|qwen2-?vl|qwen.*vision/.test(lowerModel);
 
     async function callChatCompletions(options = {}) {
-        const { skipFinalStatus = false } = options || {};
+        const { skipFinalStatus = false } = options;
+
         console.log('📡 [callChatCompletions] 准备调用 API...');
         console.log('📡 [callChatCompletions] Endpoint:', endpoint);
 
@@ -912,6 +877,7 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`,
         };
+
         const body = {
             model,
             messages,
@@ -919,9 +885,11 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
             max_tokens: maxTokens,
         };
 
-
-
-        const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+        });
 
         console.log('📡 [callChatCompletions] Response status:', res.status);
 
@@ -930,46 +898,56 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
             console.error('❌ [callChatCompletions] API Error Response:', text);
             throw new Error(`aihubmix error ${res.status}: ${text}`);
         }
+
         const data = await res.json();
         const content = data?.choices?.[0]?.message?.content || '';
         messages.push({ role: 'assistant', content });
         sendToRenderer('update-response', content);
-        // 只有在 skipFinalStatus 为 false 时才设置最终状态
+
         if (!skipFinalStatus) {
             sendToRenderer('update-status', '就绪');
         }
     }
 
     async function sendRealtimeInput(payload, options = {}) {
-        const { skipFinalStatus = false } = options || {};
+        const { skipFinalStatus = false } = options;
+
         console.log('🔵 sendRealtimeInput called, closed:', closed);
         console.log('🔵 payload keys:', Object.keys(payload || {}));
+
         if (closed) return;
+
         try {
             if (payload?.text) {
                 messages.push({ role: 'user', content: payload.text });
                 await callChatCompletions({ skipFinalStatus });
                 return;
             }
+
             if (payload?.videoUrl) {
-                const parts = [];
-                parts.push({ type: 'video_url', video_url: { url: payload.videoUrl } });
-                const text = payload.debug || '请结合视频与图片或文本生成回答。';
-                parts.push({ type: 'text', text });
+                const parts = [
+                    { type: 'video_url', video_url: { url: payload.videoUrl } },
+                    { type: 'text', text: payload.debug || '请结合视频与图片或文本生成回答。' }
+                ];
+
                 if (payload?.media?.data && supportsImage) {
                     const dataUrl = `data:${payload.media.mimeType || 'image/jpeg'};base64,${payload.media.data}`;
                     parts.push({ type: 'image_url', image_url: { url: dataUrl } });
                 }
+
                 messages.push({ role: 'user', content: parts });
                 await callChatCompletions();
                 return;
             }
+
             if (payload?.media?.data) {
                 console.log('🔵 Processing image, supportsImage:', supportsImage);
                 console.log('🔵 Image data length:', payload.media.data?.length);
+
                 if (supportsImage) {
                     const dataUrl = `data:${payload.media.mimeType || 'image/jpeg'};base64,${payload.media.data}`;
                     const text = payload.debug || '这是截图+文本联合测试：请结合图片与这段文字生成回答。';
+
                     messages.push({
                         role: 'user',
                         content: [
@@ -980,11 +958,12 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
                 } else {
                     messages.push({ role: 'user', content: '有截图附加，但当前模型不支持图像输入，请基于文本继续帮助。' });
                 }
+
                 await callChatCompletions();
                 return;
             }
+
             if (payload?.audio?.data) {
-                // Audio not supported in this adapter; ignore gracefully
                 return;
             }
         } catch (error) {

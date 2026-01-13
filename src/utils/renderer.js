@@ -431,96 +431,59 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
 }
 
 function setupLinuxMicProcessing(micStream) {
-    // Setup microphone audio processing for Linux
-    const micAudioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
-    const micSource = micAudioContext.createMediaStreamSource(micStream);
-    const micProcessor = micAudioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
+    const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+    const source = ctx.createMediaStreamSource(micStream);
+    const processor = ctx.createScriptProcessor(BUFFER_SIZE, 1, 1);
 
-    let audioBuffer = [];
-    const samplesPerChunk = SAMPLE_RATE * AUDIO_CHUNK_DURATION;
+    setupAudioProcessorCallback(processor, 'send-mic-audio-content');
 
-    micProcessor.onaudioprocess = async e => {
-        const inputData = e.inputBuffer.getChannelData(0);
-        audioBuffer.push(...inputData);
+    source.connect(processor);
+    processor.connect(ctx.destination);
 
-        // Process audio in chunks
-        while (audioBuffer.length >= samplesPerChunk) {
-            const chunk = audioBuffer.splice(0, samplesPerChunk);
-            const pcmData16 = convertFloat32ToInt16(chunk);
-            const base64Data = arrayBufferToBase64(pcmData16.buffer);
-
-            await ipcRenderer.invoke('send-mic-audio-content', {
-                data: base64Data,
-                mimeType: 'audio/pcm;rate=24000',
-            });
-        }
-    };
-
-    micSource.connect(micProcessor);
-    micProcessor.connect(micAudioContext.destination);
-
-    // Store processor reference for cleanup
-    micAudioProcessor = micProcessor;
+    micAudioProcessor = processor;
 }
 
 function setupLinuxSystemAudioProcessing() {
-    // Setup system audio processing for Linux (from getDisplayMedia)
     audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
     const source = audioContext.createMediaStreamSource(mediaStream);
     audioProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
 
-    let audioBuffer = [];
-    const samplesPerChunk = SAMPLE_RATE * AUDIO_CHUNK_DURATION;
-
-    audioProcessor.onaudioprocess = async e => {
-        const inputData = e.inputBuffer.getChannelData(0);
-        audioBuffer.push(...inputData);
-
-        // Process audio in chunks
-        while (audioBuffer.length >= samplesPerChunk) {
-            const chunk = audioBuffer.splice(0, samplesPerChunk);
-            const pcmData16 = convertFloat32ToInt16(chunk);
-            const base64Data = arrayBufferToBase64(pcmData16.buffer);
-
-            await ipcRenderer.invoke('send-audio-content', {
-                data: base64Data,
-                mimeType: 'audio/pcm;rate=24000',
-            });
-        }
-    };
+    setupAudioProcessorCallback(audioProcessor, 'send-audio-content');
 
     source.connect(audioProcessor);
     audioProcessor.connect(audioContext.destination);
 }
 
 function setupWindowsLoopbackProcessing() {
-    // Setup audio processing for Windows loopback audio only
     audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
     const source = audioContext.createMediaStreamSource(mediaStream);
     audioProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
 
+    setupAudioProcessorCallback(audioProcessor, 'send-audio-content');
+
+    source.connect(audioProcessor);
+    audioProcessor.connect(audioContext.destination);
+}
+
+function setupAudioProcessorCallback(processor, ipcChannel) {
     let audioBuffer = [];
     const samplesPerChunk = SAMPLE_RATE * AUDIO_CHUNK_DURATION;
 
-    audioProcessor.onaudioprocess = async e => {
+    processor.onaudioprocess = async e => {
         const inputData = e.inputBuffer.getChannelData(0);
         audioBuffer.push(...inputData);
 
-        // Process audio in chunks
         while (audioBuffer.length >= samplesPerChunk) {
             const chunk = audioBuffer.splice(0, samplesPerChunk);
             const pcmData16 = convertFloat32ToInt16(chunk);
             const base64Data = arrayBufferToBase64(pcmData16.buffer);
 
-            await ipcRenderer.invoke('send-audio-content', {
+            await ipcRenderer.invoke(ipcChannel, {
                 data: base64Data,
                 mimeType: 'audio/pcm;rate=24000',
             });
         }
     };
-
-    source.connect(audioProcessor);
-    audioProcessor.connect(audioContext.destination);
 }
 
 async function captureScreenshot(imageQuality = 'medium', isManual = false) {
