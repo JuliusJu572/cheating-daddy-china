@@ -276,10 +276,8 @@ export class CheatingDaddyApp extends LitElement {
             return;
         }
         
-        // 启动捕获
-        const persistedModel = (localStorage.getItem('selectedModel') || '').trim();
-        const selectedModel = persistedModel !== '' ? persistedModel : 'aihubmix:qwen3-vl-30b-a3b-instruct';
-        localStorage.setItem('selectedModel', selectedModel);
+        // ✅ 使用智谱AI，弃用aihubmix
+        localStorage.setItem('selectedModel', 'zhipu');
         // 然后初始化模型
         const ok = await cheddar.initializeGemini(this.selectedProfile, this.selectedLanguage);
         if (!ok) {
@@ -414,6 +412,7 @@ export class CheatingDaddyApp extends LitElement {
                     <main-view
                         .onStart=${() => this.handleStart()}
                         .onAPIKeyHelp=${() => this.handleAPIKeyHelp()}
+                        .onOpenSettings=${() => this.handleAdvancedClick()}
                         .onLayoutModeChange=${layoutMode => this.handleLayoutModeChange(layoutMode)}
                     ></main-view>
                 `;

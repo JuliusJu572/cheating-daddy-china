@@ -206,13 +206,39 @@ function setupGeneralIpcHandlers() {
     ipcMain.handle('initialize-model', async (event, payload) => {
         try {
             const { model, apiKey, apiBase, customPrompt, profile, language, maxTokens } = payload || {};
+            console.log('🚀 [initialize-model] 初始化模型...');
+            console.log('🚀 [initialize-model] Model:', model);
+            console.log('🚀 [initialize-model] Profile:', profile);
+            console.log('🚀 [initialize-model] Language:', language);
+
             if (!apiKey) {
-                console.log('❌ No API key provided');
+                console.log('❌ [initialize-model] No API key provided');
                 return false;
             }
-            
-            
-            
+
+
+
+            // ✅ 智谱AI - 使用新的 Zhipu session
+            const selectedModel = (model || '').trim();
+            if (selectedModel === 'zhipu' || selectedModel.startsWith('glm-')) {
+                console.log('🔵 [initialize-model] 使用智谱AI session...');
+                const sysPrompt = getSystemPrompt(profile || 'interview', customPrompt || '', false);
+                console.log('🔵 [initialize-model] System prompt length:', sysPrompt.length);
+
+                const session = createZhipuSession({
+                    apiKey,
+                    systemPrompt: sysPrompt,
+                    language: language || 'zh-CN',
+                    maxTokens: maxTokens || 2048,
+                });
+
+                geminiSessionRef.current = session;
+                global.geminiSessionRef = geminiSessionRef;
+                sendToRenderer('update-status', '智谱AI session connected');
+                console.log('✅ [initialize-model] 智谱AI session 创建成功');
+                return true;
+            }
+
             // ✅ 不需要再次解密，直接使用
             if (typeof model !== 'string' || model.includes('gemini')) {
                 const session = await initializeGeminiSession(apiKey, customPrompt || '', profile || 'interview', language || 'zh-CN', maxTokens);
@@ -224,8 +250,9 @@ function setupGeneralIpcHandlers() {
                 }
                 return false;
             }
-            
+
             // aihubmix and other OpenAI-compatible providers
+            console.log('🔵 [initialize-model] 使用 aihubmix session...');
             const sysPrompt = getSystemPrompt(profile || 'interview', customPrompt || '', false);
             const session = createAihubmixSession({
                 model: model.startsWith('aihubmix:') ? model.slice('aihubmix:'.length) : model,
@@ -240,9 +267,10 @@ function setupGeneralIpcHandlers() {
             geminiSessionRef.current = session;
             global.geminiSessionRef = geminiSessionRef;
             sendToRenderer('update-status', 'Live session connected');
+            console.log('✅ [initialize-model] aihubmix session 创建成功');
             return true;
         } catch (error) {
-            console.error('Error initializing model:', error);
+            console.error('❌ [initialize-model] Error initializing model:', error);
             return false;
         }
     });
@@ -505,27 +533,26 @@ function setupGeneralIpcHandlers() {
                 `(function(){ try { return (localStorage.getItem('modelApiBase') || 'https://aihubmix.com/v1').trim(); } catch(e){ return 'https://aihubmix.com/v1'; } })()`
             );
             
-            // ✅ 直接使用，不需要解密
-            const endpoint = `${(apiBase || 'https://aihubmix.com/v1').replace(/\/$/, '')}/audio/transcriptions`;
-            const transcriptionModel = await targetWindow.webContents.executeJavaScript(
-                `(function(){ try { return (localStorage.getItem('transcriptionModel') || 'whisper-large-v3'); } catch(e){ return 'whisper-large-v3'; } })()`
-            );
-            
+            // ✅ 智谱AI音频转写API - 使用GLM-ASR-2512模型
+            const glmAsrEndpoint = 'https://open.bigmodel.cn/api/paas/v4/audio/transcriptions';
+            const transcriptionModel = 'glm-asr-2512';
+
             // ✅ 使用 FormData 但通过 http/https 模块发送
             const FormData = require('form-data');
             const fd = new FormData();
             const fileStream = fs.createReadStream(finalPath);
             const fileName = finalPath.endsWith('.mp3') ? 'audio.mp3' : 'audio.wav';
-            
+
             fd.append('model', transcriptionModel);
             fd.append('file', fileStream, fileName);
-            
-            console.log('🌐 Sending transcription request to:', endpoint);
-            console.log('📤 File:', fileName, '(', fileSize, 'bytes)');
+
+            console.log('🌐 [GLM-ASR] Sending transcription request to:', glmAsrEndpoint);
+            console.log('📤 [GLM-ASR] Model:', transcriptionModel);
+            console.log('📤 [GLM-ASR] File:', fileName, '(', fileSize, 'bytes)');
             
             // ✅ 使用 form-data 的内置 submit 方法
             const result = await new Promise((resolve, reject) => {
-                const url = new URL(endpoint);
+                const url = new URL(glmAsrEndpoint);
             const options = {
                 method: 'POST',
                 headers: {
@@ -542,29 +569,37 @@ function setupGeneralIpcHandlers() {
                     ...options
                 }, (err, res) => {
                     if (err) {
+                        console.error('❌ [GLM-ASR] Request failed:', err.message);
                         reject(err);
                         return;
                     }
-                    
+
+                    console.log('📡 [GLM-ASR] Response status:', res.statusCode);
                     let data = '';
                     res.on('data', chunk => { data += chunk; });
                     res.on('end', () => {
                         if (res.statusCode >= 200 && res.statusCode < 300) {
                             try {
+                                console.log('✅ [GLM-ASR] Response received, length:', data.length);
                                 resolve({ success: true, data: JSON.parse(data) });
                             } catch (parseErr) {
+                                console.error('❌ [GLM-ASR] Failed to parse response:', parseErr.message);
                                 reject(new Error('Failed to parse response: ' + data));
                             }
                         } else {
+                            console.error('❌ [GLM-ASR] HTTP error:', res.statusCode, data);
                             reject(new Error(`HTTP ${res.statusCode}: ${data}`));
                         }
                     });
-                    res.on('error', reject);
+                    res.on('error', (e) => {
+                        console.error('❌ [GLM-ASR] Response error:', e.message);
+                        reject(e);
+                    });
                 });
             });
-            
+
             const text = result.data?.text || '';
-            console.log('📝 Transcription result:', text);
+            console.log('📝 [GLM-ASR] Transcription result:', text);
             
             if (text && geminiSessionRef.current) {
                 console.log('🚀 Sending transcription to model:', text);
@@ -586,13 +621,162 @@ function setupGeneralIpcHandlers() {
 
 }
 
+function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
+    console.log('🔵 [createZhipuSession] 创建智谱AI session...');
+    console.log('🔵 [createZhipuSession] API Key:', apiKey ? '已设置' : '未设置');
+    console.log('🔵 [createZhipuSession] Max Tokens:', maxTokens);
+    console.log('🔵 [createZhipuSession] Language:', language);
+
+    const messages = [];
+    const glmEndpoint = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+
+    // 智谱AI模型配置
+    const glmTextModel = 'glm-4-flash';      // GLM-4.7 用于文本
+    const glmVisionModel = 'glm-4v-flash';   // GLM-4.6V 用于截图
+
+    if (systemPrompt && systemPrompt.length > 0) {
+        messages.push({ role: 'system', content: systemPrompt });
+        console.log('🔵 [createZhipuSession] System prompt set, length:', systemPrompt.length);
+    }
+
+    let closed = false;
+
+    async function callChatCompletions(model, messagesList) {
+        console.log('📡 [callChatCompletions] 准备调用智谱AI API...');
+        console.log('📡 [callChatCompletions] Endpoint:', glmEndpoint);
+        console.log('📡 [callChatCompletions] Model:', model);
+        console.log('📡 [callChatCompletions] Messages count:', messagesList.length);
+
+        sendToRenderer('update-status', 'Answering...');
+
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+        };
+
+        const body = {
+            model: model,
+            messages: messagesList,
+            stream: false,
+            max_tokens: maxTokens,
+        };
+
+        console.log('📤 [callChatCompletions] Request body:', JSON.stringify(body, null, 2));
+
+        const res = await fetch(glmEndpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+
+        console.log('📡 [callChatCompletions] Response status:', res.status);
+
+        if (!res.ok) {
+            const text = await res.text();
+            console.error('❌ [callChatCompletions] API Error Response:', text);
+            throw new Error(`智谱AI API error ${res.status}: ${text}`);
+        }
+
+        const data = await res.json();
+        console.log('✅ [callChatCompletions] Response received:', JSON.stringify(data, null, 2));
+
+        const content = data?.choices?.[0]?.message?.content || '';
+        messages.push({ role: 'assistant', content });
+        sendToRenderer('update-response', content);
+        sendToRenderer('update-status', 'Live');
+
+        return content;
+    }
+
+    async function sendRealtimeInput(payload) {
+        console.log('🔵 [sendRealtimeInput] called, closed:', closed);
+        console.log('🔵 [sendRealtimeInput] payload keys:', Object.keys(payload || {}));
+
+        if (closed) {
+            console.warn('⚠️ [sendRealtimeInput] Session is closed, ignoring input');
+            return;
+        }
+
+        try {
+            // 文本消息 - 使用 GLM-4.7
+            if (payload?.text) {
+                console.log('📝 [sendRealtimeInput] Processing text message with GLM-4.7...');
+                console.log('📝 [sendRealtimeInput] Text:', payload.text);
+                messages.push({ role: 'user', content: payload.text });
+                await callChatCompletions(glmTextModel, messages);
+                console.log('✅ [sendRealtimeInput] Text message processed');
+                return;
+            }
+
+            // 视频URL
+            if (payload?.videoUrl) {
+                console.log('🎬 [sendRealtimeInput] Processing video URL with GLM-4.6V...');
+                const parts = [];
+                parts.push({ type: 'video_url', video_url: { url: payload.videoUrl } });
+                const text = payload.debug || '请结合视频与图片或文本生成回答。';
+                parts.push({ type: 'text', text });
+                if (payload?.media?.data) {
+                    const dataUrl = `data:${payload.media.mimeType || 'image/jpeg'};base64,${payload.media.data}`;
+                    parts.push({ type: 'image_url', image_url: { url: dataUrl } });
+                }
+                messages.push({ role: 'user', content: parts });
+                await callChatCompletions(glmVisionModel, messages);
+                console.log('✅ [sendRealtimeInput] Video URL processed');
+                return;
+            }
+
+            // 截图/图片 - 使用 GLM-4.6V
+            if (payload?.media?.data) {
+                console.log('🖼️ [sendRealtimeInput] Processing image with GLM-4.6V...');
+                console.log('🖼️ [sendRealtimeInput] Image data length:', payload.media.data?.length);
+                const dataUrl = `data:${payload.media.mimeType || 'image/jpeg'};base64,${payload.media.data}`;
+                const text = payload.debug || '这是截图+文本联合测试：请结合图片与这段文字生成回答。';
+                messages.push({
+                    role: 'user',
+                    content: [
+                        { type: 'text', text },
+                        { type: 'image_url', image_url: { url: dataUrl } },
+                    ],
+                });
+                await callChatCompletions(glmVisionModel, messages);
+                console.log('✅ [sendRealtimeInput] Image processed');
+                return;
+            }
+
+            // 音频 - 智谱AI不支持通过chat completions处理音频，使用ASR
+            if (payload?.audio?.data) {
+                console.log('🎤 [sendRealtimeInput] Audio data received, should use ASR endpoint');
+                // Audio should be transcribed via ASR endpoint before reaching here
+                return;
+            }
+
+            console.warn('⚠️ [sendRealtimeInput] Unknown payload type');
+        } catch (error) {
+            console.error('❌ [sendRealtimeInput] Error:', error);
+            sendToRenderer('update-status', 'Error: ' + (error?.message || 'Unknown'));
+        }
+    }
+
+    async function close() {
+        console.log('🔴 [close] Closing Zhipu session...');
+        closed = true;
+    }
+
+    function clearHistory() {
+        console.log('🧹 [clearHistory] Clearing Zhipu session history...');
+        messages.length = 0;
+        if (systemPrompt && systemPrompt.length > 0) {
+            messages.push({ role: 'system', content: systemPrompt });
+        }
+        console.log('✅ [clearHistory] History cleared, messages count:', messages.length);
+    }
+
+    return { sendRealtimeInput, close, clearHistory };
+}
+
 function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language, maxTokens }) {
-    console.log('🔵 [createAihubmixSession] 创建 session...');
+    console.log('🔵 [createAihubmixSession] 创建 aihubmix session...');
     console.log('🔵 [createAihubmixSession] Model:', model);
     console.log('🔵 [createAihubmixSession] API Base:', apiBase);
     console.log('🔵 [createAihubmixSession] Max Tokens:', maxTokens);
-    
-    
+
+
     const messages = [];
     const endpoint = `${apiBase.replace(/\/$/, '')}/chat/completions`;
     if (systemPrompt && systemPrompt.length > 0) {
@@ -606,9 +790,9 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
     async function callChatCompletions() {
         console.log('📡 [callChatCompletions] 准备调用 API...');
         console.log('📡 [callChatCompletions] Endpoint:', endpoint);
-        
+
         sendToRenderer('update-status', 'Answering...');
-        
+
         const headers = {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`,
@@ -619,13 +803,13 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
             stream: false,
             max_tokens: maxTokens,
         };
-        
-        
-        
+
+
+
         const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
-        
+
         console.log('📡 [callChatCompletions] Response status:', res.status);
-        
+
         if (!res.ok) {
             const text = await res.text();
             console.error('❌ [callChatCompletions] API Error Response:', text);

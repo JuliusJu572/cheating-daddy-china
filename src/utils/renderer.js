@@ -168,17 +168,19 @@ function arrayBufferToBase64(buffer) {
 }
 
 async function initializeGemini(profile = 'interview', language = 'zh-CN') {
-    const selectedModel = localStorage.getItem('selectedModel') || 'aihubmix:qwen3-vl-30b-a3b-instruct';
-    
+    // ✅ 默认使用智谱AI模型，弃用aihubmix
+    const selectedModel = 'zhipu';
+
     console.log('🚀 [renderer] initializeGemini 开始...');
-    console.log('🚀 [renderer] 读取 localStorage...');
-    
+    console.log('🚀 [renderer] 使用智谱AI模型');
+
     const apiKey = (localStorage.getItem('apiKey') || '').trim();
-    const apiBase = (localStorage.getItem('modelApiBase') || '').trim();
-    
+    const apiBase = 'https://open.bigmodel.cn/api/paas/v4';
+
     console.log('🚀 [renderer] Model:', selectedModel);
-    console.log('🚀 [renderer] API Base:', apiBase);
-    
+    console.log('🚀 [renderer] Profile:', profile);
+    console.log('🚀 [renderer] Language:', language);
+
     if (apiKey) {
         console.log('🚀 [renderer] 调用 initialize-model...');
         const success = await ipcRenderer.invoke('initialize-model', {
@@ -190,9 +192,9 @@ async function initializeGemini(profile = 'interview', language = 'zh-CN') {
             profile,
             language,
         });
-        
+
         console.log('🚀 [renderer] initialize-model 结果:', success);
-        
+
         if (success) {
             cheddar.setStatus('Live');
         } else {
@@ -200,7 +202,7 @@ async function initializeGemini(profile = 'interview', language = 'zh-CN') {
         }
         return success;
     }
-    
+
     console.log('❌ [renderer] No API Key found');
     return false;
 }
@@ -226,8 +228,8 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
     console.log('🎯 Token tracker reset for new capture session');
 
     const audioMode = localStorage.getItem('audioMode') || 'speaker_only';
-    const selectedModel = (localStorage.getItem('selectedModel') || 'aihubmix:qwen3-vl-30b-a3b-instruct');
-    const disableAudio = localStorage.getItem('disableAudio') === 'true' || selectedModel.startsWith('aihubmix:');
+    // ✅ 使用智谱AI，不禁用音频
+    const disableAudio = localStorage.getItem('disableAudio') === 'true';
 
     try {
         if (isMacOS) {
