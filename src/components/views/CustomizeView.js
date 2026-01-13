@@ -458,7 +458,7 @@ export class CustomizeView extends LitElement {
         this.modelApiBase = localStorage.getItem('modelApiBase') || '';
         this.modelApiKey = localStorage.getItem('modelApiKey') || '';
         this.modelTestStatus = '';
-        this.maxTokens = parseInt(localStorage.getItem('maxTokens') || '2048', 10);
+        this.maxTokens = parseInt(localStorage.getItem('maxTokens') || '4096', 10);
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
@@ -601,10 +601,10 @@ export class CustomizeView extends LitElement {
     getDefaultKeybinds() {
         const isMac = cheddar.isMacOS || navigator.platform.includes('Mac');
         return {
-            moveUp: isMac ? 'Alt+Up' : 'Ctrl+Up',
-            moveDown: isMac ? 'Alt+Down' : 'Ctrl+Down',
-            moveLeft: isMac ? 'Alt+Left' : 'Ctrl+Left',
-            moveRight: isMac ? 'Alt+Right' : 'Ctrl+Right',
+            moveUp: isMac ? 'Cmd+Up' : 'Ctrl+Up',
+            moveDown: isMac ? 'Cmd+Down' : 'Ctrl+Down',
+            moveLeft: isMac ? 'Cmd+Left' : 'Ctrl+Left',
+            moveRight: isMac ? 'Cmd+Right' : 'Ctrl+Right',
             toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\',
             toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
             nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
@@ -1023,27 +1023,7 @@ export class CustomizeView extends LitElement {
             </div>
         </div>
 
-                <!-- Audio & Microphone Section -->
-                <div class="settings-section">
-                    <div class="section-title">
-                        <span>${t('customize_audio_section')}</span>
-                    </div>
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label class="form-label">${t('customize_audio_mode_label')}</label>
-                            <select class="form-control" .value=${localStorage.getItem('audioMode') || 'speaker_only'} @change=${e => localStorage.setItem('audioMode', e.target.value)}>
-                                <option value="speaker_only">Speaker Only (Interviewer)</option>
-                                <option value="mic_only">Microphone Only (Me)</option>
-                                <option value="both">Both Speaker & Microphone</option>
-                            </select>
-                            <div class="form-description">
-                                需要用户在面试官开始说话前，手动使用 Ctrl+L 开始录音，结束后自动转写用于回答。
-                            </div>
-                        </div>
-                    </div>
-                </div>
 
-                
 
 
                 <!-- Language & Audio Section -->
@@ -1168,31 +1148,7 @@ export class CustomizeView extends LitElement {
                     </div>
 
                     <div class="form-grid">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">
-                                    ${t('capture_interval_label')}
-                                    <span class="current-selection"
-                                        >${this.selectedScreenshotInterval === 'manual' ? t('manual_option') : this.selectedScreenshotInterval + 's'}</span
-                                    >
-                                </label>
-                                <select class="form-control" .value=${this.selectedScreenshotInterval} @change=${this.handleScreenshotIntervalSelect}>
-                                    <option value="manual" ?selected=${this.selectedScreenshotInterval === 'manual'}>${t('manual_option')}</option>
-                                    <option value="1" ?selected=${this.selectedScreenshotInterval === '1'}>${t('every_1s_option')}</option>
-                                    <option value="2" ?selected=${this.selectedScreenshotInterval === '2'}>${t('every_2s_option')}</option>
-                                    <option value="5" ?selected=${this.selectedScreenshotInterval === '5'}>${t('every_5s_option')}</option>
-                                    <option value="10" ?selected=${this.selectedScreenshotInterval === '10'}>${t('every_10s_option')}</option>
-                                </select>
-                                <div class="form-description">
-                                    ${
-                                        this.selectedScreenshotInterval === 'manual'
-                                            ? t('capture_interval_desc_manual')
-                                            : t('capture_interval_desc_auto')
-                                    }
-                                </div>
-                            </div>
-
-                            <div class="form-group">
+                        <div class="form-group">
                                     <label class="form-label">
                                     ${t('image_quality_label')}
                                     <span class="current-selection"
@@ -1220,11 +1176,11 @@ export class CustomizeView extends LitElement {
 
                 <div class="settings-section">
                     <div class="section-title">
-                        <span>Stealth Profile</span>
+                        <span>隐身配置</span>
                     </div>
                     <div class="form-grid">
                         <div class="form-group">
-                            <label class="form-label">Profile</label>
+                            <label class="form-label">配置文件</label>
                             <select class="form-control" .value=${localStorage.getItem('stealthProfile') || 'balanced'} @change=${async e => {
                                 const v = e.target.value;
                                 localStorage.setItem('stealthProfile', v);
@@ -1232,14 +1188,14 @@ export class CustomizeView extends LitElement {
                                     const ipc = window.require ? window.require('electron').ipcRenderer : null;
                                     if (ipc) await ipc.invoke('set-stealth-level', v);
                                 } catch (_) {}
-                                alert('Restart the application for stealth changes to take full effect.');
+                                alert('隐身设置更改后需要重启应用才能完全生效。');
                             }}>
-                                <option value="visible">Visible</option>
-                                <option value="balanced">Balanced</option>
-                                <option value="ultra">Ultra-Stealth</option>
+                                <option value="visible">可见</option>
+                                <option value="balanced">平衡</option>
+                                <option value="ultra">超隐身</option>
                             </select>
                             <div class="form-description">
-                                Adjusts visibility and detection resistance. A restart is required for changes to apply.
+                                调整可见性和检测抵抗力。更改后需要重启应用才能生效。
                             </div>
                         </div>
                     </div>
@@ -1316,28 +1272,15 @@ export class CustomizeView extends LitElement {
                     </table>
                 </div>
 
-                <!-- Model Settings Section -->
+                <!-- AI Settings Section (只显示最大Tokens) -->
                 <div class="settings-section">
                     <div class="section-title">
-                        <span>${t('model_settings_section')}</span>
+                        <span>AI 模型设置</span>
+                    </div>
+                    <div class="form-description" style="margin-bottom: 16px;">
+                        当前使用智谱AI模型（GLM-4.7 文本对话，GLM-4.6V 截图识别，GLM-ASR-2512 语音转写）
                     </div>
                     <div class="form-grid">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">${t('model_select_label')}</label>
-                                <select class="form-control" .value=${this.selectedModel} @change=${this.handleModelSelect}>
-                                    ${this.getModelOptions().map(opt => html`<option value=${opt.value} ?selected=${this.selectedModel === opt.value}>${opt.name}</option>`)}
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">${t('transcription_model_label')}</label>
-                                <select class="form-control" .value=${this.transcriptionModel} @change=${this.handleTranscriptionModelSelect}>
-                                    ${this.getTranscriptionModelOptions().map(opt => html`<option value=${opt.value} ?selected=${this.transcriptionModel === opt.value}>${opt.name}</option>`)}
-                                </select>
-                            </div>
-                        </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">模型回复最大Tokens</label>
@@ -1346,7 +1289,7 @@ export class CustomizeView extends LitElement {
                                     class="form-control"
                                     .value=${this.maxTokens}
                                     @input=${this.handleMaxTokensChange}
-                                    placeholder="2048"
+                                    placeholder="4096"
                                     min="1"
                                     max="32000"
                                 />
@@ -1355,7 +1298,6 @@ export class CustomizeView extends LitElement {
                                 </div>
                             </div>
                         </div>
-                        
                     </div>
                 </div>
 

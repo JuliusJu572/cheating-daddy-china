@@ -275,9 +275,12 @@ export class CheatingDaddyApp extends LitElement {
             this.setStatus('请先输入有效的License Key');
             return;
         }
-        
-        // ✅ 使用智谱AI，弃用aihubmix
-        localStorage.setItem('selectedModel', 'zhipu');
+
+        // ✅ 使用智谱AI，弃用aihubmix，默认手动模式
+        const selectedModel = 'zhipu';
+        localStorage.setItem('selectedModel', selectedModel);
+        console.log('🚀 [handleStart] 使用模型:', selectedModel);
+
         // 然后初始化模型
         const ok = await cheddar.initializeGemini(this.selectedProfile, this.selectedLanguage);
         if (!ok) {
@@ -285,8 +288,8 @@ export class CheatingDaddyApp extends LitElement {
             return;
         }
 
-        const intervalForModel = selectedModel.startsWith('aihubmix:') ? 'manual' : this.selectedScreenshotInterval;
-        cheddar.startCapture(intervalForModel, this.selectedImageQuality);
+        // ✅ 默认使用manual模式，只在用户操作时才发送数据
+        cheddar.startCapture('manual', this.selectedImageQuality);
         this.responses = [];
         this.currentResponseIndex = -1;
         this.startTime = Date.now();

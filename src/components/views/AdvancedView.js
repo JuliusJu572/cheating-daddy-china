@@ -362,6 +362,9 @@ export class AdvancedView extends LitElement {
         newLicenseKey: { type: String },
         apiKeyMessage: { type: String },
         apiKeyMessageType: { type: String },
+        isClearingCache: { type: Boolean },
+        cacheMessage: { type: String },
+        cacheMessageType: { type: String },
     };
 
     constructor() {
@@ -385,6 +388,11 @@ export class AdvancedView extends LitElement {
         this.newLicenseKey = '';
         this.apiKeyMessage = '';
         this.apiKeyMessageType = '';
+
+        // Cache clearing state
+        this.isClearingCache = false;
+        this.cacheMessage = '';
+        this.cacheMessageType = '';
 
         this.loadRateLimitSettings();
         this.loadContentProtectionSetting();
@@ -453,6 +461,42 @@ export class AdvancedView extends LitElement {
             this.statusType = 'error';
         } finally {
             this.isClearing = false;
+            this.requestUpdate();
+        }
+    }
+
+    async clearCheddarCache() {
+        if (this.isClearingCache) return;
+
+        this.isClearingCache = true;
+        this.cacheMessage = '正在清理缓存...';
+        this.cacheMessageType = 'info';
+        this.requestUpdate();
+
+        try {
+            if (!window.require) {
+                this.cacheMessage = '❌ 无法访问文件系统';
+                this.cacheMessageType = 'error';
+                return;
+            }
+
+            const { ipcRenderer } = window.require('electron');
+            const result = await ipcRenderer.invoke('clear-cheddar-cache');
+
+            if (result.success) {
+                const { deletedFiles, freedSpace } = result;
+                this.cacheMessage = `✅ 清理完成！删除了 ${deletedFiles} 个文件，释放 ${freedSpace} 空间`;
+                this.cacheMessageType = 'success';
+            } else {
+                this.cacheMessage = `❌ 清理失败: ${result.error || '未知错误'}`;
+                this.cacheMessageType = 'error';
+            }
+        } catch (error) {
+            console.error('清理缓存错误:', error);
+            this.cacheMessage = `❌ 清理失败: ${error.message}`;
+            this.cacheMessageType = 'error';
+        } finally {
+            this.isClearingCache = false;
             this.requestUpdate();
         }
     }
@@ -673,6 +717,22 @@ export class AdvancedView extends LitElement {
             `;
         }
 
+        // 缓存消息显示
+        let cacheMessageDisplay = html``;
+        if (this.cacheMessage) {
+            const messageClass = this.cacheMessageType === 'error'
+                ? 'status-error'
+                : this.cacheMessageType === 'success'
+                ? 'status-success'
+                : 'status-success';
+
+            cacheMessageDisplay = html`
+                <div class="status-message ${messageClass}">
+                    ${this.cacheMessage}
+                </div>
+            `;
+        }
+
         return html`
             <div class="advanced-container">
                 <!-- API Key 管理部分 -->
@@ -723,6 +783,30 @@ export class AdvancedView extends LitElement {
                         </div>
 
                         ${apiKeyMessageDisplay}
+                    </div>
+                </div>
+
+                <!-- Cache Clearing Section -->
+                <div class="advanced-section">
+                    <div class="section-title">
+                        <span>🗑️ 清理缓存</span>
+                    </div>
+                    <div class="advanced-description">
+                        清理cheddar目录中的截图和音频缓存文件，释放磁盘空间。
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="button-group">
+                            <button
+                                class="action-button"
+                                @click=${this.clearCheddarCache}
+                                ?disabled=${this.isClearingCache}
+                            >
+                                ${this.isClearingCache ? '清理中...' : '🧹 清理缓存'}
+                            </button>
+                        </div>
+
+                        ${cacheMessageDisplay}
                     </div>
                 </div>
 
