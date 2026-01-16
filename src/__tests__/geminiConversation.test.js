@@ -1,3 +1,5 @@
+import { vi, expect, beforeEach, describe, it } from 'vitest';
+
 const electronPath = require.resolve('electron');
 require.cache[electronPath] = {
     exports: {

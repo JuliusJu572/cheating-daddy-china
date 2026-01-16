@@ -479,11 +479,6 @@ export class MainView extends LitElement {
                 </button>
             </div>
             ${statusMessageDisplay}
-            <div style="display: flex; gap: 8px; margin-bottom: 20px;">
-                <button @click=${this.handleOpenSettingsClick} class="secondary-button">
-                    打开设置
-                </button>
-            </div>
         `;
 
         return html`

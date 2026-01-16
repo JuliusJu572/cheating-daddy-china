@@ -1,3 +1,5 @@
+import { expect, describe, it } from 'vitest';
+
 const { formatSpeakerResults } = require('../utils/gemini');
 
 describe('formatSpeakerResults', () => {

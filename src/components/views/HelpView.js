@@ -252,10 +252,10 @@ export class HelpView extends LitElement {
     getDefaultKeybinds() {
         const isMac = cheddar.isMacOS || navigator.platform.includes('Mac');
         return {
-            moveUp: isMac ? 'Alt+Up' : 'Ctrl+Up',
-            moveDown: isMac ? 'Alt+Down' : 'Ctrl+Down',
-            moveLeft: isMac ? 'Alt+Left' : 'Ctrl+Left',
-            moveRight: isMac ? 'Alt+Right' : 'Ctrl+Right',
+            moveUp: isMac ? 'Cmd+Up' : 'Ctrl+Up',
+            moveDown: isMac ? 'Cmd+Down' : 'Ctrl+Down',
+            moveLeft: isMac ? 'Cmd+Left' : 'Ctrl+Left',
+            moveRight: isMac ? 'Cmd+Right' : 'Ctrl+Right',
             toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\',
             toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
             nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
@@ -264,6 +264,7 @@ export class HelpView extends LitElement {
             scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
             scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
             audioCapture: isMac ? 'Cmd+L' : 'Ctrl+L',
+            clearHistory: isMac ? "Cmd+'" : "Ctrl+'",
         };
     }
 
@@ -402,13 +403,14 @@ export class HelpView extends LitElement {
                         <span>如何使用</span>
                     </div>
                     <div class="usage-steps">
-                        <div class="usage-step"><strong>输入 API Key：</strong> 在首页输入你的 API Key，点击“开始会话”进行连通性测试并进入窗口。</div>
-                        <div class="usage-step"><strong>选择模型：</strong> 在设置页选择视觉模型与语音识别模型（如 Whisper-Large-v3）。</div>
+                        <div class="usage-step"><strong>输入 License Key：</strong> 在首页输入你的 License Key（格式：CD-xxxxx），点击"开始会话"进行验证并进入窗口。</div>
+                        <div class="usage-step"><strong>模型配置：</strong> 应用默认使用智谱AI模型（GLM-4.7 文本对话、GLM-4.6V 截图识别、GLM-ASR-2512 语音转写）。</div>
                         <div class="usage-step"><strong>截图与下一步：</strong> 使用 ${this.formatKeybind(this.keybinds.nextStep)} 截图并让 AI 给出下一步建议。</div>
                         <div class="usage-step"><strong>音频录制：</strong> 在面试官开始说话前，使用 ${this.formatKeybind(this.keybinds.audioCapture)} 手动开始录音，结束后自动转写并回答。</div>
-                        <div class="usage-step"><strong>窗口移动：</strong> 用方向键组合移动窗口到合适位置。</div>
+                        <div class="usage-step"><strong>窗口移动：</strong> 使用 ${this.formatKeybind(this.keybinds.moveUp)} / ${this.formatKeybind(this.keybinds.moveDown)} / ${this.formatKeybind(this.keybinds.moveLeft)} / ${this.formatKeybind(this.keybinds.moveRight)} 移动窗口到合适位置。</div>
+                        <div class="usage-step"><strong>切换显示/隐藏：</strong> 使用 ${this.formatKeybind(this.keybinds.toggleVisibility)} 显示或隐藏窗口。</div>
                         <div class="usage-step"><strong>穿透模式：</strong> 使用 ${this.formatKeybind(this.keybinds.toggleClickThrough)} 让窗口可被点击穿透。</div>
-                        <div class="usage-step"><strong>响应浏览：</strong> 使用 ${this.formatKeybind(this.keybinds.previousResponse)} 与 ${this.formatKeybind(this.keybinds.nextResponse)} 浏览响应。</div>
+                        <div class="usage-step"><strong>响应浏览：</strong> 使用 ${this.formatKeybind(this.keybinds.previousResponse)} 与 ${this.formatKeybind(this.keybinds.nextResponse)} 浏览历史响应。</div>
                     </div>
                 </div>
 
@@ -449,6 +451,48 @@ export class HelpView extends LitElement {
                         <span>音频输入</span>
                     </div>
                     <div class="description">需要用户在面试官开始说话前，手动使用 ${this.formatKeybind(this.keybinds.audioCapture)} 开始录音；录音结束后会自动转写并用于生成回答。</div>
+                </div>
+
+                <div class="option-group">
+                    <div class="option-label">
+                        <span>隐私与安全</span>
+                    </div>
+                    <div class="description">
+                        <strong>完全隐身：</strong> 窗口对屏幕共享与录制软件不可见（内容保护技术）。<br><br>
+                        <strong>数据安全：</strong> 所有数据仅发送至您配置的 API 服务端，不会上传至其他第三方服务器。<br><br>
+                        <strong>本地存储：</strong> 您的 API Key 和配置信息仅保存在本地，不会同步到云端。
+                    </div>
+                </div>
+
+                <div class="option-group">
+                    <div class="option-label">
+                        <span>截图设置说明</span>
+                    </div>
+                    <div class="description">
+                        <strong>截图间隔：</strong> 设置自动截图的时间间隔（仅在自动模式下生效）。手动模式下按需截图。<br><br>
+                        <strong>图片质量：</strong><br>
+                        • <strong>低质量：</strong> 文件小，传输快，适合文字为主的场景<br>
+                        • <strong>中等质量：</strong> 平衡文件大小与清晰度<br>
+                        • <strong>高质量：</strong> 清晰度高，适合代码、图表等细节较多的场景
+                    </div>
+                </div>
+
+                <div class="option-group">
+                    <div class="option-label">
+                        <span>常见问题</span>
+                    </div>
+                    <div class="description">
+                        <strong>Q: License Key 在哪里获取？</strong><br>
+                        A: 请联系作者获取 License Key，微信：jrb_572_<br><br>
+                        <strong>Q: 为什么无法连接到 API？</strong><br>
+                        A: 请检查网络连接，确保 API Key 正确有效，并确认 API Base 地址配置正确。<br><br>
+                        <strong>Q: 穿透模式有什么作用？</strong><br>
+                        A: 穿透模式下，鼠标点击会穿透窗口，可以直接操作下层窗口，同时保持悬浮显示。<br><br>
+                        <strong>Q: 如何清除历史记录？</strong><br>
+                        A: 使用 ${this.formatKeybind(this.keybinds.clearHistory)} 快捷键清除当前会话的历史记录。<br><br>
+                        <strong>Q: 支持哪些语音识别模型？</strong><br>
+                        A: 支持 Whisper 系列模型，包括 Tiny、Base、Small、Medium、Large 等版本。推荐使用 Whisper-Large-v3 以获得最佳识别效果。
+                    </div>
                 </div>
             </div>
         `;

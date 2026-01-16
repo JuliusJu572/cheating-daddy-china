@@ -1,10 +1,6 @@
-name: CI Desktop
+name: CI Desktop (Manual Only)
 
 on:
-    pull_request:
-        branches: [main]
-    schedule:
-        - cron: '0 2 2 */4 *'
     workflow_dispatch:
 
 permissions:
