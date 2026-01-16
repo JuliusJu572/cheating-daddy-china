@@ -1,4 +1,5 @@
-const fs = require('fs');
+import { vi, expect, beforeEach, afterEach, describe, it } from 'vitest';
+import fs from 'fs';
 
 const { pcmToWav, analyzeAudioBuffer, saveDebugAudio } = require('../audioUtils');
 

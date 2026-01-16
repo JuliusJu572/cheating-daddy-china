@@ -1,6 +1,7 @@
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+import { vi, expect, describe, it } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 const { pcmToWav, saveDebugAudio } = require('../audioUtils');
 
 describe('audioUtils e2e', () => {

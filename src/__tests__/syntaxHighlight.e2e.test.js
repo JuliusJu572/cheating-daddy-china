@@ -1,6 +1,7 @@
-const fs = require('fs');
-const path = require('path');
-const { JSDOM } = require('jsdom');
+import { expect, describe, it } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+import { JSDOM } from 'jsdom';
 
 describe('syntax highlighting', () => {
     it('loads highlight.js and styles code blocks', async () => {
