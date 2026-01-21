@@ -453,9 +453,9 @@ export class CustomizeView extends LitElement {
         // Font size default (in pixels)
         this.fontSize = 20;
 
-        this.selectedModel = localStorage.getItem('selectedModel') || 'aihubmix:qwen3-vl-30b-a3b-instruct';
-        this.transcriptionModel = localStorage.getItem('transcriptionModel') || 'whisper-large-v3';
-        this.modelApiBase = localStorage.getItem('modelApiBase') || '';
+        this.selectedModel = localStorage.getItem('selectedModel') || 'aihubmix:qwen3-vl-plus';
+        this.transcriptionModel = localStorage.getItem('transcriptionModel') || 'qwen3-asr-flash';
+        this.modelApiBase = localStorage.getItem('modelApiBase') || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
         this.modelApiKey = localStorage.getItem('modelApiKey') || '';
         this.modelTestStatus = '';
         this.maxTokens = parseInt(localStorage.getItem('maxTokens') || '4096', 10);
@@ -912,12 +912,12 @@ export class CustomizeView extends LitElement {
             { value: 'aihubmix:qwen3-vl-235b-a22b-instruct', name: 'Qwen3-VL-235B-A22B-Instruct' },
             { value: 'aihubmix:qwen3-vl-30b-a3b-instruct', name: 'Qwen3-VL-30B-A3B-Instruct' },
             { value: 'aihubmix:qwen3-vl-plus', name: 'Qwen3-VL-Plus' },
-            { value: 'aihubmix:glm-4.5v', name: 'GLM-4.5V' },
         ];
     }
 
     getTranscriptionModelOptions() {
         return [
+            { value: 'qwen3-asr-flash', name: 'Qwen3-ASR-Flash' },
             { value: 'whisper-1', name: 'Whisper-1' },
             { value: 'whisper-large-v3', name: 'Whisper-Large-v3' },
             { value: 'whisper-large-v3-turbo', name: 'Whisper-Large-v3-Turbo' },
@@ -1278,7 +1278,7 @@ export class CustomizeView extends LitElement {
                         <span>AI 模型设置</span>
                     </div>
                     <div class="form-description" style="margin-bottom: 16px;">
-                        当前使用智谱AI模型（GLM-4.7 文本对话，GLM-4.6V 截图识别，GLM-ASR-2512 语音转写）
+                        当前使用 Qwen 模型（qwen3-max 文本对话，qwen3-vl-plus 截图识别，qwen3-asr-flash 语音转写）
                     </div>
                     <div class="form-grid">
                         <div class="form-row">

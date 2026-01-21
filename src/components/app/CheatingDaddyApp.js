@@ -276,8 +276,7 @@ export class CheatingDaddyApp extends LitElement {
             return;
         }
 
-        // ✅ 使用智谱AI，弃用aihubmix，默认手动模式
-        const selectedModel = 'zhipu';
+        const selectedModel = 'qwen';
         localStorage.setItem('selectedModel', selectedModel);
         console.log('🚀 [handleStart] 使用模型:', selectedModel);
 

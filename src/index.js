@@ -37,6 +37,8 @@ const FormData = require('form-data');
 const geminiSessionRef = { current: null };
 let mainWindow = null;
 let creatingWindow = false;
+const DEFAULT_MODEL_API_BASE = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+const DEFAULT_ASR_API_BASE = 'https://dashscope.aliyuncs.com/api/v1';
 
 // Initialize random process names for stealth
 const randomNames = initializeRandomProcessNames();
@@ -62,60 +64,111 @@ app.whenReady().then(async () => {
     setupGeneralIpcHandlers();
 });
 
-async function transcribeAudio(filePath, apiKey) {
-    const glmAsrEndpoint = 'https://open.bigmodel.cn/api/paas/v4/audio/transcriptions';
-    const FormData = require('form-data');
+async function transcribeAudio(filePath, apiKey, apiBase = DEFAULT_ASR_API_BASE) {
+    const asrBase = String(apiBase || DEFAULT_ASR_API_BASE).replace(/\/$/, '');
+    const ext = path.extname(filePath || '').toLowerCase().replace(/^\./, '');
+    const format = ext === 'wav' || ext === 'mp3' || ext === 'm4a' ? ext : 'mp3';
+    const mimeType =
+        format === 'wav'
+            ? 'audio/wav'
+            : format === 'm4a'
+                ? 'audio/mp4'
+                : 'audio/mpeg';
 
-    const fd = new FormData();
-    const fileStream = fs.createReadStream(filePath);
-    const fileName = path.basename(filePath);
+    const audioBase64 = fs.readFileSync(filePath).toString('base64');
+    const audioDataUrl = `data:${mimeType};base64,${audioBase64}`;
 
-    fd.append('model', 'glm-asr-2512');
-    fd.append('file', fileStream, fileName);
-
-    return new Promise((resolve, reject) => {
-        const url = new URL(glmAsrEndpoint);
-
-        fd.submit({
-            protocol: url.protocol,
-            host: url.hostname,
-            port: url.port || (url.protocol === 'https:' ? 443 : 80),
-            path: url.pathname + url.search,
+    async function callDashScopeProtocol() {
+        const endpoint = `${asrBase}/services/aigc/multimodal-generation/generation`;
+        const res = await fetch(endpoint, {
             method: 'POST',
             headers: {
+                'Content-Type': 'application/json; charset=utf-8',
                 'Authorization': `Bearer ${apiKey}`,
-                ...fd.getHeaders()
-            }
-        }, (err, res) => {
-            if (err) {
-                console.error('❌ [GLM-ASR] Request failed:', err.message);
-                reject(err);
-                return;
-            }
-
-            console.log('📡 [GLM-ASR] Response status:', res.statusCode);
-            let data = '';
-            res.on('data', chunk => { data += chunk; });
-            res.on('end', () => {
-                if (res.statusCode >= 200 && res.statusCode < 300) {
-                    try {
-                        console.log('✅ [GLM-ASR] Response received, length:', data.length);
-                        resolve({ success: true, data: JSON.parse(data) });
-                    } catch (parseErr) {
-                        console.error('❌ [GLM-ASR] Failed to parse response:', parseErr.message);
-                        reject(new Error('Failed to parse response: ' + data));
-                    }
-                } else {
-                    console.error('❌ [GLM-ASR] HTTP error:', res.statusCode, data);
-                    reject(new Error(`HTTP ${res.statusCode}: ${data}`));
-                }
-            });
-            res.on('error', (e) => {
-                console.error('❌ [GLM-ASR] Response error:', e.message);
-                reject(e);
-            });
+            },
+            body: JSON.stringify({
+                model: 'qwen3-asr-flash',
+                input: {
+                    messages: [
+                        { role: 'system', content: [{ text: '' }] },
+                        { role: 'user', content: [{ audio: audioDataUrl }] },
+                    ],
+                },
+                parameters: {
+                    asr_options: { enable_itn: false },
+                },
+            }),
         });
-    });
+
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`HTTP ${res.status}: ${text}`);
+        }
+
+        const data = await res.json();
+        const content = data?.output?.choices?.[0]?.message?.content ?? data?.output?.text ?? '';
+        const text =
+            typeof content === 'string'
+                ? content
+                : Array.isArray(content)
+                    ? (content.find(x => typeof x?.text === 'string')?.text || '')
+                    : '';
+        return { success: true, data: { text, raw: data } };
+    }
+
+    async function callOpenAICompatible() {
+        const endpoint = `${DEFAULT_MODEL_API_BASE.replace(/\/$/, '')}/chat/completions`;
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: 'qwen3-asr-flash',
+                messages: [
+                    { role: 'system', content: [{ text: '' }] },
+                    {
+                        role: 'user',
+                        content: [
+                            {
+                                type: 'input_audio',
+                                input_audio: { data: audioDataUrl },
+                            },
+                        ],
+                    },
+                ],
+                stream: false,
+                extra_body: { asr_options: { enable_itn: false } },
+            }),
+        });
+
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`HTTP ${res.status}: ${text}`);
+        }
+
+        const data = await res.json();
+        const content = data?.choices?.[0]?.message?.content;
+        const text =
+            typeof content === 'string'
+                ? content
+                : Array.isArray(content)
+                    ? (content.find(x => typeof x?.text === 'string')?.text || '')
+                    : '';
+
+        return { success: true, data: { text, raw: data } };
+    }
+
+    try {
+        return await callDashScopeProtocol();
+    } catch (e) {
+        try {
+            return await callOpenAICompatible();
+        } catch (e2) {
+            throw e2;
+        }
+    }
 }
 
 function clearSensitiveLocalStorage() {
@@ -366,15 +419,16 @@ function setupGeneralIpcHandlers() {
 
 
 
-            // ✅ 智谱AI - 使用新的 Zhipu session
+            // ✅ Qwen - 使用 DashScope OpenAI 兼容接口
             const selectedModel = (model || '').trim();
-            if (selectedModel === 'zhipu' || selectedModel.startsWith('glm-')) {
-                console.log('🔵 [initialize-model] 使用智谱AI session...');
+            if (selectedModel === 'qwen') {
+                console.log('🔵 [initialize-model] 使用 Qwen session...');
                 const sysPrompt = getSystemPrompt(profile || 'interview', customPrompt || '', false);
                 console.log('🔵 [initialize-model] System prompt length:', sysPrompt.length);
 
-                const session = createZhipuSession({
+                const session = createQwenSession({
                     apiKey,
+                    apiBase: apiBase || DEFAULT_MODEL_API_BASE,
                     systemPrompt: sysPrompt,
                     language: language || 'zh-CN',
                     maxTokens: maxTokens || 4096,
@@ -382,8 +436,8 @@ function setupGeneralIpcHandlers() {
 
                 geminiSessionRef.current = session;
                 global.geminiSessionRef = geminiSessionRef;
-                sendToRenderer('update-status', '智谱AI session connected');
-                console.log('✅ [initialize-model] 智谱AI session 创建成功');
+                sendToRenderer('update-status', 'Qwen session connected');
+                console.log('✅ [initialize-model] Qwen session 创建成功');
                 return true;
             }
 
@@ -663,13 +717,13 @@ function setupGeneralIpcHandlers() {
                 `(function(){ try { return localStorage.getItem('apiKey') || ''; } catch(e){ return ''; } })()`
             );
 
-            console.log('🌐 [GLM-ASR] Sending transcription request...');
-            console.log('📤 [GLM-ASR] File:', finalPath, '(', fileSize, 'bytes)');
+            console.log('🌐 [ASR] Sending transcription request...');
+            console.log('📤 [ASR] File:', finalPath, '(', fileSize, 'bytes)');
 
-            const result = await transcribeAudio(finalPath, apiKey);
+            const result = await transcribeAudio(finalPath, apiKey, DEFAULT_ASR_API_BASE);
 
             const text = result.data?.text || '';
-            console.log('📝 [GLM-ASR] Transcription result:', text);
+            console.log('📝 [ASR] Transcription result:', text);
             
             if (text && geminiSessionRef.current) {
                 console.log('🚀 Sending transcription to model:', text);
@@ -693,20 +747,20 @@ function setupGeneralIpcHandlers() {
 
 }
 
-function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
-    console.log('🔵 [createZhipuSession] 创建智谱AI session...');
-    console.log('🔵 [createZhipuSession] API Key:', apiKey ? '已设置' : '未设置');
-    console.log('🔵 [createZhipuSession] Max Tokens:', maxTokens);
-    console.log('🔵 [createZhipuSession] Language:', language);
+function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPrompt, language, maxTokens }) {
+    console.log('🔵 [createQwenSession] 创建 Qwen session...');
+    console.log('🔵 [createQwenSession] API Key:', apiKey ? '已设置' : '未设置');
+    console.log('🔵 [createQwenSession] Max Tokens:', maxTokens);
+    console.log('🔵 [createQwenSession] Language:', language);
 
     const messages = [];
-    const glmEndpoint = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-    const glmTextModel = 'glm-4.7';
-    const glmVisionModel = 'glm-4.6v';
+    const endpoint = `${String(apiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '')}/chat/completions`;
+    const qwenTextModel = 'qwen3-max';
+    const qwenVisionModel = 'qwen3-vl-plus';
 
     if (systemPrompt && systemPrompt.length > 0) {
         messages.push({ role: 'system', content: systemPrompt });
-        console.log('🔵 [createZhipuSession] System prompt set, length:', systemPrompt.length);
+        console.log('🔵 [createQwenSession] System prompt set, length:', systemPrompt.length);
     }
 
     let closed = false;
@@ -714,8 +768,8 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
     async function callChatCompletions(model, messagesList, options = {}) {
         const { skipFinalStatus = false } = options;
 
-        console.log('📡 [callChatCompletions] 准备调用智谱AI API...');
-        console.log('📡 [callChatCompletions] Endpoint:', glmEndpoint);
+        console.log('📡 [callChatCompletions] 准备调用 API...');
+        console.log('📡 [callChatCompletions] Endpoint:', endpoint);
         console.log('📡 [callChatCompletions] Model:', model);
         console.log('📡 [callChatCompletions] Messages count:', messagesList.length);
 
@@ -731,10 +785,9 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
             messages: messagesList,
             stream: false,
             max_tokens: maxTokens,
-            thinking: { type: 'disabled' },
         };
 
-        const res = await fetch(glmEndpoint, {
+        const res = await fetch(endpoint, {
             method: 'POST',
             headers,
             body: JSON.stringify(body),
@@ -745,7 +798,7 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
         if (!res.ok) {
             const text = await res.text();
             console.error('❌ [callChatCompletions] API Error Response:', text);
-            throw new Error(`智谱AI API error ${res.status}: ${text}`);
+            throw new Error(`API error ${res.status}: ${text}`);
         }
 
         const data = await res.json();
@@ -775,15 +828,15 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
 
         try {
             if (payload?.text) {
-                console.log('📝 [sendRealtimeInput] Processing text message with GLM-4.7...');
+                console.log('📝 [sendRealtimeInput] Processing text message...');
                 messages.push({ role: 'user', content: payload.text });
-                await callChatCompletions(glmTextModel, messages, { skipFinalStatus });
+                await callChatCompletions(qwenTextModel, messages, { skipFinalStatus });
                 console.log('✅ [sendRealtimeInput] Text message processed');
                 return;
             }
 
             if (payload?.videoUrl) {
-                console.log('🎬 [sendRealtimeInput] Processing video URL with GLM-4.6V...');
+                console.log('🎬 [sendRealtimeInput] Processing video URL...');
                 const parts = [
                     { type: 'video_url', video_url: { url: payload.videoUrl } },
                     { type: 'text', text: payload.debug || '请结合视频与图片或文本生成回答。' }
@@ -795,13 +848,13 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
                 }
 
                 messages.push({ role: 'user', content: parts });
-                await callChatCompletions(glmVisionModel, messages);
+                await callChatCompletions(qwenVisionModel, messages);
                 console.log('✅ [sendRealtimeInput] Video URL processed');
                 return;
             }
 
             if (payload?.media?.data) {
-                console.log('🖼️ [sendRealtimeInput] Processing image with GLM-4.6V...');
+                console.log('🖼️ [sendRealtimeInput] Processing image...');
                 console.log('🖼️ [sendRealtimeInput] Image data length:', payload.media.data?.length);
 
                 const dataUrl = `data:${payload.media.mimeType || 'image/jpeg'};base64,${payload.media.data}`;
@@ -815,7 +868,7 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
                     ],
                 });
 
-                await callChatCompletions(glmVisionModel, messages);
+                await callChatCompletions(qwenVisionModel, messages);
                 console.log('✅ [sendRealtimeInput] Image processed');
                 return;
             }
@@ -833,12 +886,12 @@ function createZhipuSession({ apiKey, systemPrompt, language, maxTokens }) {
     }
 
     async function close() {
-        console.log('🔴 [close] Closing Zhipu session...');
+        console.log('🔴 [close] Closing Qwen session...');
         closed = true;
     }
 
     function clearHistory() {
-        console.log('🧹 [clearHistory] Clearing Zhipu session history...');
+        console.log('🧹 [clearHistory] Clearing Qwen session history...');
         messages.length = 0;
         if (systemPrompt && systemPrompt.length > 0) {
             messages.push({ role: 'system', content: systemPrompt });
