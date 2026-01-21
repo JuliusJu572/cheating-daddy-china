@@ -404,7 +404,7 @@ export class HelpView extends LitElement {
                     </div>
                     <div class="usage-steps">
                         <div class="usage-step"><strong>输入 License Key：</strong> 在首页输入你的 License Key（格式：CD-xxxxx），点击"开始会话"进行验证并进入窗口。</div>
-                        <div class="usage-step"><strong>模型配置：</strong> 应用默认使用智谱AI模型（GLM-4.7 文本对话、GLM-4.6V 截图识别、GLM-ASR-2512 语音转写）。</div>
+                        <div class="usage-step"><strong>模型配置：</strong> 应用默认使用 Qwen 模型（qwen3-max 文本对话、qwen3-vl-plus 截图识别、qwen3-asr-flash 语音转写）。</div>
                         <div class="usage-step"><strong>截图与下一步：</strong> 使用 ${this.formatKeybind(this.keybinds.nextStep)} 截图并让 AI 给出下一步建议。</div>
                         <div class="usage-step"><strong>音频录制：</strong> 在面试官开始说话前，使用 ${this.formatKeybind(this.keybinds.audioCapture)} 手动开始录音，结束后自动转写并回答。</div>
                         <div class="usage-step"><strong>窗口移动：</strong> 使用 ${this.formatKeybind(this.keybinds.moveUp)} / ${this.formatKeybind(this.keybinds.moveDown)} / ${this.formatKeybind(this.keybinds.moveLeft)} / ${this.formatKeybind(this.keybinds.moveRight)} 移动窗口到合适位置。</div>

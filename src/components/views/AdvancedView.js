@@ -623,7 +623,7 @@ export class AdvancedView extends LitElement {
             }
 
             const apiKey = decryptRes.apiKey;
-            const apiBase = 'https://open.bigmodel.cn/api/paas/v4';
+            const apiBase = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 
             // 测试连接
             const connectRes = await ipcRenderer.invoke('test-model-connection', {
@@ -741,7 +741,7 @@ export class AdvancedView extends LitElement {
                         <span>🔑 API Key 管理</span>
                     </div>
                     <div class="advanced-description">
-                        管理您的智谱AI License Key。首次使用时请输入License Key，之后会自动保存。
+                        管理您的 Qwen / DashScope License Key。首次使用时请输入License Key，之后会自动保存。
                     </div>
 
                     ${apiKeyStatusDisplay}

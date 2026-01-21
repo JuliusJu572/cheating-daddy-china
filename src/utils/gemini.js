@@ -28,7 +28,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
 
             const session = geminiSessionRef?.current;
             if (session && typeof session.sendRealtimeInput === 'function') {
-                console.log('✅ [send-image-content] 发送到 session (GLM-4.6V)...');
+                console.log('✅ [send-image-content] 发送到 session (Qwen Vision)...');
                 await session.sendRealtimeInput({ media: { data, mimeType }, debug });
                 console.log('✅ [send-image-content] 发送成功');
             } else {
@@ -50,7 +50,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
 
             const session = geminiSessionRef?.current;
             if (session && typeof session.sendRealtimeInput === 'function') {
-                console.log('✅ [send-text-message] 发送到 session (GLM-4.7)...');
+                console.log('✅ [send-text-message] 发送到 session (Qwen Text)...');
                 await session.sendRealtimeInput({ text });
                 console.log('✅ [send-text-message] 发送成功');
             } else {

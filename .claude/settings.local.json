@@ -6,7 +6,9 @@
       "Bash(git add:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: v1.2.0 - 全面切换至智谱AI，新增License Key管理功能\n\n- 默认使用智谱AI模型（GLM-4.7/GLM-4.6V/GLM-ASR-2512），弃用aihubmix\n- 新增License Key管理功能\n  - 首次使用输入License Key后自动保存\n  - 每次启动自动验证已保存的Key\n  - Key过期时提示重新配置\n  - 在高级设置中可直接管理License Key\n- 完善汉化功能，添加更多中文翻译\n- 优化状态显示和用户体验\n- 更新README文档\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(npm test)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nchore: bump version to 1.4.2\n\n- 移除开始界面的打开设置按钮\n- 修正帮助界面快捷键显示\n- 完善帮助与快捷键界面内容\n- 修复测试文件 vitest 导入问题\n- 禁用 windows-build 自动触发，仅保留 release-all\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nchore: bump version to 1.4.2\n\n- 移除开始界面的打开设置按钮\n- 修正帮助界面快捷键显示\n- 完善帮助与快捷键界面内容\n- 修复测试文件 vitest 导入问题\n- 禁用 windows-build 自动触发，仅保留 release-all\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(git tag:*)"
     ]
   }
 }

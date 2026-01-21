@@ -66,18 +66,18 @@ export const translations = {
     // 模型设置
     model_settings_section: "模型设置",
     model_select_label: "选择模型",
-    model_zhipu_label: "智谱 AI (GLM-4.7/GLM-4.6V)",
+    model_zhipu_label: "Qwen (qwen3-max/qwen3-vl-plus)",
     model_api_base_label: "API Base URL",
     model_api_key_label: "API Key",
     model_test_button: "测试连接",
     model_test_status_success: "连接成功",
     model_test_status_fail: "连接失败",
     transcription_model_label: "语音识别模型",
-    transcription_model_zhipu: "GLM-ASR-2512 (智谱AI)",
+    transcription_model_zhipu: "qwen3-asr-flash (DashScope)",
 
     // API Key 管理
     api_key_management_section: "🔑 API Key 管理",
-    api_key_management_desc: "管理您的智谱AI License Key。首次使用时请输入License Key，之后会自动保存。",
+    api_key_management_desc: "管理您的 Qwen / DashScope License Key。首次使用时请输入License Key，之后会自动保存。",
     api_key_input_placeholder: "输入 License Key (格式: CD-xxxxx)",
     api_key_save_button: "💾 保存 License Key",
     api_key_clear_button: "🗑️ 清除已保存的 Key",
@@ -205,18 +205,18 @@ export const translations = {
     // Model settings
     model_settings_section: "Model Settings",
     model_select_label: "Model",
-    model_zhipu_label: "Zhipu AI (GLM-4.7/GLM-4.6V)",
+    model_zhipu_label: "Qwen (qwen3-max/qwen3-vl-plus)",
     model_api_base_label: "API Base URL",
     model_api_key_label: "API Key",
     model_test_button: "Test Connection",
     model_test_status_success: "Connected",
     model_test_status_fail: "Connection Failed",
     transcription_model_label: "Transcription Model",
-    transcription_model_zhipu: "GLM-ASR-2512 (ZhipuAI)",
+    transcription_model_zhipu: "qwen3-asr-flash (DashScope)",
 
     // API Key Management
     api_key_management_section: "🔑 API Key Management",
-    api_key_management_desc: "Manage your ZhipuAI License Key. Enter it on first use, and it will be saved automatically.",
+    api_key_management_desc: "Manage your Qwen / DashScope License Key. Enter it on first use, and it will be saved automatically.",
     api_key_input_placeholder: "Enter License Key (format: CD-xxxxx)",
     api_key_save_button: "💾 Save License Key",
     api_key_clear_button: "🗑️ Clear Saved Key",

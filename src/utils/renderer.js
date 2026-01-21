@@ -168,14 +168,13 @@ function arrayBufferToBase64(buffer) {
 }
 
 async function initializeGemini(profile = 'interview', language = 'zh-CN') {
-    // ✅ 默认使用智谱AI模型，弃用aihubmix
-    const selectedModel = 'zhipu';
+    const selectedModel = 'qwen';
 
     console.log('🚀 [renderer] initializeGemini 开始...');
-    console.log('🚀 [renderer] 使用智谱AI模型');
+    console.log('🚀 [renderer] 使用 Qwen 模型');
 
     const apiKey = (localStorage.getItem('apiKey') || '').trim();
-    const apiBase = 'https://open.bigmodel.cn/api/paas/v4';
+    const apiBase = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 
     console.log('🚀 [renderer] Model:', selectedModel);
     console.log('🚀 [renderer] Profile:', profile);
@@ -228,7 +227,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
     console.log('🎯 Token tracker reset for new capture session');
 
     const audioMode = localStorage.getItem('audioMode') || 'speaker_only';
-    // ✅ 使用智谱AI，不禁用音频
+    // ✅ 使用 Qwen，不禁用音频
     const disableAudio = localStorage.getItem('disableAudio') === 'true';
 
     try {
@@ -513,7 +512,7 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
         });
 
         // Lazy init of canvas based on video dimensions
-        // ✅ 限制图片尺寸以符合智谱AI API要求
+        // ✅ 限制图片尺寸以兼容视觉模型输入
         const maxWidth = 1280;
         const maxHeight = 1280;
         let width = hiddenVideo.videoWidth;

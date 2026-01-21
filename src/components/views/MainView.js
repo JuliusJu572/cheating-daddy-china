@@ -321,7 +321,7 @@ export class MainView extends LitElement {
             }
 
             const apiKey = decryptRes.apiKey;
-            const apiBase = 'https://open.bigmodel.cn/api/paas/v4';
+            const apiBase = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 
             // 测试连接
             const connectRes = await ipcRenderer.invoke('test-model-connection', {
