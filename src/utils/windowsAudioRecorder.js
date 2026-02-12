@@ -1,16 +1,27 @@
-const { ipcRenderer, desktopCapturer } = require('electron');
+const { ipcRenderer } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { pcmToWav } = require('../audioUtils');
+const { createPcmRecorder } = require('./pcmRecorder');
 
 let isRecording = false;
-let audioContext = null;
 let mediaStream = null;
-let processor = null;
-let sourceNode = null;
+let pcmRecorder = null;
 let recordedChunks = [];
 const TARGET_SAMPLE_RATE = 16000; // Gemini supports 16kHz or 24kHz, 16kHz is safer for consistent processing
+let initialized = false;
+
+function setStatus(text) {
+    try {
+        if (window.cheddar?.setStatus) {
+            window.cheddar.setStatus(text);
+            return;
+        }
+        const app = document.querySelector('cheating-daddy-app');
+        if (app && typeof app.setStatus === 'function') app.setStatus(text);
+    } catch (e) {}
+}
 
 async function toggleRecording() {
     console.log('[WindowsAudioRecorder] Toggle recording triggered. Current state:', isRecording);
@@ -23,7 +34,7 @@ async function toggleRecording() {
 
 async function startRecording() {
     try {
-        ipcRenderer.send('update-status', '初始化麦克风...');
+        setStatus('初始化麦克风...');
         console.log('[WindowsAudioRecorder] Starting Microphone Capture...');
         recordedChunks = [];
 
@@ -40,41 +51,30 @@ async function startRecording() {
 
         if (stream.getAudioTracks().length === 0) {
             console.error('[WindowsAudioRecorder] No audio track found in stream');
-            ipcRenderer.send('update-status', '❌ 未找到麦克风');
+            setStatus('❌ 未找到麦克风');
             stream.getTracks().forEach(track => track.stop());
             return;
         }
 
         mediaStream = stream;
 
-        audioContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
         const audioTrack = stream.getAudioTracks()[0];
         const audioStream = new MediaStream([audioTrack]);
 
-        sourceNode = audioContext.createMediaStreamSource(audioStream);
-        processor = audioContext.createScriptProcessor(8192, 1, 1);
-
-        sourceNode.connect(processor);
-        processor.connect(audioContext.destination);
-
-        processor.onaudioprocess = e => {
-            if (!isRecording) return;
-
-            const inputData = e.inputBuffer.getChannelData(0);
-            const pcmData = new Int16Array(inputData.length);
-
-            for (let i = 0; i < inputData.length; i++) {
-                const s = Math.max(-1, Math.min(1, inputData[i]));
-                pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            }
-
-            recordedChunks.push(Buffer.from(pcmData.buffer));
-        };
+        pcmRecorder = await createPcmRecorder({
+            stream: audioStream,
+            targetSampleRate: TARGET_SAMPLE_RATE,
+            chunkDurationSec: 0.25,
+            onChunk: msg => {
+                if (!isRecording) return;
+                recordedChunks.push(Buffer.from(msg.buffer));
+            },
+        });
 
         isRecording = true;
 
         const stopKey = 'Ctrl+K';
-        ipcRenderer.send('update-status', `🎙️ 录制麦克风... (${stopKey} 停止)`);
+        setStatus(`🎙️ 录制麦克风... (${stopKey} 停止并发送)`);
         console.log('[WindowsAudioRecorder] Microphone Recording Started');
 
         stream.getAudioTracks()[0].onended = () => {
@@ -83,7 +83,7 @@ async function startRecording() {
         };
     } catch (error) {
         console.error('[WindowsAudioRecorder] Failed to start recording:', error);
-        ipcRenderer.send('update-status', '❌ 麦克风录制失败: ' + error.message);
+        setStatus('❌ 麦克风录制失败: ' + error.message);
         isRecording = false;
     }
 }
@@ -93,27 +93,20 @@ async function stopRecording() {
 
     console.log('[WindowsAudioRecorder] Stopping Windows Audio Capture...');
     isRecording = false;
-    ipcRenderer.send('update-status', '⏳ 处理音频中...');
+    setStatus('⏳ 处理音频中...');
 
     // 清理资源
-    if (processor) {
-        processor.disconnect();
-        processor.onaudioprocess = null;
-    }
-    if (sourceNode) {
-        sourceNode.disconnect();
-    }
+    if (pcmRecorder) await pcmRecorder.stop().catch(() => {});
+    pcmRecorder = null;
     if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
     }
-    if (audioContext) {
-        await audioContext.close();
-    }
+    mediaStream = null;
 
     // 处理数据
     if (recordedChunks.length === 0) {
         console.warn('[WindowsAudioRecorder] No audio data recorded');
-        ipcRenderer.send('update-status', '⚠️ 未录制到音频');
+        setStatus('⚠️ 未录制到音频');
         return;
     }
 
@@ -139,7 +132,7 @@ async function stopRecording() {
     // 2. 发送给转录模型 (模拟 renderer.js 的行为)
     const base64Audio = fullBuffer.toString('base64');
 
-    ipcRenderer.send('update-status', '🎙️ 转写麦克风音频中...');
+    setStatus('🎙️ 转写麦克风音频中...');
 
     // 使用 save-audio-and-transcribe 替代 send-windows-audio-data
     // 这个 IPC handler 在 index.js 中，它负责保存文件并调用 STT (Speech-to-Text)
@@ -151,7 +144,7 @@ async function stopRecording() {
         if (!result || !result.success) {
             console.error('[WindowsAudioRecorder] Transcription failed:', result?.error);
             // 转写失败，更新状态
-            ipcRenderer.send('update-status', '❌ 转写失败');
+            setStatus('❌ 转写失败');
         }
         // 转写成功时，不需要更新状态
         // index.js 中的 save-audio-and-transcribe 会处理：
@@ -161,7 +154,7 @@ async function stopRecording() {
         // 这里不需要额外操作，避免状态冲突
     }).catch(err => {
         console.error('[WindowsAudioRecorder] Error invoking save-audio-and-transcribe:', err);
-        ipcRenderer.send('update-status', '❌ 错误');
+        setStatus('❌ 错误');
     });
 
     recordedChunks = [];
@@ -169,7 +162,10 @@ async function stopRecording() {
 
 module.exports = {
     initialize: () => {
+        if (initialized) return;
+        initialized = true;
         console.log('[WindowsAudioRecorder] Initializing...');
+        ipcRenderer.removeAllListeners('toggle-windows-audio-capture');
         ipcRenderer.on('toggle-windows-audio-capture', () => {
             console.log('[WindowsAudioRecorder] Received toggle-windows-audio-capture event');
             toggleRecording();

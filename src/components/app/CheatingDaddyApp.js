@@ -237,8 +237,11 @@ export class CheatingDaddyApp extends LitElement {
     async handleClose() {
         if (this.currentView === 'customize' || this.currentView === 'help' || this.currentView === 'history') {
             this.currentView = 'main';
+            this.requestUpdate();
         } else if (this.currentView === 'assistant') {
-            cheddar.stopCapture();
+            if (window.cheddar?.stopCapture) {
+                window.cheddar.stopCapture();
+            }
 
             // macOS 特定：确保停止 SystemAudioDump
             if (process.platform === 'darwin' && window.require) {
@@ -253,6 +256,7 @@ export class CheatingDaddyApp extends LitElement {
             this.sessionActive = false;
             this.currentView = 'main';
             console.log('Session closed');
+            this.requestUpdate();
         } else {
             if (window.require) {
                 const { ipcRenderer } = window.require('electron');
@@ -275,24 +279,27 @@ export class CheatingDaddyApp extends LitElement {
             this.setStatus('请先输入有效的License Key');
             return;
         }
+        if (!window.cheddar?.initializeGemini) {
+            this.setStatus('应用未就绪，请重启后再试');
+            return;
+        }
 
         const selectedModel = 'qwen';
         localStorage.setItem('selectedModel', selectedModel);
         console.log('🚀 [handleStart] 使用模型:', selectedModel);
 
         // 然后初始化模型
-        const ok = await cheddar.initializeGemini(this.selectedProfile, this.selectedLanguage);
+        const ok = await window.cheddar.initializeGemini(this.selectedProfile, this.selectedLanguage);
         if (!ok) {
             this.setStatus('模型初始化失败');
             return;
         }
 
-        // ✅ 默认使用manual模式，只在用户操作时才发送数据
-        cheddar.startCapture('manual', this.selectedImageQuality);
         this.responses = [];
         this.currentResponseIndex = -1;
         this.startTime = Date.now();
         this.currentView = 'assistant';
+        this.requestUpdate();
     }
     
     async handleAPIKeyHelp() {

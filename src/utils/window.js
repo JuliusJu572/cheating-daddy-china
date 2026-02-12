@@ -474,7 +474,6 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
             globalShortcut.register(keybinds.windowsAudioCapture, () => {
                 console.log('Windows audio capture shortcut triggered (Ctrl+K)');
                 mainWindow.webContents.send('toggle-windows-audio-capture');
-                sendToRenderer('update-status', '正在录音...');
             });
             console.log(`Registered windowsAudioCapture: ${keybinds.windowsAudioCapture}`);
         } catch (error) {

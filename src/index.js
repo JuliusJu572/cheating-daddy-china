@@ -485,18 +485,24 @@ function setupGeneralIpcHandlers() {
             }
             
             console.log('🔍 Testing connection:', apiBase);
-            console.log('🔍 Headers:', headers);
+            const safeHeaders = { ...(headers || {}) };
+            if (typeof safeHeaders.Authorization === 'string' && safeHeaders.Authorization.length > 0) {
+                safeHeaders.Authorization = 'Bearer ***';
+            }
+            console.log('🔍 Headers:', safeHeaders);
             
             // 构建完整的 URL
             const url = apiBase.endsWith('/') ? `${apiBase}models` : `${apiBase}/models`;
             
-            const res = await fetch(url, { 
-                method: 'GET', 
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            const res = await fetch(url, {
+                method: 'GET',
                 headers: headers || {},
-                timeout: 10000  // 10秒超时
-            });
+                signal: controller.signal,
+            }).finally(() => clearTimeout(timeoutId));
             
-            const ok = res.ok || res.status < 500;
+            const ok = res.ok;
             console.log('🔍 Response status:', res.status, 'OK:', ok);
             
             return { success: ok, status: res.status };

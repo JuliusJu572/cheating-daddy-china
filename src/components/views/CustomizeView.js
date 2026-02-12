@@ -599,7 +599,7 @@ export class CustomizeView extends LitElement {
     }
 
     getDefaultKeybinds() {
-        const isMac = cheddar.isMacOS || navigator.platform.includes('Mac');
+        const isMac = window.cheddar?.isMacOS || navigator.platform.includes('Mac');
         return {
             moveUp: isMac ? 'Cmd+Up' : 'Ctrl+Up',
             moveDown: isMac ? 'Cmd+Down' : 'Ctrl+Down',

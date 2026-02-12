@@ -1,10 +1,38 @@
 // renderer.js
-const { ipcRenderer } = require('electron');
+const nodeRequire =
+    typeof require === 'function'
+        ? require
+        : typeof window !== 'undefined' && typeof window.require === 'function'
+          ? window.require
+          : null;
+
+const electron = nodeRequire ? nodeRequire('electron') : null;
+const realIpcRenderer = electron?.ipcRenderer || null;
+const ipcRenderer =
+    realIpcRenderer ||
+    ({
+        invoke: async () => {
+            throw new Error('ipcRenderer is not available');
+        },
+        on: () => {},
+        send: () => {},
+        removeAllListeners: () => {},
+    });
+
+let createPcmRecorder = null;
+try {
+    if (nodeRequire) {
+        ({ createPcmRecorder } = nodeRequire('./utils/pcmRecorder'));
+    }
+} catch (e) {}
+
+const platform = typeof process !== 'undefined' ? process.platform : 'browser';
+const isElectron = !!(typeof process !== 'undefined' && process.versions?.electron && realIpcRenderer);
 
 // Initialize Windows Audio Recorder (if on Windows)
-if (process.platform === 'win32') {
+if (isElectron && platform === 'win32') {
     try {
-        const { initialize } = require('./windowsAudioRecorder');
+        const { initialize } = nodeRequire('./utils/windowsAudioRecorder');
         initialize();
         console.log('Windows Audio Recorder initialized');
     } catch (e) {
@@ -16,16 +44,20 @@ if (process.platform === 'win32') {
 window.randomDisplayName = null;
 
 // Request random display name from main process
-ipcRenderer
-    .invoke('get-random-display-name')
-    .then(name => {
-        window.randomDisplayName = name;
-        console.log('Set random display name:', name);
-    })
-    .catch(err => {
-        console.warn('Could not get random display name:', err);
-        window.randomDisplayName = 'System Monitor';
-    });
+if (isElectron) {
+    ipcRenderer
+        .invoke('get-random-display-name')
+        .then(name => {
+            window.randomDisplayName = name;
+            console.log('Set random display name:', name);
+        })
+        .catch(err => {
+            console.warn('Could not get random display name:', err);
+            window.randomDisplayName = 'System Monitor';
+        });
+} else {
+    window.randomDisplayName = 'System Monitor';
+}
 
 let mediaStream = null;
 let screenshotInterval = null;
@@ -40,17 +72,17 @@ const BUFFER_SIZE = 4096; // Increased buffer size for smoother audio
 let hiddenVideo = null;
 let offscreenCanvas = null;
 let offscreenContext = null;
-let currentImageQuality = 'medium'; // Store current image quality for manual screenshots
+let currentImageQuality = (typeof localStorage !== 'undefined' && localStorage.getItem('selectedImageQuality')) || 'medium'; // Store current image quality for manual screenshots
 
 let isQuickRecording = false;
 let quickRecordStream = null;
-let quickRecordContext = null;
-let quickRecordProcessor = null;
-let quickRecordBuffer = [];
+let quickRecorder = null;
+let quickRecordChunks = [];
 let quickRecordStartTime = null;
+let quickRecordStallCount = 0;
 
-const isLinux = process.platform === 'linux';
-const isMacOS = process.platform === 'darwin';
+const isLinux = platform === 'linux';
+const isMacOS = platform === 'darwin';
 
 // Token tracking system for rate limiting
 let tokenTracker = {
@@ -158,13 +190,7 @@ function convertFloat32ToInt16(float32Array) {
 }
 
 function arrayBufferToBase64(buffer) {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
+    return Buffer.from(new Uint8Array(buffer)).toString('base64');
 }
 
 async function initializeGemini(profile = 'interview', language = 'zh-CN') {
@@ -274,7 +300,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                         video: false,
                     });
                     console.log('macOS microphone capture started');
-                    setupLinuxMicProcessing(micStream);
+                    await setupLinuxMicProcessing(micStream);
                 } catch (micError) {
                     console.warn('Failed to get microphone access on macOS:', micError);
                 }
@@ -292,8 +318,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                     audio: disableAudio
                         ? false
                         : {
-                              sampleRate: SAMPLE_RATE,
-                              channelCount: 1,
+                              channelCount: 2,
                               echoCancellation: false, // Don't cancel system audio
                               noiseSuppression: false,
                               autoGainControl: false,
@@ -304,7 +329,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
 
                 // Setup audio processing for Linux system audio
                 if (!disableAudio) {
-                    setupLinuxSystemAudioProcessing();
+                    await setupLinuxSystemAudioProcessing();
                 }
             } catch (systemAudioError) {
                 console.warn('System audio via getDisplayMedia failed, trying screen-only capture:', systemAudioError);
@@ -338,7 +363,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                     console.log('Linux microphone capture started');
 
                     // Setup audio processing for microphone on Linux
-                    setupLinuxMicProcessing(micStream);
+                    await setupLinuxMicProcessing(micStream);
                 } catch (micError) {
                     console.warn('Failed to get microphone access on Linux:', micError);
                     // Continue without microphone if permission denied
@@ -357,8 +382,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                 audio: disableAudio
                     ? false
                     : {
-                        sampleRate: SAMPLE_RATE,
-                        channelCount: 1,
+                        channelCount: 2,
                         echoCancellation: false,  // ✅ 改为 false
                         noiseSuppression: false,  // ✅ 改为 false
                         autoGainControl: false,   // ✅ 改为 false
@@ -369,7 +393,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
 
             // Setup audio processing for Windows loopback audio only
             if (!disableAudio) {
-                setupWindowsLoopbackProcessing();
+                await setupWindowsLoopbackProcessing();
             }
 
             if (!disableAudio && (audioMode === 'mic_only' || audioMode === 'both')) {
@@ -386,7 +410,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                         video: false,
                     });
                     console.log('Windows microphone capture started');
-                    setupLinuxMicProcessing(micStream);
+                    await setupLinuxMicProcessing(micStream);
                 } catch (micError) {
                     console.warn('Failed to get microphone access on Windows:', micError);
                 }
@@ -425,64 +449,97 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
         }
     } catch (err) {
         console.error('Error starting capture:', err);
-        cheddar.setStatus('error');
+        if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) {
+            cheddar.setStatus('⚠️ 未授权屏幕捕获');
+        } else {
+            cheddar.setStatus('⚠️ 捕获启动失败');
+        }
     }
 }
 
-function setupLinuxMicProcessing(micStream) {
-    const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
-    const source = ctx.createMediaStreamSource(micStream);
-    const processor = ctx.createScriptProcessor(BUFFER_SIZE, 1, 1);
+let systemAudioRecorder = null;
+let micRecorder = null;
 
-    setupAudioProcessorCallback(processor, 'send-mic-audio-content');
+function createIpcChunkSender(ipcChannel, mimeType) {
+    const queue = [];
+    let inflight = 0;
+    let dropped = 0;
+    const maxQueue = 12;
+    const maxInflight = 2;
 
-    source.connect(processor);
-    processor.connect(ctx.destination);
-
-    micAudioProcessor = processor;
-}
-
-function setupLinuxSystemAudioProcessing() {
-    audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
-    const source = audioContext.createMediaStreamSource(mediaStream);
-    audioProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
-
-    setupAudioProcessorCallback(audioProcessor, 'send-audio-content');
-
-    source.connect(audioProcessor);
-    audioProcessor.connect(audioContext.destination);
-}
-
-function setupWindowsLoopbackProcessing() {
-    audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
-    const source = audioContext.createMediaStreamSource(mediaStream);
-    audioProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
-
-    setupAudioProcessorCallback(audioProcessor, 'send-audio-content');
-
-    source.connect(audioProcessor);
-    audioProcessor.connect(audioContext.destination);
-}
-
-function setupAudioProcessorCallback(processor, ipcChannel) {
-    let audioBuffer = [];
-    const samplesPerChunk = SAMPLE_RATE * AUDIO_CHUNK_DURATION;
-
-    processor.onaudioprocess = async e => {
-        const inputData = e.inputBuffer.getChannelData(0);
-        audioBuffer.push(...inputData);
-
-        while (audioBuffer.length >= samplesPerChunk) {
-            const chunk = audioBuffer.splice(0, samplesPerChunk);
-            const pcmData16 = convertFloat32ToInt16(chunk);
-            const base64Data = arrayBufferToBase64(pcmData16.buffer);
-
-            await ipcRenderer.invoke(ipcChannel, {
-                data: base64Data,
-                mimeType: 'audio/pcm;rate=24000',
-            });
+    const pump = () => {
+        while (inflight < maxInflight && queue.length > 0) {
+            const payload = queue.shift();
+            inflight++;
+            ipcRenderer
+                .invoke(ipcChannel, payload)
+                .catch(() => {})
+                .finally(() => {
+                    inflight--;
+                    pump();
+                });
         }
     };
+
+    return {
+        send: base64Data => {
+            if (queue.length >= maxQueue) {
+                queue.shift();
+                dropped++;
+            }
+            queue.push({ data: base64Data, mimeType });
+            pump();
+        },
+        getDropped: () => dropped,
+    };
+}
+
+async function setupLinuxMicProcessing(micStream) {
+    if (!micStream || micStream.getAudioTracks().length === 0) return;
+    if (micRecorder) await micRecorder.stop().catch(() => {});
+
+    const sender = createIpcChunkSender('send-mic-audio-content', `audio/pcm;rate=${SAMPLE_RATE}`);
+    const audioOnlyStream = new MediaStream([micStream.getAudioTracks()[0]]);
+
+    micRecorder = await createPcmRecorder({
+        stream: audioOnlyStream,
+        targetSampleRate: SAMPLE_RATE,
+        chunkDurationSec: AUDIO_CHUNK_DURATION,
+        onChunk: msg => {
+            const base64Data = arrayBufferToBase64(msg.buffer);
+            sender.send(base64Data);
+        },
+        onStats: stats => {
+            const droppedChunks = sender.getDropped();
+            if (droppedChunks > 0) console.warn('[audio] mic chunks dropped:', droppedChunks, stats);
+        },
+    });
+}
+
+async function setupLinuxSystemAudioProcessing() {
+    if (!mediaStream || mediaStream.getAudioTracks().length === 0) return;
+    if (systemAudioRecorder) await systemAudioRecorder.stop().catch(() => {});
+
+    const sender = createIpcChunkSender('send-audio-content', `audio/pcm;rate=${SAMPLE_RATE}`);
+    const audioOnlyStream = new MediaStream([mediaStream.getAudioTracks()[0]]);
+
+    systemAudioRecorder = await createPcmRecorder({
+        stream: audioOnlyStream,
+        targetSampleRate: SAMPLE_RATE,
+        chunkDurationSec: AUDIO_CHUNK_DURATION,
+        onChunk: msg => {
+            const base64Data = arrayBufferToBase64(msg.buffer);
+            sender.send(base64Data);
+        },
+        onStats: stats => {
+            const droppedChunks = sender.getDropped();
+            if (droppedChunks > 0) console.warn('[audio] system chunks dropped:', droppedChunks, stats);
+        },
+    });
+}
+
+async function setupWindowsLoopbackProcessing() {
+    return setupLinuxSystemAudioProcessing();
 }
 
 async function captureScreenshot(imageQuality = 'medium', isManual = false) {
@@ -633,9 +690,12 @@ async function captureManualScreenshot(imageQuality = null) {
     
     // Check if capture has started
     if (!mediaStream) {
-        console.error('❌ Cannot take screenshot - mediaStream not initialized. Start capture first!');
-        cheddar.setStatus('Error: Please start session first');
-        return;
+        const quality = imageQuality || currentImageQuality;
+        try {
+            await startCapture('manual', quality);
+        } catch (e) {
+            return;
+        }
     }
     
     const quality = imageQuality || currentImageQuality;
@@ -669,30 +729,40 @@ async function startQuickAudioCapture() {
                 }
                 isQuickRecording = false;
                 quickRecordStream = null;
-                quickRecordContext = null;
-                quickRecordProcessor = null;
-                quickRecordBuffer = [];
+                quickRecorder = null;
+                quickRecordChunks = [];
                 quickRecordStartTime = null;
+                quickRecordStallCount = 0;
                 return;
             }
-            if (quickRecordProcessor) {
-                quickRecordProcessor.disconnect();
-            }
-            if (quickRecordContext) {
-                await quickRecordContext.close();
-            }
-            if (quickRecordStream) {
-                quickRecordStream.getTracks().forEach(track => track.stop());
-            }
+            if (quickRecorder) await quickRecorder.stop().catch(() => {});
+            if (quickRecordStream) quickRecordStream.getTracks().forEach(track => track.stop());
 
-            if (quickRecordBuffer.length > 0) {
-                const pcm = convertFloat32ToInt16(quickRecordBuffer);
-                const base64 = arrayBufferToBase64(pcm.buffer);
+            if (quickRecordChunks.length > 0) {
+                const targetSampleRate = 16000;
+                const durationSec = quickRecordStartTime ? (Date.now() - quickRecordStartTime) / 1000 : 0;
+                const expectedSamples = durationSec > 0 ? Math.round(durationSec * targetSampleRate) : 0;
+
+                let fullBuffer = Buffer.concat(quickRecordChunks);
+                const actualSamples = Math.floor(fullBuffer.length / 2);
+                let compensated = false;
+                if (expectedSamples > 0) {
+                    if (actualSamples < expectedSamples * 0.97) {
+                        const missing = expectedSamples - actualSamples;
+                        if (missing > 0) {
+                            fullBuffer = Buffer.concat([fullBuffer, Buffer.alloc(missing * 2)]);
+                            compensated = true;
+                        }
+                    } else if (actualSamples > expectedSamples * 1.03) {
+                        fullBuffer = fullBuffer.subarray(0, expectedSamples * 2);
+                        compensated = true;
+                    }
+                }
+                if (compensated || quickRecordStallCount > 0) console.warn('[quick-audio] compensated:', compensated, 'stalls:', quickRecordStallCount);
+
+                const base64 = fullBuffer.toString('base64');
                 cheddar.setStatus('🔊 转写系统音频中...');
-                const result = await ipcRenderer.invoke('save-audio-and-transcribe', {
-                    pcmBase64: base64,
-                    sampleRate: 16000
-                });
+                const result = await ipcRenderer.invoke('save-audio-and-transcribe', { pcmBase64: base64, sampleRate: targetSampleRate });
                 if (!result || !result.success) {
                     cheddar.setStatus('Error: ' + (result?.error || 'Unknown'));
                 }
@@ -702,10 +772,10 @@ async function startQuickAudioCapture() {
 
             isQuickRecording = false;
             quickRecordStream = null;
-            quickRecordContext = null;
-            quickRecordProcessor = null;
-            quickRecordBuffer = [];
+            quickRecorder = null;
+            quickRecordChunks = [];
             quickRecordStartTime = null;
+            quickRecordStallCount = 0;
 
         } catch (error) {
             cheddar.setStatus('Error: ' + error.message);
@@ -716,6 +786,16 @@ async function startQuickAudioCapture() {
 
     // 开始新的录音 - 系统音频
     try {
+        if (typeof createPcmRecorder !== 'function' && nodeRequire) {
+            try {
+                ({ createPcmRecorder } = nodeRequire('./utils/pcmRecorder'));
+            } catch (e) {}
+        }
+        if (typeof createPcmRecorder !== 'function') {
+            cheddar.setStatus('⚠️ 音频模块未就绪，请重启应用');
+            return;
+        }
+
         if (isMacOS) {
             const startRes = await ipcRenderer.invoke('start-macos-audio');
             if (!startRes || !startRes.success) {
@@ -734,7 +814,7 @@ async function startQuickAudioCapture() {
 
         // 检查是否有现成的 mediaStream (系统音频)
         if (mediaStream && mediaStream.getAudioTracks().length > 0) {
-            streamToUse = mediaStream;
+            streamToUse = new MediaStream([mediaStream.getAudioTracks()[0]]);
             console.log('✅ 使用现有系统音频流');
         } else {
             // 尝试获取系统音频
@@ -746,8 +826,7 @@ async function startQuickAudioCapture() {
                         height: { ideal: 720 },
                     },
                     audio: {
-                        sampleRate: 16000,
-                        channelCount: 1,
+                        channelCount: 2,
                         echoCancellation: false,
                         noiseSuppression: false,
                         autoGainControl: false,
@@ -759,10 +838,10 @@ async function startQuickAudioCapture() {
                     // 没有系统音频，清理并提示用户
                     quickRecordStream.getTracks().forEach(track => track.stop());
                     quickRecordStream = null;
-                    cheddar.setStatus('⚠️ 无法获取系统音频，请先启动会话');
+                    cheddar.setStatus('⚠️ 未获取到系统音频（分享窗口时请勾选“共享音频”）');
                     return;
                 }
-                streamToUse = quickRecordStream;
+                streamToUse = new MediaStream([audioTracks[0]]);
                 console.log('✅ 获取到新的系统音频流');
             } catch (getErr) {
                 cheddar.setStatus('⚠️ 无法获取系统音频: ' + getErr.message);
@@ -775,25 +854,24 @@ async function startQuickAudioCapture() {
             return;
         }
 
-        const stopKey = process.platform === 'darwin' ? 'Cmd+L' : 'Ctrl+L';
+        const stopKey = platform === 'darwin' ? 'Cmd+L' : 'Ctrl+L';
 
-        quickRecordContext = new AudioContext({ sampleRate: 16000 });
-        if (quickRecordContext.state === 'suspended') {
-            await quickRecordContext.resume();
-        }
-        const source = quickRecordContext.createMediaStreamSource(streamToUse);
-        quickRecordProcessor = quickRecordContext.createScriptProcessor(8192, 1, 1);
-        quickRecordBuffer = [];
+        quickRecordChunks = [];
         quickRecordStartTime = Date.now();
+        quickRecordStallCount = 0;
         isQuickRecording = true;
-        quickRecordProcessor.onaudioprocess = e => {
-            if (isQuickRecording) {
-                const input = e.inputBuffer.getChannelData(0);
-                quickRecordBuffer.push(...input);
-            }
-        };
-        source.connect(quickRecordProcessor);
-        quickRecordProcessor.connect(quickRecordContext.destination);
+        quickRecorder = await createPcmRecorder({
+            stream: streamToUse,
+            targetSampleRate: 16000,
+            chunkDurationSec: 0.25,
+            onChunk: msg => {
+                if (!isQuickRecording) return;
+                quickRecordChunks.push(Buffer.from(msg.buffer));
+            },
+            onEvent: ev => {
+                if (ev && ev.type === 'stall') quickRecordStallCount++;
+            },
+        });
         cheddar.setStatus(`🔊 录制系统音频... (${stopKey} 停止)`);
 
     } catch (error) {
@@ -810,20 +888,17 @@ function stopCapture() {
         screenshotInterval = null;
     }
 
-    if (audioProcessor) {
-        audioProcessor.disconnect();
-        audioProcessor = null;
+    if (systemAudioRecorder) {
+        systemAudioRecorder.stop().catch(() => {});
+        systemAudioRecorder = null;
     }
-
-    // Clean up microphone audio processor (Linux only)
-    if (micAudioProcessor) {
-        micAudioProcessor.disconnect();
-        micAudioProcessor = null;
+    if (micRecorder) {
+        micRecorder.stop().catch(() => {});
+        micRecorder = null;
     }
-
-    if (audioContext) {
-        audioContext.close();
-        audioContext = null;
+    if (quickRecorder) {
+        quickRecorder.stop().catch(() => {});
+        quickRecorder = null;
     }
 
     if (mediaStream) {
@@ -962,7 +1037,9 @@ ipcRenderer.on('save-conversation-turn', async (event, data) => {
 });
 
 // Initialize conversation storage when renderer loads
-initConversationStorage().catch(console.error);
+if (typeof indexedDB !== 'undefined') {
+    initConversationStorage().catch(console.error);
+}
 
 // Listen for emergency erase command from main process
 ipcRenderer.on('clear-sensitive-data', () => {

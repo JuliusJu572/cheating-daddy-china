@@ -24,7 +24,6 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             console.log('🖼️ [send-image-content] 收到图片内容...');
             console.log('🖼️ [send-image-content] MIME type:', mimeType);
             console.log('🖼️ [send-image-content] Data length:', data?.length);
-            console.log('🖼️ [send-image-content] Debug text:', debug);
 
             const session = geminiSessionRef?.current;
             if (session && typeof session.sendRealtimeInput === 'function') {
@@ -46,7 +45,6 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     ipcMain.handle('send-text-message', async (event, text) => {
         try {
             console.log('📝 [send-text-message] 收到文本消息...');
-            console.log('📝 [send-text-message] Text:', text);
 
             const session = geminiSessionRef?.current;
             if (session && typeof session.sendRealtimeInput === 'function') {
