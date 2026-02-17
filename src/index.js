@@ -761,8 +761,8 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
 
     const messages = [];
     const endpoint = `${String(apiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '')}/chat/completions`;
-    const qwenTextModel = 'qwen3-max';
-    const qwenVisionModel = 'qwen3-vl-plus';
+    const qwenTextModel = 'qwen3.5-plus';
+    const qwenVisionModel = 'qwen3.5-plus';
 
     if (systemPrompt && systemPrompt.length > 0) {
         messages.push({ role: 'system', content: systemPrompt });
@@ -791,6 +791,7 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
             messages: messagesList,
             stream: false,
             max_tokens: maxTokens,
+            extra_body: { enable_thinking: false },
         };
 
         const res = await fetch(endpoint, {

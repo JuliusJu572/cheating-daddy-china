@@ -453,7 +453,7 @@ export class CustomizeView extends LitElement {
         // Font size default (in pixels)
         this.fontSize = 20;
 
-        this.selectedModel = localStorage.getItem('selectedModel') || 'aihubmix:qwen3-vl-plus';
+        this.selectedModel = localStorage.getItem('selectedModel') || 'qwen3.5-plus';
         this.transcriptionModel = localStorage.getItem('transcriptionModel') || 'qwen3-asr-flash';
         this.modelApiBase = localStorage.getItem('modelApiBase') || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
         this.modelApiKey = localStorage.getItem('modelApiKey') || '';
@@ -909,6 +909,8 @@ export class CustomizeView extends LitElement {
 
     getModelOptions() {
         return [
+            { value: 'qwen3.5-plus', name: 'Qwen3.5-Plus' },
+            { value: 'aihubmix:qwen3-max', name: 'Qwen3-Max' },
             { value: 'aihubmix:qwen3-vl-235b-a22b-instruct', name: 'Qwen3-VL-235B-A22B-Instruct' },
             { value: 'aihubmix:qwen3-vl-30b-a3b-instruct', name: 'Qwen3-VL-30B-A3B-Instruct' },
             { value: 'aihubmix:qwen3-vl-plus', name: 'Qwen3-VL-Plus' },
@@ -1278,7 +1280,7 @@ export class CustomizeView extends LitElement {
                         <span>AI 模型设置</span>
                     </div>
                     <div class="form-description" style="margin-bottom: 16px;">
-                        当前使用 Qwen 模型（qwen3-max 文本对话，qwen3-vl-plus 截图识别，qwen3-asr-flash 语音转写）
+                        当前使用 Qwen 模型（qwen3.5-plus 文本对话+截图识别，qwen3-asr-flash 语音转写）
                     </div>
                     <div class="form-grid">
                         <div class="form-row">

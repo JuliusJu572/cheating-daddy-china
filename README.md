@@ -26,9 +26,8 @@
 ## 功能特性
 
 ### AI 模型
-- **智谱 AI (GLM-4.7)**：强大的文本对话能力
-- **GLM-4.6V (视觉模型)**：支持截图识别与图像理解
-- **GLM-ASR-2512**：高精度语音识别模型
+- **Qwen3.5-Plus**：强大的文本对话与视觉理解能力
+- **Qwen3-ASR-Flash**：高精度语音识别模型
 
 ### 核心功能
 - **实时 AI 辅助**：智能分析屏幕内容与音频，提供上下文建议
@@ -275,7 +274,7 @@ ffmpeg -version
 
 - **前端框架**：LitElement
 - **桌面框架**：Electron
-- **AI 模型**：智谱 AI (GLM-4.7 / GLM-4.6V / GLM-ASR-2512)
+- **AI 模型**：Qwen (qwen3.5-plus / qwen3-asr-flash)
 - **音频处理**：ffmpeg
 - **系统音频**：SystemAudioDump (macOS) / WASAPI (Windows)
 
@@ -285,7 +284,7 @@ ffmpeg -version
 
 ### v1.2.0 (2024-01-13)
 - **新功能**：
-  - 全面切换至智谱 AI 模型（GLM-4.7/GLM-4.6V/GLM-ASR-2512）
+  - 全面切换至 Qwen 模型（qwen3.5-plus / qwen3-asr-flash）
   - 新增 License Key 管理功能，支持自动保存和验证
   - 优化状态显示和汉化支持
   - 在设置中可直接管理 API Key

@@ -66,7 +66,7 @@ export const translations = {
     // 模型设置
     model_settings_section: "模型设置",
     model_select_label: "选择模型",
-    model_zhipu_label: "Qwen (qwen3-max/qwen3-vl-plus)",
+    model_zhipu_label: "Qwen (qwen3.5-plus)",
     model_api_base_label: "API Base URL",
     model_api_key_label: "API Key",
     model_test_button: "测试连接",
@@ -205,7 +205,7 @@ export const translations = {
     // Model settings
     model_settings_section: "Model Settings",
     model_select_label: "Model",
-    model_zhipu_label: "Qwen (qwen3-max/qwen3-vl-plus)",
+    model_zhipu_label: "Qwen (qwen3.5-plus)",
     model_api_base_label: "API Base URL",
     model_api_key_label: "API Key",
     model_test_button: "Test Connection",
