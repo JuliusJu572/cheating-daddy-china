@@ -2,327 +2,140 @@
 
 <img width="1299" height="424" alt="cheating-daddy" src="https://github.com/user-attachments/assets/b25fff4d-043d-4f38-9985-f832ae0d0f6e" />
 
-# Cheating Buddy - AI 面试助手
+# Cheating Buddy - AI 面试辅助神器
 
-[![Version](https://img.shields.io/badge/version-v1.2.0-blue.svg)](https://github.com/JuliusJu572/cheating-daddy-china/releases/tag/v1.2.0)
+[![Version](https://img.shields.io/badge/version-v2.3.0-blue.svg)](https://github.com/JuliusJu572/cheating-daddy-china/releases/tag/v2.3.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey.svg)]()
 
-一个实时 AI 助手，通过屏幕截图与音频分析，在视频通话、面试、演示与会议中提供上下文辅助。
+**你的实时 AI 僚机** — 通过屏幕捕捉与音频分析，在视频面试、会议、谈判中提供隐蔽且强大的实时辅助。
 
-[功能特性](#-功能特性) • [快速开始](#-快速开始) • [安装教程](#-下载与安装教程) • [使用说明](#-使用说明) • [常见问题](#-常见问题排查)
+[功能特性](#-功能特性) • [下载安装](#-下载与安装) • [使用指南](#-使用指南) • [快捷键](#-键盘快捷键) • [常见问题](#-常见问题)
 
 </div>
 
 ---
 
-> [!NOTE]
-> 请使用最新的 macOS 与 Windows 版本，旧版本系统支持有限
-
-> [!NOTE]
-> 测试时如果你直接向它发问可能不会回复，需要模拟"面试官提问"的场景，它会对最后一个问题进行回答
+> [!IMPORTANT]
+> **v2.3.0 重大更新**：新增多模型切换（Qwen3.5-Plus/Qwen3-Max）、上下文记忆开关、配置持久化等功能。请务必更新至最新版以获得最佳体验。
 
 ---
 
-## 功能特性
+## ✨ 功能特性
 
-### AI 模型
-- **Qwen3.5-Plus**：强大的文本对话与视觉理解能力
-- **Qwen3-ASR-Flash**：高精度语音识别模型
+### 🧠 强大的 AI 内核
+- **多模型支持**：
+  - **文本模型**：默认搭载 **Qwen3.5-Plus**，可切换至更强大的 **Qwen3-Max**。
+  - **视觉模型**：集成 **Qwen3-VL-Plus**，精准识别屏幕代码与图表。
+  - **语音识别**：采用 **Qwen3-ASR-Flash**，毫秒级实时语音转文字。
+- **智能上下文管理**：
+  - **多轮对话**：支持连续追问，AI 记住上下文。
+  - **单轮模式**：可关闭上下文记忆（Enable Context），解决 Token 消耗过快或消息累积问题。
 
-### 核心功能
-- **实时 AI 辅助**：智能分析屏幕内容与音频，提供上下文建议
-- **屏幕与音频捕获**：结合屏幕内容与系统/麦克风音频进行多模态分析
-- **多档案配置**：内置面试、销售电话、商务会议、演示、谈判等使用档案
-- **透明悬浮窗**：窗口始终置顶，可自由移动定位
-- **点击穿透模式**：需要时可让窗口对鼠标点击透明
-- **内容保护**：防止屏幕录制软件捕获窗口内容
-- **跨平台支持**：支持 macOS 与 Windows
+### 🛡️ 隐蔽与安全
+- **透明悬浮窗**：窗口始终置顶，背景透明度可调，完美融入桌面。
+- **点击穿透 (Click-through)**：一键让鼠标穿透窗口，不影响底层操作。
+- **防录屏保护 (Stealth Mode)**：
+  - 开启内容保护后，直播软件（如 OBS、腾讯会议、飞书）无法捕获悬浮窗内容。
+  - **隐身模式**：窗口在截图/录屏中完全不可见。
 
-### License Key 管理
-- 首次使用输入 License Key 后自动保存
-- 每次启动自动验证已保存的 Key
-- Key 过期时提示重新配置
-- 可在设置中随时更新或清除
-
----
-
-## 快速开始
-
-### 最简安装（推荐）
-
-1. **下载应用**
-   - 访问 [Releases 页面](https://github.com/JuliusJu572/cheating-daddy-china/releases)
-   - 下载对应系统的安装包
-
-2. **安装 ffmpeg**
-   - Windows: [下载 ffmpeg](https://ffmpeg.org/download.html#build-windows)
-   - macOS: `brew install ffmpeg`
-
-3. **启动应用**
-   - 输入您的 License Key
-   - 选择使用场景（面试/销售/会议等）
-   - 开始使用！
+### ⚙️ 便捷管理
+- **配置持久化**：模型选择、Token 限制、API Key 等设置自动保存，重启无需重配。
+- **License Key 系统**：一次激活，自动验证，支持在线更新。
+- **多场景预设**：内置面试、销售、会议、演示等 Prompt 模板，一键切换 AI 人设。
 
 ---
 
-## 下载与安装教程
+## 📥 下载与安装
 
-### 第一步：下载安装包
+### Windows 安装
 
-1. 访问 [Releases 页面](https://github.com/JuliusJu572/cheating-daddy-china/releases/tag/v1.2.0)
-2. 根据你的操作系统选择对应的安装包：
-   - **Windows 用户**：下载 `.exe` 文件
-   - **macOS 用户**：下载 `.dmg` 文件
+1. **下载应用**：前往 [Releases 页面](https://github.com/JuliusJu572/cheating-daddy-china/releases/tag/v2.3.0) 下载 `.exe` 安装包。
+2. **安装 FFmpeg**（音频录制必须）：
+   - **推荐**：使用 Scoop 安装 `scoop install ffmpeg`
+   - **手动**：下载 [ffmpeg-release-essentials.zip](https://ffmpeg.org/download.html#build-windows)，解压并将 `bin` 目录添加到系统 PATH 环境变量。
+3. **运行**：双击安装包，如遇安全提示选择"仍要运行"。
 
----
+### macOS 安装
 
-## Windows 详细安装教程
-
-### 步骤 1：安装应用程序
-
-1. 双击下载的 `.exe` 文件
-2. 如果出现"Windows 保护了你的电脑"提示：
-   - 点击 **"更多信息"**
-   - 然后点击 **"仍要运行"**
-3. 按照安装向导完成安装
-
-### 步骤 2：安装 ffmpeg
-
-#### 方法一：使用包管理器（推荐）
-
-**使用 Scoop（推荐）**
-```powershell
-# 安装 Scoop
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
-
-# 安装 ffmpeg
-scoop install ffmpeg
-```
-
-**使用 Chocolatey**
-```powershell
-# 先安装 Chocolatey，然后
-choco install ffmpeg
-```
-
-#### 方法二：手动安装
-
-1. 访问 [ffmpeg 官网](https://ffmpeg.org/download.html#build-windows)
-2. 下载 **"ffmpeg-release-essentials.zip"**
-3. 解压到 `C:\ffmpeg`
-4. 将 `C:\ffmpeg\bin` 添加到系统环境变量 PATH
-5. 验证安装：`ffmpeg -version`
-
-### 步骤 3：配置应用权限
-
-1. 打开应用程序
-2. 允许麦克风/屏幕录制权限
-3. Windows 10/11 可能需要在 **设置 → 隐私** 中手动授权
-
-### 步骤 4：开始使用
-
-1. 打开应用程序
-2. 输入您的 License Key（首次使用）
-3. 在设置中选择使用档案（面试、销售、会议等）
-4. 选择语言
-5. 点击 **"开始会话"**
+1. **下载应用**：前往 [Releases 页面](https://github.com/JuliusJu572/cheating-daddy-china/releases/tag/v2.3.0) 下载 `.dmg` 安装包。
+2. **安装 FFmpeg**：
+   ```bash
+   brew install ffmpeg
+   ```
+3. **移除隔离属性**（必须执行，否则无法打开）：
+   ```bash
+   sudo xattr -cr /Applications/Cheating\ Buddy.app
+   ```
+4. **授权**：首次运行时，请在"系统设置 -> 隐私与安全性"中授予**屏幕录制**和**麦克风**权限。
 
 ---
 
-## macOS 详细安装教程
+## 🚀 使用指南
 
-### 步骤 1：安装应用程序
+### 1. 初始化设置
+- 启动应用后，输入 **License Key** 进行激活。
+- 进入设置页面（点击齿轮图标），根据需要选择：
+  - **文本模型**：推荐日常使用 `qwen3.5-plus`，高难度问题切换 `qwen3-max`。
+  - **启用上下文**：默认开启。若发现回答变慢或消息数异常，可关闭此选项。
 
-1. 双击下载的 `.dmg` 文件
-2. 将应用图标拖拽到 **"应用程序"** 文件夹
+### 2. 开始辅助
+- 点击 **"Start Session"** 开启会话。
+- **面试/会议中**：
+  - AI 会自动监听麦克风和系统音频，实时转写并生成建议。
+  - 若需要针对屏幕特定内容提问，使用快捷键截图。
 
-### 步骤 2：移除隔离属性（必须操作！）
-
-由于应用未经 Apple 公证，需要手动移除隔离属性：
-
-```bash
-# 移除隔离属性
-sudo xattr -cr /Applications/Cheating\ Buddy.app
-
-# 验证是否成功（应该没有输出）
-xattr -l /Applications/Cheating\ Buddy.app
-```
-
-### 步骤 3：安装 ffmpeg
-
-```bash
-# 使用 Homebrew 安装（推荐）
-brew install ffmpeg
-
-# 验证安装
-ffmpeg -version
-```
-
-### 步骤 4：配置系统权限
-
-#### 屏幕录制权限
-1. 打开 **"系统设置"** → **"隐私与安全性"** → **"屏幕录制"**
-2. 点击左下角的 **锁图标** 解锁
-3. 找到 **"Cheating Buddy"** 并勾选
-
-#### 麦克风权限
-1. 在 **"系统设置"** → **"隐私与安全性"** → **"麦克风"**
-2. 找到 **"Cheating Buddy"** 并勾选
-
-> **⚠️ 重要提示**：设置权限后需要 **完全退出** 应用，然后重新打开才能生效。
-
-### 步骤 5：首次启动应用
-
-1. 打开 **"应用程序"** 文件夹，双击 **"Cheating Buddy"**
-2. 如果出现 **"无法打开"** 提示：
-   - **右键点击** 应用图标
-   - 按住 **Option** 键，选择 **"打开"**
-3. 输入您的 License Key
-4. 在设置中选择使用档案和语言
-5. 点击 **"开始会话"**
+### 3. 隐身操作
+- 使用 `Ctrl + M` (Windows) / `Cmd + M` (macOS) 开启点击穿透，此时鼠标可直接操作悬浮窗下方的文件。
+- 再次按下快捷键即可恢复对悬浮窗的操作。
 
 ---
 
-## 键盘快捷键
+## ⌨️ 键盘快捷键
 
-| 功能 | Windows | macOS |
-|------|---------|-------|
-| 窗口移动 | `Ctrl + 方向键` | `Cmd + 方向键` |
-| 点击穿透 | `Ctrl + M` | `Cmd + M` |
-| 关闭/返回 | `Ctrl + \` | `Cmd + \` |
-| 系统音频录制 | `Ctrl + L` | `Cmd + L` |
-| 麦克风录制 | `Ctrl + K` | 暂不支持 |
-| 截屏提问 | `Ctrl + Enter` | `Cmd + Enter` |
-| 发送文本消息 | `Enter` | `Enter` |
-| 删除历史对话 | `Ctrl + '` | `Cmd + '` |
-
----
-
-## 使用说明
-
-### 基本使用流程
-
-1. **启动应用**后，窗口会悬浮在所有窗口之上
-2. **按住窗口顶部** 可以拖动位置，或使用快捷键 `Ctrl/Cmd + 方向键` 微调
-3. **开启点击穿透**（`Ctrl/Cmd + M`）后，可以点击窗口下方的内容
-4. **开始会话**后，AI 会自动：
-   - 定期截取屏幕内容
-   - 录制系统音频和麦克风音频
-   - 分析面试官的提问
-   - 提供实时建议
-5. **查看 AI 回复**在悬浮窗中显示
-
-### 使用场景档案说明
-
-- **面试助手**：适用于技术面试、HR 面试
-- **销售电话**：帮助销售沟通、客户谈判
-- **商务会议**：会议记录、要点提醒
-- **演示辅助**：演讲提词、问答支持
-- **谈判助手**：商务谈判策略建议
-
-### License Key 管理
-
-- **首次使用**：在主界面输入 License Key，系统会自动验证并保存
-- **后续使用**：应用会自动验证已保存的 Key，验证成功直接进入
-- **Key 过期**：如果验证失败，会提示重新配置
-- **设置管理**：可在"高级设置"中更新或清除已保存的 Key
+| 功能 | Windows | macOS | 说明 |
+|------|---------|-------|------|
+| **移动窗口** | `Ctrl + 方向键` | `Cmd + 方向键` | 微调悬浮窗位置 |
+| **点击穿透** | `Ctrl + M` | `Cmd + M` | 鼠标穿透开关 |
+| **隐藏/显示** | `Ctrl + \` | `Cmd + \` | 快速老板键 |
+| **系统录音** | `Ctrl + L` | `Cmd + L` | 开关系统音频捕获 |
+| **麦克风录音** | `Ctrl + K` | 暂不支持 | 开关麦克风捕获 |
+| **截屏提问** | `Ctrl + Enter` | `Cmd + Enter` | 截取当前屏幕并发送给 AI |
+| **发送消息** | `Enter` | `Enter` | 发送文本框内容 |
+| **清空对话** | `Ctrl + '` | `Cmd + '` | 清除当前屏幕的历史记录 |
 
 ---
 
-## 常见问题排查
+## ❓ 常见问题
 
-### Windows 常见问题
+**Q: 设置里的模型修改后为什么没变？**
+A: v2.3.0 已修复此问题。现在所有设置（包括模型选择、Token 数）都会自动保存到本地配置文件 `config.json` 中。
 
-**Q: 提示"找不到 ffmpeg"**
-- A: 使用 Scoop/Chocolatey 安装，或检查环境变量 PATH
+**Q: 为什么消息数会自己增加 (2->4->6)？**
+A: 这是因为开启了上下文记忆。AI 会把历史对话带入下一次请求。如果不需要此功能，请在设置中关闭 **"启用上下文 (Enable Context)"**。
 
-**Q: 应用无法启动**
-- A: 右键应用 → 属性 → 兼容性 → 勾选"以管理员身份运行"
+**Q: 提示 "ffmpeg not found"？**
+A: 请确保已安装 ffmpeg 并将其加入到了系统的环境变量 PATH 中。安装后尝试重启电脑。
 
-**Q: 录制不到系统声音**
-- A: 检查系统声音设置，确保立体声混音已启用
-
-### macOS 常见问题
-
-**Q: 提示"已损坏，无法打开"**
-- A: 执行 `sudo xattr -cr /Applications/Cheating\ Buddy.app`
-
-**Q: ffmpeg 命令找不到**
-- A: 使用 Homebrew 安装：`brew install ffmpeg`
-
-**Q: 屏幕录制权限已授予但仍无法截图**
-- A: 完全退出应用（Cmd + Q），然后重新打开
-
-**Q: 音频录制失败**
-- A:
-  1. 检查麦克风权限
-  2. 确保 `SystemAudioDump` 有执行权限
-  3. 重启应用
-
-### License Key 相关问题
-
-**Q: License Key 验证失败**
-- A: 检查 Key 格式是否正确（应为 CD-xxxxx 格式）
-
-**Q: 已保存的 Key 提示过期**
-- A: 在"高级设置"中重新输入新的 License Key
+**Q: macOS 提示文件损坏？**
+A: 请务必在终端执行 `sudo xattr -cr /Applications/Cheating\ Buddy.app` 来移除安全隔离属性。
 
 ---
 
-## 技术架构
+## 🛠 技术栈
 
-- **前端框架**：LitElement
-- **桌面框架**：Electron
-- **AI 模型**：Qwen (qwen3.5-plus / qwen3-asr-flash)
-- **音频处理**：ffmpeg
-- **系统音频**：SystemAudioDump (macOS) / WASAPI (Windows)
-
----
-
-## 版本历史
-
-### v1.2.0 (2024-01-13)
-- **新功能**：
-  - 全面切换至 Qwen 模型（qwen3.5-plus / qwen3-asr-flash）
-  - 新增 License Key 管理功能，支持自动保存和验证
-  - 优化状态显示和汉化支持
-  - 在设置中可直接管理 API Key
-
-### v1.1.0
-- 新增麦克风录制功能（Windows）
-- 新增删除历史对话快捷键
-- 优化用户界面和体验
-
----
-
-## 隐私与安全
-
-- 所有数据仅用于实时 AI 分析
-- 不会存储或上传您的屏幕截图和音频文件
-- License Key 采用加密存储
-- 支持内容保护模式，防止屏幕录制
-
----
-
-## 开源协议
-
-本项目采用 MIT 协议开源
-
----
-
-## 技术支持
-
-如遇到问题，请：
-1. 查看上方常见问题排查
-2. 在 [Issues](https://github.com/JuliusJu572/cheating-daddy-china/issues) 中搜索类似问题
-3. 提交新的 Issue（请附上操作系统版本、错误截图等信息）
+- **Frontend**: LitElement, Web Components
+- **Electron**: IPC, System Integration
+- **AI Core**: Alibaba Qwen (Tongyi Qianwen) API
+- **Audio/Video**: FFmpeg, WASAPI, CoreAudio
 
 ---
 
 <div align="center">
 
-**祝你使用愉快！ 🎉**
+**Disclaimer**
+本项目仅供学习与辅助使用，请勿用于违反法律法规或作弊等不道德用途。
+开发者不对使用者的行为承担任何责任。
 
 [![Star History Chart](https://api.star-history.com/svg?repos=JuliusJu572/cheating-daddy-china&type=Date)](https://star-history.com/#JuliusJu572/cheating-daddy-china&Date)
 

@@ -226,9 +226,17 @@ export class MainView extends LitElement {
 
     connectedCallback() {
         super.connectedCallback();
-
-        // Check if we already have a valid API key
-        this.hasApiKey = !!localStorage.getItem('apiKey');
+        const hydrated = window.__configHydrated;
+        if (hydrated && typeof hydrated.then === 'function') {
+            hydrated
+                .then(() => {
+                    this.hasApiKey = !!localStorage.getItem('apiKey');
+                    this.requestUpdate();
+                })
+                .catch(() => {});
+        } else {
+            this.hasApiKey = !!localStorage.getItem('apiKey');
+        }
 
         window.electron?.ipcRenderer?.on('session-initializing', (event, isInitializing) => {
             this.isInitializing = isInitializing;
@@ -339,6 +347,7 @@ export class MainView extends LitElement {
             // 保存解密后的API Key
             localStorage.setItem('apiKey', apiKey);
             localStorage.setItem('licenseKey', key);
+            await ipcRenderer.invoke('set-license-key', { licenseKey: key, apiKey });
 
             this._statusMessage = '✅ License Key验证成功！';
             this._statusType = 'success';

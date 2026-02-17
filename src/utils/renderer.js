@@ -59,6 +59,42 @@ if (isElectron) {
     window.randomDisplayName = 'System Monitor';
 }
 
+async function hydrateLocalStorageFromConfig() {
+    if (!isElectron) return;
+    if (typeof localStorage === 'undefined') return;
+    try {
+        const res = await ipcRenderer.invoke('get-config');
+        if (!res?.success || !res?.config) return;
+        const cfg = res.config;
+
+        if (typeof cfg.modelApiBase === 'string' && cfg.modelApiBase.trim()) {
+            localStorage.setItem('modelApiBase', cfg.modelApiBase.trim());
+        }
+        if (typeof cfg.maxTokens === 'number' && Number.isFinite(cfg.maxTokens)) {
+            localStorage.setItem('maxTokens', String(Math.max(1, Math.floor(cfg.maxTokens))));
+        }
+        if (typeof cfg.qwenTextModel === 'string' && cfg.qwenTextModel.trim()) {
+            localStorage.setItem('qwenTextModel', cfg.qwenTextModel.trim());
+        }
+        if (typeof cfg.qwenVisionModel === 'string' && cfg.qwenVisionModel.trim()) {
+            localStorage.setItem('qwenVisionModel', cfg.qwenVisionModel.trim());
+        }
+        if (typeof cfg.transcriptionModel === 'string' && cfg.transcriptionModel.trim()) {
+            localStorage.setItem('transcriptionModel', cfg.transcriptionModel.trim());
+        }
+        if (typeof cfg.licenseKey === 'string') {
+            const v = cfg.licenseKey.trim();
+            if (v) localStorage.setItem('licenseKey', v);
+        }
+        if (typeof cfg.apiKey === 'string') {
+            const v = cfg.apiKey.trim();
+            if (v) localStorage.setItem('apiKey', v);
+        }
+    } catch (e) {}
+}
+
+window.__configHydrated = hydrateLocalStorageFromConfig();
+
 let mediaStream = null;
 let screenshotInterval = null;
 let audioContext = null;
@@ -200,7 +236,7 @@ async function initializeGemini(profile = 'interview', language = 'zh-CN') {
     console.log('🚀 [renderer] 使用 Qwen 模型');
 
     const apiKey = (localStorage.getItem('apiKey') || '').trim();
-    const apiBase = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+    const apiBase = (localStorage.getItem('modelApiBase') || 'https://dashscope.aliyuncs.com/compatible-mode/v1').trim();
 
     console.log('🚀 [renderer] Model:', selectedModel);
     console.log('🚀 [renderer] Profile:', profile);

@@ -6,6 +6,14 @@ const DEFAULT_CONFIG = {
     onboarded: false,
     stealthLevel: 'balanced',
     layout: 'normal',
+    qwenTextModel: 'qwen3.5-plus',
+    qwenVisionModel: 'qwen3-vl-plus',
+    transcriptionModel: 'qwen3-asr-flash',
+    modelApiBase: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    maxTokens: 4096,
+    enableContext: true,
+    licenseKey: '',
+    apiKey: '',
 };
 
 function getConfigDir() {
@@ -62,15 +70,7 @@ function writeConfig(config) {
 }
 
 function mergeWithDefaults(existingConfig) {
-    const mergedConfig = { ...DEFAULT_CONFIG };
-
-    for (const key in DEFAULT_CONFIG) {
-        if (existingConfig.hasOwnProperty(key)) {
-            mergedConfig[key] = existingConfig[key];
-        }
-    }
-
-    return mergedConfig;
+    return { ...DEFAULT_CONFIG, ...(existingConfig || {}) };
 }
 
 function getLocalConfig() {

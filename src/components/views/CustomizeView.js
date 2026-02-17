@@ -418,11 +418,14 @@ export class CustomizeView extends LitElement {
         advancedMode: { type: Boolean },
         onAdvancedModeChange: { type: Function },
         selectedModel: { type: String },
+        qwenTextModel: { type: String },
+        qwenVisionModel: { type: String },
         transcriptionModel: { type: String },
         modelApiBase: { type: String },
         modelApiKey: { type: String },
         modelTestStatus: { type: String },
         maxTokens: { type: Number },
+        enableContext: { type: Boolean },
     };
 
     constructor() {
@@ -454,11 +457,14 @@ export class CustomizeView extends LitElement {
         this.fontSize = 20;
 
         this.selectedModel = localStorage.getItem('selectedModel') || 'qwen3.5-plus';
+        this.qwenTextModel = localStorage.getItem('qwenTextModel') || 'qwen3.5-plus';
+        this.qwenVisionModel = localStorage.getItem('qwenVisionModel') || 'qwen3-vl-plus';
         this.transcriptionModel = localStorage.getItem('transcriptionModel') || 'qwen3-asr-flash';
         this.modelApiBase = localStorage.getItem('modelApiBase') || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
         this.modelApiKey = localStorage.getItem('modelApiKey') || '';
         this.modelTestStatus = '';
         this.maxTokens = parseInt(localStorage.getItem('maxTokens') || '4096', 10);
+        this.enableContext = localStorage.getItem('enableContext') !== 'false'; // Default true
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
@@ -469,14 +475,62 @@ export class CustomizeView extends LitElement {
     this.boundKeydownHandler = this.handleKeydown.bind(this);
   }
 
-  connectedCallback() {
-    super.connectedCallback();
-    // Load layout mode for display purposes
-    this.loadLayoutMode();
-    // Resize window for this view
-    resizeLayout();
-    document.addEventListener('keydown', this.boundKeydownHandler);
-  }
+  async connectedCallback() {
+        super.connectedCallback();
+        
+        // Explicitly fetch config from main process to ensure UI is in sync
+        if (window.require) {
+            try {
+                const { ipcRenderer } = window.require('electron');
+                const res = await ipcRenderer.invoke('get-config');
+                if (res && res.success && res.config) {
+                    const cfg = res.config;
+                    this.qwenTextModel = cfg.qwenTextModel || this.qwenTextModel;
+                    this.qwenVisionModel = cfg.qwenVisionModel || this.qwenVisionModel;
+                    this.transcriptionModel = cfg.transcriptionModel || this.transcriptionModel;
+                    this.modelApiBase = cfg.modelApiBase || this.modelApiBase;
+                    if (cfg.maxTokens) this.maxTokens = cfg.maxTokens;
+                    if (typeof cfg.enableContext === 'boolean') this.enableContext = cfg.enableContext;
+                    if (cfg.apiKey) this.modelApiKey = cfg.apiKey;
+                    
+                    // Update localStorage to match
+                    if (cfg.qwenTextModel) localStorage.setItem('qwenTextModel', cfg.qwenTextModel);
+                    if (cfg.qwenVisionModel) localStorage.setItem('qwenVisionModel', cfg.qwenVisionModel);
+                    if (cfg.transcriptionModel) localStorage.setItem('transcriptionModel', cfg.transcriptionModel);
+                    if (cfg.modelApiBase) localStorage.setItem('modelApiBase', cfg.modelApiBase);
+                    if (cfg.maxTokens) localStorage.setItem('maxTokens', String(cfg.maxTokens));
+                    if (typeof cfg.enableContext === 'boolean') localStorage.setItem('enableContext', String(cfg.enableContext));
+                    if (cfg.apiKey) localStorage.setItem('modelApiKey', cfg.apiKey);
+                    
+                    this.requestUpdate();
+                }
+            } catch (e) {
+                console.error('Failed to fetch config in CustomizeView:', e);
+            }
+        } else {
+            // Fallback to hydration mechanism if not in Electron directly (e.g. dev mode mock)
+            const hydrated = window.__configHydrated;
+            if (hydrated && typeof hydrated.then === 'function') {
+                hydrated
+                    .then(() => {
+                        this.qwenTextModel = localStorage.getItem('qwenTextModel') || this.qwenTextModel;
+                        this.qwenVisionModel = localStorage.getItem('qwenVisionModel') || this.qwenVisionModel;
+                        this.transcriptionModel = localStorage.getItem('transcriptionModel') || this.transcriptionModel;
+                        this.modelApiBase = localStorage.getItem('modelApiBase') || this.modelApiBase;
+                        const mt = parseInt(localStorage.getItem('maxTokens') || '', 10);
+                        if (!Number.isNaN(mt) && mt > 0) this.maxTokens = mt;
+                        this.requestUpdate();
+                    })
+                    .catch(() => {});
+            }
+        }
+
+        // Load layout mode for display purposes
+        this.loadLayoutMode();
+        // Resize window for this view
+        resizeLayout();
+        document.addEventListener('keydown', this.boundKeydownHandler);
+    }
 
     getProfiles() {
         return [
@@ -917,13 +971,37 @@ export class CustomizeView extends LitElement {
         ];
     }
 
-    getTranscriptionModelOptions() {
+    getQwenTextModelOptions() {
         return [
-            { value: 'qwen3-asr-flash', name: 'Qwen3-ASR-Flash' },
-            { value: 'whisper-1', name: 'Whisper-1' },
-            { value: 'whisper-large-v3', name: 'Whisper-Large-v3' },
-            { value: 'whisper-large-v3-turbo', name: 'Whisper-Large-v3-Turbo' },
+            { value: 'qwen3.5-plus', name: 'Qwen3.5-Plus' },
+            { value: 'qwen3-max', name: 'Qwen3-Max' },
         ];
+    }
+
+    getQwenVisionModelOptions() {
+        return [
+            { value: 'qwen3.5-plus', name: 'Qwen3.5-Plus' },
+            { value: 'qwen3-vl-plus', name: 'Qwen3-VL-Plus' },
+        ];
+    }
+
+    getTranscriptionModelOptions() {
+        return [{ value: 'qwen3-asr-flash', name: 'Qwen3-ASR-Flash' }];
+    }
+
+    async persistModelConfig() {
+        if (!window.require) return;
+        try {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('set-model-config', {
+                qwenTextModel: this.qwenTextModel,
+                qwenVisionModel: this.qwenVisionModel,
+                transcriptionModel: this.transcriptionModel,
+                modelApiBase: this.modelApiBase,
+                maxTokens: this.maxTokens,
+                enableContext: this.enableContext,
+            });
+        } catch (e) {}
     }
 
     handleModelSelect(e) {
@@ -931,20 +1009,40 @@ export class CustomizeView extends LitElement {
         localStorage.setItem('selectedModel', this.selectedModel);
     }
 
+    async handleQwenTextModelSelect(e) {
+        this.qwenTextModel = e.target.value;
+        localStorage.setItem('qwenTextModel', this.qwenTextModel);
+        await this.persistModelConfig();
+    }
+
+    async handleQwenVisionModelSelect(e) {
+        this.qwenVisionModel = e.target.value;
+        localStorage.setItem('qwenVisionModel', this.qwenVisionModel);
+        await this.persistModelConfig();
+    }
+
     handleTranscriptionModelSelect(e) {
         this.transcriptionModel = e.target.value;
         localStorage.setItem('transcriptionModel', this.transcriptionModel);
+        this.persistModelConfig();
     }
 
     handleModelApiBaseInput(e) {
         this.modelApiBase = e.target.value;
         localStorage.setItem('modelApiBase', this.modelApiBase);
+        this.persistModelConfig();
     }
 
     async handleModelApiKeyInput(e) {
         const v = e.target.value || '';
         this.modelApiKey = v;
         localStorage.setItem('modelApiKey', this.modelApiKey);
+        if (window.require) {
+            try {
+                const { ipcRenderer } = window.require('electron');
+                await ipcRenderer.invoke('set-license-key', { apiKey: this.modelApiKey });
+            } catch (_) {}
+        }
     }
 
     handleMaxTokensChange(e) {
@@ -952,7 +1050,15 @@ export class CustomizeView extends LitElement {
         if (!isNaN(val)) {
             this.maxTokens = val;
             localStorage.setItem('maxTokens', this.maxTokens.toString());
+            this.persistModelConfig();
         }
+    }
+
+    handleEnableContextChange(e) {
+        this.enableContext = e.target.checked;
+        localStorage.setItem('enableContext', String(this.enableContext));
+        this.persistModelConfig();
+        this.requestUpdate();
     }
 
     async handleTestModelConnection() {
@@ -1280,9 +1386,60 @@ export class CustomizeView extends LitElement {
                         <span>AI 模型设置</span>
                     </div>
                     <div class="form-description" style="margin-bottom: 16px;">
-                        当前使用 Qwen 模型（qwen3.5-plus 文本对话+截图识别，qwen3-asr-flash 语音转写）
+                        当前使用 Qwen 模型（文本：${this.qwenTextModel}，视觉：${this.qwenVisionModel}，语音：${this.transcriptionModel}）
                     </div>
                     <div class="form-grid">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">文本对话模型</label>
+                                <select class="form-control" @change=${this.handleQwenTextModelSelect} .value=${this.qwenTextModel}>
+                                    ${this.getQwenTextModelOptions().map(
+                                        option => html`<option value=${option.value}>${option.name}</option>`
+                                    )}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">视觉模型（截图识别）</label>
+                                <select class="form-control" @change=${this.handleQwenVisionModelSelect} .value=${this.qwenVisionModel}>
+                                    ${this.getQwenVisionModelOptions().map(
+                                        option => html`<option value=${option.value}>${option.name}</option>`
+                                    )}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">语音转写模型</label>
+                                <select class="form-control" disabled .value=${this.transcriptionModel}>
+                                    ${this.getTranscriptionModelOptions().map(
+                                        option => html`<option value=${option.value}>${option.name}</option>`
+                                    )}
+                                </select>
+                                <div class="form-description">当前仅支持 qwen3-asr-flash</div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">启用上下文 (多轮对话)</label>
+                                <div class="checkbox-group">
+                                    <input
+                                        type="checkbox"
+                                        class="checkbox-input"
+                                        .checked=${this.enableContext}
+                                        @change=${this.handleEnableContextChange}
+                                    />
+                                    <span class="form-description">
+                                        开启后，AI 将记住之前的对话内容。关闭此选项可解决消息数异常增长的问题。
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">模型回复最大Tokens</label>

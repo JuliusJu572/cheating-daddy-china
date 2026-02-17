@@ -641,6 +641,7 @@ export class AdvancedView extends LitElement {
             // 保存API Key
             localStorage.setItem('apiKey', apiKey);
             localStorage.setItem('licenseKey', key);
+            await ipcRenderer.invoke('set-license-key', { licenseKey: key, apiKey });
 
             this.apiKeyMessage = '✅ License Key验证并保存成功！';
             this.apiKeyMessageType = 'success';
@@ -664,10 +665,21 @@ export class AdvancedView extends LitElement {
         }
     }
 
-    handleClearApiKey() {
+    async handleClearApiKey() {
         if (confirm('确定要清除已保存的License Key吗？')) {
             localStorage.removeItem('apiKey');
             localStorage.removeItem('licenseKey');
+            try {
+                let ipcRenderer = null;
+                if (window.require) {
+                    ipcRenderer = window.require('electron').ipcRenderer;
+                } else if (window.electron?.ipcRenderer) {
+                    ipcRenderer = window.electron.ipcRenderer;
+                }
+                if (ipcRenderer) {
+                    await ipcRenderer.invoke('set-license-key', { licenseKey: '', apiKey: '' });
+                }
+            } catch (_) {}
             this.hasApiKey = false;
             this.apiKeyValid = false;
             this.apiKeyMessage = '✅ License Key已清除';

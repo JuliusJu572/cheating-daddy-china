@@ -265,6 +265,73 @@ function setupGeneralIpcHandlers() {
         }
     });
 
+    ipcMain.handle('set-model-config', async (event, payload) => {
+        try {
+            const cfg = getLocalConfig();
+            const next = payload && typeof payload === 'object' ? payload : {};
+
+            const allowedTextModels = new Set(['qwen3.5-plus', 'qwen3-max']);
+            const allowedVisionModels = new Set(['qwen3.5-plus', 'qwen3-vl-plus']);
+            const allowedTranscriptionModels = new Set(['qwen3-asr-flash']);
+
+            if (typeof next.qwenTextModel === 'string') {
+                const v = next.qwenTextModel.trim();
+                if (!allowedTextModels.has(v)) throw new Error(`Invalid qwenTextModel: ${v}`);
+                cfg.qwenTextModel = v;
+            }
+            if (typeof next.qwenVisionModel === 'string') {
+                const v = next.qwenVisionModel.trim();
+                if (!allowedVisionModels.has(v)) throw new Error(`Invalid qwenVisionModel: ${v}`);
+                cfg.qwenVisionModel = v;
+            }
+            if (typeof next.transcriptionModel === 'string') {
+                const v = next.transcriptionModel.trim();
+                if (!allowedTranscriptionModels.has(v)) throw new Error(`Invalid transcriptionModel: ${v}`);
+                cfg.transcriptionModel = v;
+            }
+            if (typeof next.modelApiBase === 'string') {
+                cfg.modelApiBase = next.modelApiBase.trim();
+            }
+            if (typeof next.maxTokens === 'number' && Number.isFinite(next.maxTokens)) {
+                cfg.maxTokens = Math.max(1, Math.floor(next.maxTokens));
+            }
+            if (typeof next.enableContext === 'boolean') {
+                cfg.enableContext = next.enableContext;
+            }
+
+            writeConfig(cfg);
+            return { success: true, config: cfg };
+        } catch (error) {
+            console.error('Error setting model config:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('set-license-key', async (event, payload) => {
+        try {
+            const cfg = getLocalConfig();
+            const next = payload && typeof payload === 'object' ? payload : {};
+            
+            if (typeof next.licenseKey === 'string') {
+                const licenseKey = next.licenseKey.trim();
+                if (licenseKey && !/^CD-/i.test(licenseKey)) {
+                    throw new Error('Invalid licenseKey format');
+                }
+                cfg.licenseKey = licenseKey;
+            }
+            
+            if (typeof next.apiKey === 'string') {
+                cfg.apiKey = next.apiKey.trim();
+            }
+
+            writeConfig(cfg);
+            return { success: true };
+        } catch (error) {
+            console.error('Error setting license key:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
     ipcMain.handle('quit-application', async event => {
         try {
             stopMacOSAudioCapture();
@@ -423,15 +490,17 @@ function setupGeneralIpcHandlers() {
             const selectedModel = (model || '').trim();
             if (selectedModel === 'qwen') {
                 console.log('🔵 [initialize-model] 使用 Qwen session...');
+                const localCfg = getLocalConfig();
                 const sysPrompt = getSystemPrompt(profile || 'interview', customPrompt || '', false);
                 console.log('🔵 [initialize-model] System prompt length:', sysPrompt.length);
 
                 const session = createQwenSession({
                     apiKey,
-                    apiBase: apiBase || DEFAULT_MODEL_API_BASE,
+                    apiBase: apiBase || localCfg?.modelApiBase || DEFAULT_MODEL_API_BASE,
                     systemPrompt: sysPrompt,
                     language: language || 'zh-CN',
-                    maxTokens: maxTokens || 4096,
+                    maxTokens: maxTokens || localCfg?.maxTokens || 4096,
+                    enableContext: localCfg?.enableContext !== false,
                 });
 
                 geminiSessionRef.current = session;
@@ -753,16 +822,19 @@ function setupGeneralIpcHandlers() {
 
 }
 
-function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPrompt, language, maxTokens }) {
+function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPrompt, language, maxTokens, enableContext = true }) {
     console.log('🔵 [createQwenSession] 创建 Qwen session...');
     console.log('🔵 [createQwenSession] API Key:', apiKey ? '已设置' : '未设置');
     console.log('🔵 [createQwenSession] Max Tokens:', maxTokens);
+    console.log('🔵 [createQwenSession] Enable Context:', enableContext);
     console.log('🔵 [createQwenSession] Language:', language);
+
+    const localConfig = getLocalConfig();
 
     const messages = [];
     const endpoint = `${String(apiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '')}/chat/completions`;
-    const qwenTextModel = 'qwen3.5-plus';
-    const qwenVisionModel = 'qwen3.5-plus';
+    const qwenTextModel = (localConfig?.qwenTextModel || 'qwen3.5-plus').trim();
+    const qwenVisionModel = (localConfig?.qwenVisionModel || 'qwen3-vl-plus').trim();
 
     if (systemPrompt && systemPrompt.length > 0) {
         messages.push({ role: 'system', content: systemPrompt });
@@ -834,6 +906,13 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
         }
 
         try {
+            if (!enableContext) {
+                messages.length = 0;
+                if (systemPrompt && systemPrompt.length > 0) {
+                    messages.push({ role: 'system', content: systemPrompt });
+                }
+            }
+
             if (payload?.text) {
                 console.log('📝 [sendRealtimeInput] Processing text message...');
                 messages.push({ role: 'user', content: payload.text });
