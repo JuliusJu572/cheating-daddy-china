@@ -48,26 +48,112 @@
 
 ## 📥 下载与安装
 
-### Windows 安装
+### Windows 详细安装教程
 
-1. **下载应用**：前往 [Releases 页面](https://github.com/JuliusJu572/cheating-daddy-china/releases/tag/v2.3.0) 下载 `.exe` 安装包。
-2. **安装 FFmpeg**（音频录制必须）：
-   - **推荐**：使用 Scoop 安装 `scoop install ffmpeg`
-   - **手动**：下载 [ffmpeg-release-essentials.zip](https://ffmpeg.org/download.html#build-windows)，解压并将 `bin` 目录添加到系统 PATH 环境变量。
-3. **运行**：双击安装包，如遇安全提示选择"仍要运行"。
+#### 步骤 1：安装应用程序
 
-### macOS 安装
+1. 访问 [Releases 页面](https://github.com/JuliusJu572/cheating-daddy-china/releases/tag/v2.3.0)
+2. 下载对应的 `.exe` 安装包
+3. 双击下载的文件
+4. 如果出现"Windows 保护了你的电脑"提示：
+   - 点击 **"更多信息"**
+   - 然后点击 **"仍要运行"**
+5. 按照安装向导完成安装
 
-1. **下载应用**：前往 [Releases 页面](https://github.com/JuliusJu572/cheating-daddy-china/releases/tag/v2.3.0) 下载 `.dmg` 安装包。
-2. **安装 FFmpeg**：
-   ```bash
-   brew install ffmpeg
-   ```
-3. **移除隔离属性**（必须执行，否则无法打开）：
-   ```bash
-   sudo xattr -cr /Applications/Cheating\ Buddy.app
-   ```
-4. **授权**：首次运行时，请在"系统设置 -> 隐私与安全性"中授予**屏幕录制**和**麦克风**权限。
+#### 步骤 2：安装 ffmpeg（必须）
+
+**方法一：使用包管理器（推荐）**
+
+**使用 Scoop（推荐）**
+```powershell
+# 安装 Scoop
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+
+# 安装 ffmpeg
+scoop install ffmpeg
+```
+
+**使用 Chocolatey**
+```powershell
+# 先安装 Chocolatey，然后
+choco install ffmpeg
+```
+
+**方法二：手动安装**
+
+1. 访问 [ffmpeg 官网](https://ffmpeg.org/download.html#build-windows)
+2. 下载 **"ffmpeg-release-essentials.zip"**
+3. 解压到 `C:\ffmpeg`
+4. 将 `C:\ffmpeg\bin` 添加到系统环境变量 PATH
+5. 验证安装：打开新的终端输入 `ffmpeg -version`
+
+#### 步骤 3：配置应用权限
+
+1. 打开应用程序
+2. 允许麦克风/屏幕录制权限
+3. Windows 10/11 可能需要在 **设置 → 隐私** 中手动授权
+
+#### 步骤 4：开始使用
+
+1. 打开应用程序
+2. 输入您的 License Key（首次使用）
+3. 在设置中选择使用档案（面试、销售、会议等）
+4. 点击 **"Start Session"**
+
+---
+
+### macOS 详细安装教程
+
+#### 步骤 1：安装应用程序
+
+1. 访问 [Releases 页面](https://github.com/JuliusJu572/cheating-daddy-china/releases/tag/v2.3.0)
+2. 下载对应的 `.dmg` 安装包
+3. 双击打开，将应用图标拖拽到 **"应用程序"** 文件夹
+
+#### 步骤 2：移除隔离属性（必须操作！）
+
+由于应用未经 Apple 公证，需要手动移除隔离属性：
+
+```bash
+# 移除隔离属性
+sudo xattr -cr /Applications/Cheating\ Buddy.app
+
+# 验证是否成功（应该没有输出）
+xattr -l /Applications/Cheating\ Buddy.app
+```
+
+#### 步骤 3：安装 ffmpeg
+
+```bash
+# 使用 Homebrew 安装（推荐）
+brew install ffmpeg
+
+# 验证安装
+ffmpeg -version
+```
+
+#### 步骤 4：配置系统权限
+
+**屏幕录制权限**
+1. 打开 **"系统设置"** → **"隐私与安全性"** → **"屏幕录制"**
+2. 点击左下角的 **锁图标** 解锁
+3. 找到 **"Cheating Buddy"** 并勾选
+
+**麦克风权限**
+1. 在 **"系统设置"** → **"隐私与安全性"** → **"麦克风"**
+2. 找到 **"Cheating Buddy"** 并勾选
+
+> **⚠️ 重要提示**：设置权限后需要 **完全退出** 应用，然后重新打开才能生效。
+
+#### 步骤 5：首次启动应用
+
+1. 打开 **"应用程序"** 文件夹，双击 **"Cheating Buddy"**
+2. 如果出现 **"无法打开"** 提示：
+   - **右键点击** 应用图标
+   - 按住 **Option** 键，选择 **"打开"**
+3. 输入您的 License Key
+4. 开始使用
 
 ---
 
