@@ -270,8 +270,17 @@ function setupGeneralIpcHandlers() {
             const cfg = getLocalConfig();
             const next = payload && typeof payload === 'object' ? payload : {};
 
-            const allowedTextModels = new Set(['qwen3.5-plus', 'qwen3-max']);
-            const allowedVisionModels = new Set(['qwen3.5-plus', 'qwen3-vl-plus']);
+            const allowedTextModels = new Set([
+                'qwen3.5-plus',
+                'qwen3-max',
+                'qwen3.5-flash',
+                'qwen-flash',
+                'deepseek-v3.2',
+                'kimi/kimi-k2.5',
+                'MiniMax/MiniMax-M2.5',
+                'MiniMax/MiniMax-M2.1',
+            ]);
+            const allowedVisionModels = new Set(['qwen3.5-plus', 'qwen3-vl-plus', 'qwen3.5-flash', 'qwen3-vl-flash']);
             const allowedTranscriptionModels = new Set(['qwen3-asr-flash']);
 
             if (typeof next.qwenTextModel === 'string') {
@@ -833,7 +842,7 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
 
     const messages = [];
     const endpoint = `${String(apiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '')}/chat/completions`;
-    const qwenTextModel = (localConfig?.qwenTextModel || 'qwen3.5-plus').trim();
+    const qwenTextModel = (localConfig?.qwenTextModel || 'qwen3-max').trim();
     const qwenVisionModel = (localConfig?.qwenVisionModel || 'qwen3-vl-plus').trim();
 
     if (systemPrompt && systemPrompt.length > 0) {
@@ -842,6 +851,96 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
     }
 
     let closed = false;
+
+    function isMediaContent(content) {
+        if (!Array.isArray(content)) return false;
+        return content.some(part => part && typeof part === 'object' && (part.type === 'image_url' || part.type === 'video_url'));
+    }
+
+    function buildRequestMessages(messagesList) {
+        const MAX_MESSAGES = 30;
+
+        const hasSystem = messagesList.length > 0 && messagesList[0]?.role === 'system';
+        const system = hasSystem ? [messagesList[0]] : [];
+        const rest = hasSystem ? messagesList.slice(1) : messagesList.slice();
+
+        let limited = rest;
+        const restLimit = Math.max(0, MAX_MESSAGES - system.length);
+        if (limited.length > restLimit) {
+            limited = limited.slice(limited.length - restLimit);
+        }
+
+        const combined = system.length ? [...system, ...limited] : limited;
+
+        let lastMediaIndex = -1;
+        for (let i = combined.length - 1; i >= 0; i--) {
+            if (isMediaContent(combined[i]?.content)) {
+                lastMediaIndex = i;
+                break;
+            }
+        }
+
+        if (lastMediaIndex <= 0) return combined;
+
+        return combined.map((m, idx) => {
+            if (idx < lastMediaIndex && isMediaContent(m?.content)) {
+                return { role: m.role, content: '（已省略之前的截图/视频内容以加速响应）' };
+            }
+            return m;
+        });
+    }
+
+    function compactStoredHistory() {
+        let lastMediaIndex = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (isMediaContent(messages[i]?.content)) {
+                lastMediaIndex = i;
+                break;
+            }
+        }
+        if (lastMediaIndex <= 0) return;
+
+        for (let i = 0; i < lastMediaIndex; i++) {
+            if (isMediaContent(messages[i]?.content)) {
+                messages[i] = { role: messages[i].role, content: '（已省略之前的截图/视频内容以加速响应）' };
+            }
+        }
+    }
+
+    async function readStreamText(res, onDataLine) {
+        const decoder = new TextDecoder('utf-8');
+        let buf = '';
+
+        const body = res.body;
+        if (!body) return;
+
+        if (typeof body.getReader === 'function') {
+            const reader = body.getReader();
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: false });
+                let idx;
+                while ((idx = buf.indexOf('\n')) >= 0) {
+                    const line = buf.slice(0, idx).trimEnd();
+                    buf = buf.slice(idx + 1);
+                    onDataLine(line);
+                }
+            }
+        } else {
+            for await (const chunk of body) {
+                buf += decoder.decode(chunk, { stream: false });
+                let idx;
+                while ((idx = buf.indexOf('\n')) >= 0) {
+                    const line = buf.slice(0, idx).trimEnd();
+                    buf = buf.slice(idx + 1);
+                    onDataLine(line);
+                }
+            }
+        }
+
+        if (buf.length) onDataLine(buf.trimEnd());
+    }
 
     async function callChatCompletions(model, messagesList, options = {}) {
         const { skipFinalStatus = false } = options;
@@ -858,14 +957,16 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
             'Authorization': `Bearer ${apiKey}`,
         };
 
+        const requestMessages = buildRequestMessages(messagesList);
         const body = {
             model,
-            messages: messagesList,
+            messages: requestMessages,
             stream: false,
             max_tokens: maxTokens,
             extra_body: { enable_thinking: false },
         };
 
+        const startedAt = Date.now();
         const res = await fetch(endpoint, {
             method: 'POST',
             headers,
@@ -880,18 +981,57 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
             throw new Error(`API error ${res.status}: ${text}`);
         }
 
-        const data = await res.json();
-        console.log('✅ [callChatCompletions] Response received');
+        let contentType = '';
+        try {
+            contentType = String(res.headers.get('content-type') || '').toLowerCase();
+        } catch (_) {}
 
-        const content = data?.choices?.[0]?.message?.content || '';
-        messages.push({ role: 'assistant', content });
-        sendToRenderer('update-response', content);
+        let fullContent = '';
+        let firstTokenAt = 0;
+
+        if (body.stream && contentType.includes('text/event-stream')) {
+            let done = false;
+            await readStreamText(res, line => {
+                if (done) return;
+                if (!line || !line.startsWith('data:')) return;
+                const dataStr = line.slice('data:'.length).trim();
+                if (!dataStr) return;
+                if (dataStr === '[DONE]') {
+                    done = true;
+                    return;
+                }
+                try {
+                    const evt = JSON.parse(dataStr);
+                    const delta = evt?.choices?.[0]?.delta;
+                    const deltaText = typeof delta?.content === 'string' ? delta.content : '';
+                    if (deltaText) {
+                        if (!firstTokenAt) firstTokenAt = Date.now();
+                        fullContent += deltaText;
+                        sendToRenderer('update-response', fullContent);
+                    }
+                } catch (_) {}
+            });
+            console.log(
+                '✅ [callChatCompletions] Stream done. ttfb(ms):',
+                firstTokenAt ? firstTokenAt - startedAt : null,
+                'total(ms):',
+                Date.now() - startedAt
+            );
+        } else {
+            const data = await res.json();
+            fullContent = data?.choices?.[0]?.message?.content || '';
+            sendToRenderer('update-response', fullContent);
+            console.log('✅ [callChatCompletions] Response received. total(ms):', Date.now() - startedAt);
+        }
+
+        messages.push({ role: 'assistant', content: fullContent });
+        compactStoredHistory();
 
         if (!skipFinalStatus) {
             sendToRenderer('update-status', '就绪');
         }
 
-        return content;
+        return fullContent;
     }
 
     async function sendRealtimeInput(payload, options = {}) {

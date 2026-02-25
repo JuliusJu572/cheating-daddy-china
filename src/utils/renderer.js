@@ -603,21 +603,35 @@ async function captureScreenshot(imageQuality = 'medium', isManual = false) {
             if (hiddenVideo.readyState >= 2) return resolve();
             hiddenVideo.onloadedmetadata = () => resolve();
         });
+    }
 
-        // Lazy init of canvas based on video dimensions
-        // ✅ 限制图片尺寸以兼容视觉模型输入
-        const maxWidth = 1280;
-        const maxHeight = 1280;
-        let width = hiddenVideo.videoWidth;
-        let height = hiddenVideo.videoHeight;
+    const width = hiddenVideo.videoWidth || 0;
+    const height = hiddenVideo.videoHeight || 0;
+    if (width <= 0 || height <= 0) {
+        console.warn('Video dimensions not available yet, skipping screenshot');
+        return;
+    }
 
-        // 计算缩放比例
-        const scale = Math.min(maxWidth / width, maxHeight / height, 1);
-        const scaledWidth = Math.floor(width * scale);
-        const scaledHeight = Math.floor(height * scale);
+    let dimensionScale;
+    switch (imageQuality) {
+        case 'high':
+            dimensionScale = 1;
+            break;
+        case 'medium':
+            dimensionScale = 0.5;
+            break;
+        case 'low':
+            dimensionScale = 0.25;
+            break;
+        default:
+            dimensionScale = 0.5;
+    }
 
+    const scaledWidth = Math.max(1, Math.floor(width * dimensionScale));
+    const scaledHeight = Math.max(1, Math.floor(height * dimensionScale));
+
+    if (!offscreenCanvas || offscreenCanvas.width !== scaledWidth || offscreenCanvas.height !== scaledHeight) {
         console.log(`📐 原始尺寸: ${width}x${height}, 缩放后: ${scaledWidth}x${scaledHeight}`);
-
         offscreenCanvas = document.createElement('canvas');
         offscreenCanvas.width = scaledWidth;
         offscreenCanvas.height = scaledHeight;

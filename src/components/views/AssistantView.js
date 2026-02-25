@@ -307,6 +307,10 @@ export class AssistantView extends LitElement {
         this.selectedProfile = 'interview';
         this.onSendText = () => {};
         this._lastAnimatedWordCount = 0;
+        this._mathInitialized = false;
+        this._renderMathInElement = null;
+        this._katex = null;
+        this._pendingDisplayMath = [];
         this.handleGlobalKeydown = this.handleGlobalKeydown.bind(this);
         // Load saved responses from localStorage
         try {
@@ -335,18 +339,16 @@ export class AssistantView extends LitElement {
     }
 
     renderMarkdown(content) {
-        // Check if marked is available
         if (typeof window !== 'undefined' && window.marked) {
             try {
-                // Configure marked for better security and formatting
                 window.marked.setOptions({
                     breaks: true,
                     gfm: true,
                     sanitize: false, // We trust the AI responses
                 });
-                let rendered = window.marked.parse(content);
-                rendered = this.wrapWordsInSpans(rendered);
-                return rendered;
+                const { markdown, blocks } = this.extractDisplayMath(String(content || ''));
+                this._pendingDisplayMath = blocks;
+                return window.marked.parse(markdown);
             } catch (error) {
                 console.warn('Error parsing markdown:', error);
                 return content; // Fallback to plain text
@@ -356,16 +358,156 @@ export class AssistantView extends LitElement {
         return content; // Fallback if marked is not available
     }
 
-    wrapWordsInSpans(html) {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        const tagsToSkip = ['PRE'];
+    extractDisplayMath(markdown) {
+        const blocks = [];
+        let out = String(markdown || '');
 
-        function wrap(node) {
-            if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() && !tagsToSkip.includes(node.parentNode.tagName)) {
-                const words = node.textContent.split(/(\s+)/);
+        const makeToken = idx => `@@KATEX_DISPLAY_${idx}@@`;
+
+        const stripCommonIndent = text => {
+            const lines = String(text || '').split(/\r?\n/);
+            let minIndent = Infinity;
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                const m = line.match(/^[ \t]*/);
+                const indent = m ? m[0].length : 0;
+                if (indent < minIndent) minIndent = indent;
+            }
+            if (!Number.isFinite(minIndent) || minIndent <= 0) return lines.join('\n');
+            return lines
+                .map(line => {
+                    let i = 0;
+                    while (i < line.length && i < minIndent && (line[i] === ' ' || line[i] === '\t')) i++;
+                    return line.slice(i);
+                })
+                .join('\n');
+        };
+
+        const takeMultiline = /(^|\n)[ \t]*\$\$[ \t]*\n([\s\S]*?)\n[ \t]*\$\$[ \t]*(?=\n|$)/g;
+        out = out.replace(takeMultiline, (m, lead, body) => {
+            const idx = blocks.length;
+            const token = makeToken(idx);
+            blocks.push({ token, math: stripCommonIndent(body) });
+            return `${lead}\n${token}\n`;
+        });
+
+        const takeSingleLine = /(^|\n)[ \t]*\$\$[ \t]*([^\n]*?)[ \t]*\$\$[ \t]*(?=\n|$)/g;
+        out = out.replace(takeSingleLine, (m, lead, body) => {
+            const idx = blocks.length;
+            const token = makeToken(idx);
+            blocks.push({ token, math: String(body || '').trim() });
+            return `${lead}\n${token}\n`;
+        });
+
+        return { markdown: out, blocks };
+    }
+
+    ensureMathRenderer() {
+        if (this._mathInitialized) return;
+        this._mathInitialized = true;
+
+        const nodeRequire = typeof window !== 'undefined' ? window.require : null;
+        if (!nodeRequire) return;
+
+        try {
+            const fs = nodeRequire('fs');
+            const cssPath = nodeRequire.resolve('katex/dist/katex.min.css');
+            if (!document.getElementById('katex-style')) {
+                const style = document.createElement('style');
+                style.id = 'katex-style';
+                style.textContent = fs.readFileSync(cssPath, 'utf8');
+                document.head.appendChild(style);
+            }
+        } catch (e) {}
+
+        if (!document.getElementById('katex-style-fallback')) {
+            const style = document.createElement('style');
+            style.id = 'katex-style-fallback';
+            style.textContent = `
+.katex-mathml { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
+.katex-display { display: block; margin: 1em 0; text-align: center; }
+.katex-display > .katex { display: inline-block; text-align: initial; }
+`;
+            document.head.appendChild(style);
+        }
+
+        try {
+            const autoRender = nodeRequire('katex/contrib/auto-render');
+            this._renderMathInElement = autoRender?.renderMathInElement || autoRender?.default || autoRender;
+        } catch (e) {}
+
+        try {
+            const katex = nodeRequire('katex');
+            this._katex = katex?.default || katex;
+        } catch (e) {}
+    }
+
+    renderDisplayMathPlaceholders(container) {
+        this.ensureMathRenderer();
+        if (!this._pendingDisplayMath || this._pendingDisplayMath.length === 0) return;
+        if (!this._katex || typeof this._katex.renderToString !== 'function') return;
+
+        const renderOne = raw => {
+            const math = String(raw || '')
+                .replace(/[\u200B-\u200D\uFEFF]/g, '')
+                .replace(/,\s*,/g, ',');
+            return this._katex.renderToString(math, {
+                displayMode: true,
+                throwOnError: false,
+                strict: false,
+                trust: true,
+            });
+        };
+
+        for (const block of this._pendingDisplayMath) {
+            const token = block?.token;
+            if (!token) continue;
+            try {
+                const rendered = renderOne(block.math);
+                container.innerHTML = container.innerHTML
+                    .split(token)
+                    .join(`<div class="katex-display-block">${rendered}</div>`);
+            } catch (e) {}
+        }
+        this._pendingDisplayMath = [];
+    }
+
+    renderMathInContainer(container) {
+        this.ensureMathRenderer();
+        if (typeof this._renderMathInElement !== 'function') return;
+
+        try {
+            this._renderMathInElement(container, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true },
+                    { left: '\\[', right: '\\]', display: true },
+                    { left: '\\(', right: '\\)', display: false },
+                    { left: '$', right: '$', display: false },
+                ],
+                throwOnError: false,
+                strict: false,
+                trust: true,
+                ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+            });
+        } catch (e) {}
+    }
+
+    wrapWordsInContainer(container) {
+        const tagsToSkip = new Set(['PRE', 'CODE']);
+
+        const wrap = node => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                const text = node.textContent || '';
+                if (!text.trim()) return;
+                const parent = node.parentElement;
+                if (!parent) return;
+                if (tagsToSkip.has(parent.tagName)) return;
+                if (parent.closest && parent.closest('pre, code')) return;
+                if (parent.closest && parent.closest('.katex')) return;
+
+                const words = text.split(/(\s+)/);
                 const frag = document.createDocumentFragment();
-                words.forEach(word => {
+                for (const word of words) {
                     if (word.trim()) {
                         const span = document.createElement('span');
                         span.setAttribute('data-word', '');
@@ -374,14 +516,22 @@ export class AssistantView extends LitElement {
                     } else {
                         frag.appendChild(document.createTextNode(word));
                     }
-                });
-                node.parentNode.replaceChild(frag, node);
-            } else if (node.nodeType === Node.ELEMENT_NODE && !tagsToSkip.includes(node.tagName)) {
-                Array.from(node.childNodes).forEach(wrap);
+                }
+                parent.replaceChild(frag, node);
+                return;
             }
-        }
-        Array.from(doc.body.childNodes).forEach(wrap);
-        return doc.body.innerHTML;
+
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                const el = node;
+                if (tagsToSkip.has(el.tagName)) return;
+                if (el.classList && el.classList.contains('katex')) return;
+                const children = Array.from(el.childNodes);
+                for (const child of children) wrap(child);
+            }
+        };
+
+        const children = Array.from(container.childNodes);
+        for (const child of children) wrap(child);
     }
 
     getResponseCounter() {
@@ -604,6 +754,9 @@ export class AssistantView extends LitElement {
             const renderedResponse = this.renderMarkdown(currentResponse);
             console.log('Rendered response:', renderedResponse);
             container.innerHTML = renderedResponse;
+            this.renderDisplayMathPlaceholders(container);
+            this.renderMathInContainer(container);
+            this.wrapWordsInContainer(container);
             const words = container.querySelectorAll('[data-word]');
             if (this.shouldAnimateResponse) {
                 for (let i = 0; i < this._lastAnimatedWordCount && i < words.length; i++) {

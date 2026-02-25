@@ -457,7 +457,7 @@ export class CustomizeView extends LitElement {
         this.fontSize = 20;
 
         this.selectedModel = localStorage.getItem('selectedModel') || 'qwen3.5-plus';
-        this.qwenTextModel = localStorage.getItem('qwenTextModel') || 'qwen3.5-plus';
+        this.qwenTextModel = localStorage.getItem('qwenTextModel') || 'qwen3-max';
         this.qwenVisionModel = localStorage.getItem('qwenVisionModel') || 'qwen3-vl-plus';
         this.transcriptionModel = localStorage.getItem('transcriptionModel') || 'qwen3-asr-flash';
         this.modelApiBase = localStorage.getItem('modelApiBase') || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
@@ -471,9 +471,16 @@ export class CustomizeView extends LitElement {
         this.loadAdvancedModeSettings();
         this.loadBackgroundTransparency();
     this.loadFontSize();
-    localStorage.setItem('selectedLanguage', this.selectedLanguage);
-    this.boundKeydownHandler = this.handleKeydown.bind(this);
-  }
+        localStorage.setItem('selectedLanguage', this.selectedLanguage);
+        this.boundKeydownHandler = this.handleKeydown.bind(this);
+
+        this.handleQwenTextModelSelect = this.handleQwenTextModelSelect.bind(this);
+        this.handleQwenVisionModelSelect = this.handleQwenVisionModelSelect.bind(this);
+        this.handleTranscriptionModelSelect = this.handleTranscriptionModelSelect.bind(this);
+        this.handleModelApiBaseInput = this.handleModelApiBaseInput.bind(this);
+        this.handleMaxTokensChange = this.handleMaxTokensChange.bind(this);
+        this.handleEnableContextChange = this.handleEnableContextChange.bind(this);
+    }
 
   async connectedCallback() {
         super.connectedCallback();
@@ -975,6 +982,12 @@ export class CustomizeView extends LitElement {
         return [
             { value: 'qwen3.5-plus', name: 'Qwen3.5-Plus' },
             { value: 'qwen3-max', name: 'Qwen3-Max' },
+            { value: 'qwen3.5-flash', name: 'Qwen3.5-Flash' },
+            { value: 'qwen-flash', name: 'Qwen-Flash' },
+            { value: 'deepseek-v3.2', name: 'DeepSeek-V3.2' },
+            { value: 'kimi/kimi-k2.5', name: 'Kimi-K2.5' },
+            { value: 'MiniMax/MiniMax-M2.5', name: 'MiniMax-M2.5' },
+            { value: 'MiniMax/MiniMax-M2.1', name: 'MiniMax-M2.1' },
         ];
     }
 
@@ -982,6 +995,8 @@ export class CustomizeView extends LitElement {
         return [
             { value: 'qwen3.5-plus', name: 'Qwen3.5-Plus' },
             { value: 'qwen3-vl-plus', name: 'Qwen3-VL-Plus' },
+            { value: 'qwen3.5-flash', name: 'Qwen3.5-Flash' },
+            { value: 'qwen3-vl-flash', name: 'Qwen3-VL-Flash' },
         ];
     }
 
@@ -1394,7 +1409,7 @@ export class CustomizeView extends LitElement {
                                 <label class="form-label">文本对话模型</label>
                                 <select class="form-control" @change=${this.handleQwenTextModelSelect} .value=${this.qwenTextModel}>
                                     ${this.getQwenTextModelOptions().map(
-                                        option => html`<option value=${option.value}>${option.name}</option>`
+                                        option => html`<option value=${option.value} ?selected=${option.value === this.qwenTextModel}>${option.name}</option>`
                                     )}
                                 </select>
                             </div>
@@ -1405,7 +1420,7 @@ export class CustomizeView extends LitElement {
                                 <label class="form-label">视觉模型（截图识别）</label>
                                 <select class="form-control" @change=${this.handleQwenVisionModelSelect} .value=${this.qwenVisionModel}>
                                     ${this.getQwenVisionModelOptions().map(
-                                        option => html`<option value=${option.value}>${option.name}</option>`
+                                        option => html`<option value=${option.value} ?selected=${option.value === this.qwenVisionModel}>${option.name}</option>`
                                     )}
                                 </select>
                             </div>
@@ -1416,7 +1431,7 @@ export class CustomizeView extends LitElement {
                                 <label class="form-label">语音转写模型</label>
                                 <select class="form-control" disabled .value=${this.transcriptionModel}>
                                     ${this.getTranscriptionModelOptions().map(
-                                        option => html`<option value=${option.value}>${option.name}</option>`
+                                        option => html`<option value=${option.value} ?selected=${option.value === this.transcriptionModel}>${option.name}</option>`
                                     )}
                                 </select>
                                 <div class="form-description">当前仅支持 qwen3-asr-flash</div>

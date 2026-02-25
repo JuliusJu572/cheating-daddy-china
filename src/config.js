@@ -6,7 +6,7 @@ const DEFAULT_CONFIG = {
     onboarded: false,
     stealthLevel: 'balanced',
     layout: 'normal',
-    qwenTextModel: 'qwen3.5-plus',
+    qwenTextModel: 'qwen3-max',
     qwenVisionModel: 'qwen3-vl-plus',
     transcriptionModel: 'qwen3-asr-flash',
     modelApiBase: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
