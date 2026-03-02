@@ -105,6 +105,8 @@ export class CheatingDaddyApp extends LitElement {
         selectedProfile: { type: String },
         selectedLanguage: { type: String },
         responses: { type: Array },
+        liveTranscript: { type: String },
+        isLiveAsrRunning: { type: Boolean },
         currentResponseIndex: { type: Number },
         selectedScreenshotInterval: { type: String },
         selectedImageQuality: { type: String },
@@ -130,6 +132,8 @@ export class CheatingDaddyApp extends LitElement {
         this.layoutMode = localStorage.getItem('layoutMode') || 'normal';
         this.advancedMode = localStorage.getItem('advancedMode') === 'true';
         this.responses = [];
+        this.liveTranscript = '';
+        this.isLiveAsrRunning = false;
         this.currentResponseIndex = -1;
         this._viewInstances = new Map();
         this._isClickThrough = false;
@@ -210,6 +214,25 @@ export class CheatingDaddyApp extends LitElement {
         }
         this.shouldAnimateResponse = true;
         this.requestUpdate();
+    }
+
+    setLiveTranscript(transcript) {
+        this.liveTranscript = typeof transcript === 'string' ? transcript : '';
+        this.requestUpdate();
+    }
+
+    setLiveAsrRunning(running) {
+        this.isLiveAsrRunning = !!running;
+        this.requestUpdate();
+    }
+
+    handleClearLiveTranscript() {
+        if (window.cheddar?.clearLiveTranscript) {
+            window.cheddar.clearLiveTranscript();
+        } else {
+            this.liveTranscript = '';
+            this.requestUpdate();
+        }
     }
 
     // Header event handlers
@@ -356,6 +379,17 @@ export class CheatingDaddyApp extends LitElement {
         }
     }
 
+    async handleSubmitLiveTranscript() {
+        if (typeof window.cheddar?.submitLiveTranscriptDelta !== 'function') {
+            this.setStatus('实时转写不可用');
+            return;
+        }
+        const result = await window.cheddar.submitLiveTranscriptDelta();
+        if (result?.success && result?.submitted) {
+            this._awaitingNewResponse = true;
+        }
+    }
+
     handleResponseIndexChanged(e) {
         this.currentResponseIndex = e.detail.index;
         this.shouldAnimateResponse = false;
@@ -457,9 +491,13 @@ export class CheatingDaddyApp extends LitElement {
                 return html`
                     <assistant-view
                         .responses=${this.responses}
+                        .liveTranscript=${this.liveTranscript}
+                        .isLiveAsrRunning=${this.isLiveAsrRunning}
                         .currentResponseIndex=${this.currentResponseIndex}
                         .selectedProfile=${this.selectedProfile}
                         .onSendText=${message => this.handleSendText(message)}
+                        .onSubmitLiveTranscript=${() => this.handleSubmitLiveTranscript()}
+                        .onClearLiveTranscript=${() => this.handleClearLiveTranscript()}
                         .shouldAnimateResponse=${this.shouldAnimateResponse}
                         @response-index-changed=${this.handleResponseIndexChanged}
                         @response-animation-complete=${() => {

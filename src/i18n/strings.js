@@ -28,6 +28,9 @@ export const translations = {
     status_connecting: "🔄 连接中...",
     status_connected: "✅ 已连接",
     status_disconnected: "❌ 已断开",
+    status_live_transcribing: "🎙️ 实时识别中...",
+    status_live_submit: "📤 提交增量转写中...",
+    status_no_new_transcript: "暂无新增转写",
 
     // API Key 相关
     api_key_valid: "✅ License Key 已验证",
@@ -114,10 +117,8 @@ export const translations = {
     keybind_scroll_up_desc: "滚动AI响应内容向上",
     keybind_scroll_down_name: "向下滚动响应",
     keybind_scroll_down_desc: "滚动AI响应内容向下",
-    keybind_audio_capture_name: "音频采集",
-    keybind_audio_capture_desc: "采集系统音频并转写",
-    keybind_windows_audio_capture_name: "麦克风录制",
-    keybind_windows_audio_capture_desc: "录制麦克风声音 (Windows)",
+    keybind_audio_capture_name: "实时转写",
+    keybind_audio_capture_desc: "开始实时语音转写，再按停止并提交 AI",
     keybind_clear_history_name: "删除历史对话",
     keybind_clear_history_desc: "清空当前会话的历史记录",
 
@@ -167,6 +168,9 @@ export const translations = {
     status_connecting: "🔄 Connecting...",
     status_connected: "✅ Connected",
     status_disconnected: "❌ Disconnected",
+    status_live_transcribing: "🎙️ Live transcription...",
+    status_live_submit: "📤 Submitting transcript delta...",
+    status_no_new_transcript: "No new transcript yet",
 
     // API Key related
     api_key_valid: "✅ License Key verified",
@@ -253,10 +257,8 @@ export const translations = {
     keybind_scroll_up_desc: "Scroll the AI response up",
     keybind_scroll_down_name: "Scroll Response Down",
     keybind_scroll_down_desc: "Scroll the AI response down",
-    keybind_audio_capture_name: "Audio Capture",
-    keybind_audio_capture_desc: "Capture system audio and transcribe",
-    keybind_windows_audio_capture_name: "Microphone Recording",
-    keybind_windows_audio_capture_desc: "Record microphone audio (Windows only)",
+    keybind_audio_capture_name: "Live Transcription",
+    keybind_audio_capture_desc: "Start live transcription, press again to stop & submit to AI",
     keybind_clear_history_name: "Clear Conversation History",
     keybind_clear_history_desc: "Clear the history of current session",
 

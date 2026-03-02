@@ -496,7 +496,7 @@ export class OnboardingView extends LitElement {
                               <div class="feature-list">
                                   <div class="feature-item">
                                       <span class="feature-icon">🎙️</span>
-                                      使用 <span class="key">Ctrl+L</span> 开始/结束录音并自动转写
+                                      使用 <span class="key">Ctrl+L</span> 开始实时转写，再按停止并提交 AI
                                   </div>
                                   <div class="feature-item">
                                       <span class="feature-icon">🖼️</span>

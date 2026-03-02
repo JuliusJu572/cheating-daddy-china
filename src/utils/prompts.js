@@ -222,6 +222,8 @@ function buildSystemPrompt(promptParts, customPrompt = '', googleSearchEnabled =
         '\n-----\n\n',
         promptParts.outputInstructions,
         '\n\n',
+        '**输入说明：** 用户输入来自实时语音转写，约每秒刷新，可能断断续续、词语被截断或顺序错乱，请结合上下文理解完整语义后作答。',
+        '\n\n',
         '语言与输出要求：默认使用中文回答；若问题为英文或明确要求英文，则使用英文回答。技术术语保持原文。代码问题直接给出代码和简要思路。'
     );
 
