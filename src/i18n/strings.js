@@ -119,6 +119,8 @@ export const translations = {
     keybind_scroll_down_desc: "滚动AI响应内容向下",
     keybind_audio_capture_name: "实时转写",
     keybind_audio_capture_desc: "开始实时语音转写，再按停止并提交 AI",
+    keybind_windows_audio_capture_name: "麦克风录制",
+    keybind_windows_audio_capture_desc: "录制麦克风声音并转写 (Windows)",
     keybind_clear_history_name: "删除历史对话",
     keybind_clear_history_desc: "清空当前会话的历史记录",
 
@@ -259,6 +261,8 @@ export const translations = {
     keybind_scroll_down_desc: "Scroll the AI response down",
     keybind_audio_capture_name: "Live Transcription",
     keybind_audio_capture_desc: "Start live transcription, press again to stop & submit to AI",
+    keybind_windows_audio_capture_name: "Microphone Recording",
+    keybind_windows_audio_capture_desc: "Record microphone and transcribe (Windows)",
     keybind_clear_history_name: "Clear Conversation History",
     keybind_clear_history_desc: "Clear the history of current session",
 

@@ -76,16 +76,37 @@
 | 状态栏显示「正在录音」 | `audioCapture` 快捷键 handler 提前发错误状态 | 删除该行，由 `startQuickAudioCapture` 统一管理状态 |
 | 「回答中」不消失 | `submitLiveTranscriptDelta` 在 AI 回复完成后覆写状态 | 删除覆写逻辑 |
 | nextStep 快捷键误用「正在录音」 | 通用处理流程用了录音文案 | 改为「正在处理...」 |
+| 流式输出问题数飙升 | `response-animation-complete` 每 chunk 动画结束即触发，将 `_currentResponseIsComplete` 设为 true，下一 chunk 被误追加为新回复 | 移除该处赋值，改为仅在 `setStatus('就绪')` 时标记完成 |
 
 ---
 
-## 七、涉及文件
+## 七、转写区条件显示
+
+- **条件**：仅在 `isLiveAsrRunning || liveTranscript` 时渲染转写区
+- **效果**：无转录且未识别时，转写区完全不显示，不占用布局空间
+
+---
+
+## 八、模型兼容性测试（qwen3.5-plus 流式）
+
+**验证步骤**：
+
+1. 打开设置页，将「文本对话模型」切换为 `qwen3.5-plus`
+2. 保存后重启应用或刷新
+3. Ctrl+L 开始实时识别，再按 Ctrl+L 停止并提交
+4. 观察回复是否流式输出、问题数是否稳定为 1/1、无报错
+
+若通过，则 qwen3.5-plus 流式输出兼容。
+
+---
+
+## 九、涉及文件
 
 - `src/index.js`：`clear-live-transcript` IPC、dev 热重载
 - `src/utils/renderer.js`：`clearLiveTranscript`、`setLiveAsrRunning`、Ctrl+L 提交逻辑、状态文案
 - `src/utils/window.js`：移除 `windowsAudioCapture`、修正状态文案
-- `src/components/app/CheatingDaddyApp.js`：`isLiveAsrRunning` 状态、`setLiveAsrRunning`、`handleClearLiveTranscript`
-- `src/components/views/AssistantView.js`：转写区动态标题、清空按钮、`Ctrl+Shift+L` 快捷键
+- `src/components/app/CheatingDaddyApp.js`：`isLiveAsrRunning`、`setLiveAsrRunning`、`handleClearLiveTranscript`、流式完成态逻辑（`setStatus` 识别「就绪」、`response-animation-complete` 不再设 `_currentResponseIsComplete`）
+- `src/components/views/AssistantView.js`：转写区动态标题、条件渲染（`isLiveAsrRunning || liveTranscript`）、清空按钮、`Ctrl+Shift+L` 快捷键
 - `src/components/views/HelpView.js`：快捷键说明与使用步骤
 - `src/components/views/CustomizeView.js`：移除 `windowsAudioCapture`、模型设置文案
 - `src/components/views/OnboardingView.js`：引导文案

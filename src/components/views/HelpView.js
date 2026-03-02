@@ -264,6 +264,7 @@ export class HelpView extends LitElement {
             scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
             scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
             audioCapture: isMac ? 'Cmd+L' : 'Ctrl+L',
+            windowsAudioCapture: isMac ? 'Cmd+K' : 'Ctrl+K',
             clearHistory: isMac ? "Cmd+'" : "Ctrl+'",
         };
     }
@@ -359,6 +360,12 @@ export class HelpView extends LitElement {
                                 <span class="shortcut-description">清空转写内容</span>
                                 <div class="shortcut-keys"><span class="key">Ctrl</span><span class="key">Shift</span><span class="key">L</span></div>
                             </div>
+                            ${this.keybinds.windowsAudioCapture ? html`
+                            <div class="shortcut-item">
+                                <span class="shortcut-description">麦克风录制（再按停止并转写）</span>
+                                <div class="shortcut-keys">${this.formatKeybind(this.keybinds.windowsAudioCapture)}</div>
+                            </div>
+                            ` : ''}
                         </div>
 
                         <div class="keyboard-group">
