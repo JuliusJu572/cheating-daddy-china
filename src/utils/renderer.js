@@ -916,7 +916,7 @@ async function startQuickAudioCapture(options = {}) {
         quickRecorder = await createPcmRecorder({
             stream: streamToUse,
             targetSampleRate: liveAsrSampleRate,
-            chunkDurationSec: 0.8,
+            chunkDurationSec: 1.0,
             onChunk: msg => {
                 if (!isLiveAsrRunning) return;
                 const base64 = arrayBufferToBase64(msg.buffer);
