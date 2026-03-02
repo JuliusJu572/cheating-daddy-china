@@ -1442,8 +1442,8 @@ export class CustomizeView extends LitElement {
                             <div class="form-group full-width">
                                 <label class="form-label">语音输入</label>
                                 <div class="form-description">
-                                    实时转写：<strong>${this.keybinds?.audioCapture || 'Ctrl+L'}</strong> 开始，再按停止并提交 AI。<br>
-                                    麦克风录制：<strong>${this.keybinds?.windowsAudioCapture || 'Ctrl+K'}</strong> 录制麦克风并转写（仅 Windows，可在键盘快捷键中修改）。
+                                    系统音频实时转写：<strong>${this.keybinds?.audioCapture || 'Ctrl+L'}</strong> 开始，再按停止并提交 AI。<br>
+                                    麦克风实时转写：<strong>${this.keybinds?.windowsAudioCapture || 'Ctrl+K'}</strong> 开始，再按停止并提交 AI。
                                 </div>
                             </div>
                         </div>

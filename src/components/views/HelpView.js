@@ -461,7 +461,11 @@ export class HelpView extends LitElement {
                     <div class="option-label">
                         <span>音频输入</span>
                     </div>
-                    <div class="description">按 ${this.formatKeybind(this.keybinds.audioCapture)} 开始实时语音转写，内容实时显示在转写框；再次按下则停止并自动提交全部转写内容给 AI 生成回答。按 Ctrl+Shift+L 可随时清空转写内容（不停止识别）。</div>
+                    <div class="description">
+                        <strong>系统音频：</strong> 按 ${this.formatKeybind(this.keybinds.audioCapture)} 开始实时捕获系统声音并转写。<br><br>
+                        <strong>麦克风：</strong> 按 ${this.formatKeybind(this.keybinds.windowsAudioCapture)} 开始实时捕获麦克风声音并转写。<br><br>
+                        再次按下对应快捷键即可停止并自动提交全部转写内容给 AI 生成回答。按 Ctrl+Shift+L 可随时清空转写内容（不停止识别）。
+                    </div>
                 </div>
 
                 <div class="option-group">

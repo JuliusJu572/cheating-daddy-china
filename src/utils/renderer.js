@@ -814,7 +814,9 @@ async function stopRealtimeAsrCapture() {
     }
 }
 
-async function startQuickAudioCapture() {
+async function startQuickAudioCapture(options = {}) {
+    const useMic = options.useMic || false;
+
     if (isQuickRecording || isLiveAsrRunning) {
         cheddar.setLiveAsrRunning(false);
         await stopRealtimeAsrCapture();
@@ -849,31 +851,58 @@ async function startQuickAudioCapture() {
             return;
         }
 
-        if (isMacOS) {
-            cheddar.setStatus('⚠️ macOS 实时识别暂不可用');
-            await ipcRenderer.invoke('stop-live-asr').catch(() => {});
-            return;
-        }
+        if (useMic) {
+            try {
+                quickRecordStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: liveAsrSampleRate,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                    },
+                    video: false
+                });
+            } catch (err) {
+                console.error('Microphone access failed:', err);
+                cheddar.setStatus('❌ 麦克风访问失败');
+                await ipcRenderer.invoke('stop-live-asr').catch(() => {});
+                return;
+            }
+        } else {
+            if (isMacOS) {
+                cheddar.setStatus('⚠️ macOS 实时识别暂不可用');
+                await ipcRenderer.invoke('stop-live-asr').catch(() => {});
+                return;
+            }
 
-        quickRecordStream = await navigator.mediaDevices.getDisplayMedia({
-            video: {
-                frameRate: 1,
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-            },
-            audio: {
-                channelCount: 2,
-                echoCancellation: false,
-                noiseSuppression: false,
-                autoGainControl: false,
-            },
-        });
+            try {
+                quickRecordStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        frameRate: 1,
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                    },
+                    audio: {
+                        channelCount: 2,
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false,
+                    },
+                });
+            } catch (err) {
+                console.error('System audio access failed:', err);
+                cheddar.setStatus('❌ 系统音频获取失败');
+                await ipcRenderer.invoke('stop-live-asr').catch(() => {});
+                return;
+            }
+        }
 
         const audioTracks = quickRecordStream.getAudioTracks();
         if (audioTracks.length === 0) {
             quickRecordStream.getTracks().forEach(track => track.stop());
             quickRecordStream = null;
-            cheddar.setStatus('⚠️ 未获取到系统音频（请勾选共享音频）');
+            cheddar.setStatus(useMic ? '❌ 未检测到麦克风音轨' : '⚠️ 未获取到系统音频（请勾选共享音频）');
             await ipcRenderer.invoke('stop-live-asr').catch(() => {});
             return;
         }
@@ -902,8 +931,17 @@ async function startQuickAudioCapture() {
         });
 
         cheddar.setLiveAsrRunning(true);
-        const stopKey = platform === 'darwin' ? 'Cmd+L' : 'Ctrl+L';
-        cheddar.setStatus(`🎙️ 实时识别中... (再按 ${stopKey} 停止并提交给 AI)`);
+        
+        let stopKey = 'Ctrl+L';
+        if (useMic) {
+            stopKey = 'Ctrl+K'; // Windows Mic
+            if (platform === 'darwin') stopKey = 'Cmd+K';
+        } else {
+            if (platform === 'darwin') stopKey = 'Cmd+L';
+        }
+
+        const sourceName = useMic ? '麦克风' : '实时';
+        cheddar.setStatus(`🎙️ ${sourceName}识别中... (再按 ${stopKey} 停止并提交给 AI)`);
     } catch (error) {
         cheddar.setStatus('Error: ' + error.message);
         isQuickRecording = false;
