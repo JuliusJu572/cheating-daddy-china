@@ -674,6 +674,7 @@ export class CustomizeView extends LitElement {
             scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
             scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
             audioCapture: isMac ? 'Cmd+L' : 'Ctrl+L',
+            windowsAudioCapture: isMac ? 'Cmd+K' : 'Ctrl+K',
             clearHistory: isMac ? "Cmd+'" : "Ctrl+'",
         };
     }
@@ -776,6 +777,11 @@ export class CustomizeView extends LitElement {
                 key: 'audioCapture',
                 name: t('keybind_audio_capture_name'),
                 description: t('keybind_audio_capture_desc'),
+            },
+            {
+                key: 'windowsAudioCapture',
+                name: t('keybind_windows_audio_capture_name'),
+                description: t('keybind_windows_audio_capture_desc'),
             },
             {
                 key: 'clearHistory',
@@ -1429,6 +1435,16 @@ export class CustomizeView extends LitElement {
                                     )}
                                 </select>
                                 <div class="form-description">用于 Ctrl+L 实时语音识别，当前仅支持 qwen3-asr-flash</div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group full-width">
+                                <label class="form-label">语音输入</label>
+                                <div class="form-description">
+                                    实时转写：<strong>${this.keybinds?.audioCapture || 'Ctrl+L'}</strong> 开始，再按停止并提交 AI。<br>
+                                    麦克风录制：<strong>${this.keybinds?.windowsAudioCapture || 'Ctrl+K'}</strong> 录制麦克风并转写（仅 Windows，可在键盘快捷键中修改）。
+                                </div>
                             </div>
                         </div>
 

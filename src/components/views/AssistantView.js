@@ -868,6 +868,7 @@ export class AssistantView extends LitElement {
         const isSaved = this.isResponseSaved();
 
         return html`
+            ${this.isLiveAsrRunning || this.liveTranscript ? html`
             <div class="live-transcript-container ${this.isLiveAsrRunning ? 'recording' : ''}">
                 <div class="live-transcript-header">
                     <div class="live-transcript-title">
@@ -885,6 +886,7 @@ export class AssistantView extends LitElement {
                 </div>
                 <div class="live-transcript-content">${this.liveTranscript || (this.isLiveAsrRunning ? '等待语音输入...' : '按 Ctrl+L 开始实时识别')}</div>
             </div>
+            ` : ''}
 
             <div class="response-container" id="responseContainer"></div>
 

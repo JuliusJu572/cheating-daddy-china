@@ -218,6 +218,7 @@ function getDefaultKeybinds() {
         scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
         emergencyErase: isMac ? 'Cmd+Shift+E' : 'Ctrl+Shift+E',
         audioCapture: isMac ? 'Cmd+L' : 'Ctrl+L',
+        windowsAudioCapture: isMac ? 'Cmd+K' : 'Ctrl+K',
         clearHistory: isMac ? "Cmd+'" : "Ctrl+'",
     };
 }
@@ -459,6 +460,17 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
                 } catch (e) {}
             });
         } catch (error) {}
+    }
+
+    if (keybinds.windowsAudioCapture && process.platform === 'win32') {
+        try {
+            globalShortcut.register(keybinds.windowsAudioCapture, () => {
+                mainWindow.webContents.send('toggle-windows-audio-capture');
+            });
+            console.log(`Registered windowsAudioCapture: ${keybinds.windowsAudioCapture}`);
+        } catch (error) {
+            console.error(`Failed to register windowsAudioCapture (${keybinds.windowsAudioCapture}):`, error);
+        }
     }
 
     // Register clear history shortcut

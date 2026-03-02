@@ -176,8 +176,8 @@ export class CheatingDaddyApp extends LitElement {
     setStatus(text) {
         this.statusText = text;
         
-        // Mark response as complete when we get certain status messages
-        if (text.includes('Ready') || text.includes('Listening') || text.includes('Error')) {
+        // Mark response as complete when we get certain status messages (流式结束后由主进程发送「就绪」)
+        if (text.includes('Ready') || text.includes('Listening') || text.includes('Error') || String(text || '').trim() === '就绪') {
             this._currentResponseIsComplete = true;
             console.log('[setStatus] Marked current response as complete');
         }
@@ -502,8 +502,7 @@ export class CheatingDaddyApp extends LitElement {
                         @response-index-changed=${this.handleResponseIndexChanged}
                         @response-animation-complete=${() => {
                             this.shouldAnimateResponse = false;
-                            this._currentResponseIsComplete = true;
-                            console.log('[response-animation-complete] Marked current response as complete');
+                            // 不在此处设置 _currentResponseIsComplete，否则流式时每 chunk 动画结束都会误触发，导致问题数飙升；由 setStatus('就绪') 统一标记
                             this.requestUpdate();
                         }}
                     ></assistant-view>
