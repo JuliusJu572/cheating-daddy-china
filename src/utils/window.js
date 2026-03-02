@@ -40,9 +40,10 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
     if (safeMode && macStealth) envStealth = 'visible';
     const stealthLevel = envStealth || ((cfg && cfg.stealthLevel) ? cfg.stealthLevel : 'balanced');
     console.log('[stealth] platform:', process.platform, 'level:', stealthLevel, 'safeMode:', safeMode);
-    const skipTaskbarFlag = macStealth ? (stealthLevel !== 'visible') : true;
-    const hiddenMissionFlag = macStealth ? (stealthLevel !== 'visible') : true;
-    const protectContentInit = macStealth ? (stealthLevel !== 'visible') : true;
+    const isVisibleStealth = stealthLevel === 'visible';
+    const skipTaskbarFlag = !isVisibleStealth;
+    const hiddenMissionFlag = !isVisibleStealth;
+    const protectContentInit = !isVisibleStealth;
 
     // 在 createWindow 函数中，添加 macOS 特定配置：
     const mainWindow = new BrowserWindow({
@@ -159,6 +160,13 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
 
                     // Apply content protection setting via IPC handler
                     try {
+                        if (isVisibleStealth) {
+                            mainWindow.setContentProtection(false);
+                            console.log('Content protection forced OFF for visible stealth level');
+                            updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessionRef);
+                            return;
+                        }
+
                         const contentProtection = await mainWindow.webContents.executeJavaScript(`(() => {
                             try {
                                 return window.cheddar && typeof cheddar.getContentProtection === 'function'
@@ -176,14 +184,14 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
                         }
                     } catch (error) {
                         console.error('Error loading content protection:', error);
-                        mainWindow.setContentProtection(true);
+                        mainWindow.setContentProtection(!isVisibleStealth);
                     }
 
                     updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessionRef);
                 })
                 .catch(() => {
                     // Default to content protection enabled
-                    mainWindow.setContentProtection(true);
+                    mainWindow.setContentProtection(!isVisibleStealth);
                     updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessionRef);
                 });
         }, 150);
