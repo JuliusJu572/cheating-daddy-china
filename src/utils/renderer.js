@@ -116,6 +116,10 @@ let quickRecorder = null;
 let quickRecordChunks = [];
 let quickRecordStartTime = null;
 let quickRecordStallCount = 0;
+let isLiveAsrRunning = false;
+let liveTranscriptBuffer = '';
+let lastSubmittedOffset = 0;
+let liveAsrSampleRate = 16000;
 
 const isLinux = platform === 'linux';
 const isMacOS = platform === 'darwin';
@@ -271,6 +275,17 @@ async function initializeGemini(profile = 'interview', language = 'zh-CN') {
 ipcRenderer.on('update-status', (event, status) => {
     console.log('Status update:', status);
     cheddar.setStatus(status);
+});
+
+ipcRenderer.on('update-live-transcript', (_event, payload) => {
+    const nextText = typeof payload?.text === 'string' ? payload.text : '';
+    liveTranscriptBuffer = nextText;
+    if (lastSubmittedOffset > liveTranscriptBuffer.length) {
+        lastSubmittedOffset = liveTranscriptBuffer.length;
+    }
+    if (typeof cheddar?.setLiveTranscript === 'function') {
+        cheddar.setLiveTranscript(liveTranscriptBuffer);
+    }
 });
 
 // Listen for responses - REMOVED: This is handled in CheatingDaddyApp.js to avoid duplicates
@@ -756,85 +771,57 @@ async function captureManualScreenshot(imageQuality = null) {
 // Expose functions to global scope for external access
 window.captureManualScreenshot = captureManualScreenshot;
 
-async function startQuickAudioCapture() {
-    // 如果正在录音，则停止录音
-    if (isQuickRecording) {
-        try {
-            if (isMacOS) {
-                const stopRes = await ipcRenderer.invoke('stop-macos-audio');
-                if (stopRes && stopRes.success) {
-                    const base64 = stopRes.pcmBase64 || '';
-                    const sr = stopRes.sampleRate || 16000;
-                    if (base64 && base64.length > 0) {
-                        cheddar.setStatus('🔊 转写系统音频中...');
-                        const result = await ipcRenderer.invoke('save-audio-and-transcribe', { pcmBase64: base64, sampleRate: sr });
-                        if (!result || !result.success) {
-                            cheddar.setStatus('Error: ' + (result?.error || 'Unknown'));
-                        }
-                    } else {
-                        cheddar.setStatus('未录制到音频');
-                    }
-                } else {
-                    cheddar.setStatus('Error: ' + (stopRes?.error || 'Stop failed'));
-                }
-                isQuickRecording = false;
-                quickRecordStream = null;
-                quickRecorder = null;
-                quickRecordChunks = [];
-                quickRecordStartTime = null;
-                quickRecordStallCount = 0;
-                return;
-            }
-            if (quickRecorder) await quickRecorder.stop().catch(() => {});
-            if (quickRecordStream) quickRecordStream.getTracks().forEach(track => track.stop());
+function resetLiveTranscriptState() {
+    liveTranscriptBuffer = '';
+    lastSubmittedOffset = 0;
+    cheddar.setLiveTranscript('');
+}
 
-            if (quickRecordChunks.length > 0) {
-                const targetSampleRate = 16000;
-                const durationSec = quickRecordStartTime ? (Date.now() - quickRecordStartTime) / 1000 : 0;
-                const expectedSamples = durationSec > 0 ? Math.round(durationSec * targetSampleRate) : 0;
+async function clearLiveTranscript() {
+    liveTranscriptBuffer = '';
+    lastSubmittedOffset = 0;
+    cheddar.setLiveTranscript('');
+    cheddar.setStatus('转写已清空');
+    // 同步清空主进程 session 中的累积文本，否则下次推送仍会带回旧内容
+    try {
+        await ipcRenderer.invoke('clear-live-transcript');
+    } catch (e) {
+        console.warn('[clearLiveTranscript] main process clear failed:', e);
+    }
+}
 
-                let fullBuffer = Buffer.concat(quickRecordChunks);
-                const actualSamples = Math.floor(fullBuffer.length / 2);
-                let compensated = false;
-                if (expectedSamples > 0) {
-                    if (actualSamples < expectedSamples * 0.97) {
-                        const missing = expectedSamples - actualSamples;
-                        if (missing > 0) {
-                            fullBuffer = Buffer.concat([fullBuffer, Buffer.alloc(missing * 2)]);
-                            compensated = true;
-                        }
-                    } else if (actualSamples > expectedSamples * 1.03) {
-                        fullBuffer = fullBuffer.subarray(0, expectedSamples * 2);
-                        compensated = true;
-                    }
-                }
-                if (compensated || quickRecordStallCount > 0) console.warn('[quick-audio] compensated:', compensated, 'stalls:', quickRecordStallCount);
-
-                const base64 = fullBuffer.toString('base64');
-                cheddar.setStatus('🔊 转写系统音频中...');
-                const result = await ipcRenderer.invoke('save-audio-and-transcribe', { pcmBase64: base64, sampleRate: targetSampleRate });
-                if (!result || !result.success) {
-                    cheddar.setStatus('Error: ' + (result?.error || 'Unknown'));
-                }
-            } else {
-                cheddar.setStatus('未录制到音频');
-            }
-
-            isQuickRecording = false;
-            quickRecordStream = null;
+async function stopRealtimeAsrCapture() {
+    try {
+        if (quickRecorder) {
+            await quickRecorder.stop().catch(() => {});
             quickRecorder = null;
-            quickRecordChunks = [];
-            quickRecordStartTime = null;
-            quickRecordStallCount = 0;
-
-        } catch (error) {
-            cheddar.setStatus('Error: ' + error.message);
-            isQuickRecording = false;
         }
+        if (quickRecordStream) {
+            quickRecordStream.getTracks().forEach(track => track.stop());
+            quickRecordStream = null;
+        }
+        const stopRes = await ipcRenderer.invoke('stop-live-asr');
+        if (!stopRes?.success) {
+            cheddar.setStatus('Error: ' + (stopRes?.error || 'Live ASR stop failed'));
+        } else {
+            cheddar.setStatus('实时识别已停止');
+        }
+    } catch (error) {
+        cheddar.setStatus('Error: ' + error.message);
+    } finally {
+        isQuickRecording = false;
+        isLiveAsrRunning = false;
+    }
+}
+
+async function startQuickAudioCapture() {
+    if (isQuickRecording || isLiveAsrRunning) {
+        cheddar.setLiveAsrRunning(false);
+        await stopRealtimeAsrCapture();
+        await submitLiveTranscriptDelta();
         return;
     }
 
-    // 开始新的录音 - 系统音频
     try {
         if (typeof createPcmRecorder !== 'function' && nodeRequire) {
             try {
@@ -846,91 +833,105 @@ async function startQuickAudioCapture() {
             return;
         }
 
+        const apiKey = (localStorage.getItem('apiKey') || '').trim();
+        if (!apiKey) {
+            cheddar.setStatus('请先配置 API Key');
+            return;
+        }
+
+        resetLiveTranscriptState();
+        const startLiveRes = await ipcRenderer.invoke('start-live-asr', {
+            apiKey,
+            sampleRate: liveAsrSampleRate,
+        });
+        if (!startLiveRes?.success) {
+            cheddar.setStatus('Error: ' + (startLiveRes?.error || 'Live ASR start failed'));
+            return;
+        }
+
         if (isMacOS) {
-            const startRes = await ipcRenderer.invoke('start-macos-audio');
-            if (!startRes || !startRes.success) {
-                cheddar.setStatus('Error: ' + (startRes?.error || 'Start failed'));
-                return;
-            }
-            isQuickRecording = true;
-            quickRecordStartTime = Date.now();
-            const stopKey = 'Cmd+L';
-            cheddar.setStatus(`🔊 录制系统音频... (${stopKey} 停止)`);
+            cheddar.setStatus('⚠️ macOS 实时识别暂不可用');
+            await ipcRenderer.invoke('stop-live-asr').catch(() => {});
             return;
         }
 
-        // Windows/Linux - 获取系统音频
-        let streamToUse = null;
+        quickRecordStream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+                frameRate: 1,
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+            },
+            audio: {
+                channelCount: 2,
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+            },
+        });
 
-        // 检查是否有现成的 mediaStream (系统音频)
-        if (mediaStream && mediaStream.getAudioTracks().length > 0) {
-            streamToUse = new MediaStream([mediaStream.getAudioTracks()[0]]);
-            console.log('✅ 使用现有系统音频流');
-        } else {
-            // 尝试获取系统音频
-            try {
-                quickRecordStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: {
-                        frameRate: 1,
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                    },
-                    audio: {
-                        channelCount: 2,
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: false,
-                    },
-                });
-
-                const audioTracks = quickRecordStream.getAudioTracks();
-                if (audioTracks.length === 0) {
-                    // 没有系统音频，清理并提示用户
-                    quickRecordStream.getTracks().forEach(track => track.stop());
-                    quickRecordStream = null;
-                    cheddar.setStatus('⚠️ 未获取到系统音频（分享窗口时请勾选“共享音频”）');
-                    return;
-                }
-                streamToUse = new MediaStream([audioTracks[0]]);
-                console.log('✅ 获取到新的系统音频流');
-            } catch (getErr) {
-                cheddar.setStatus('⚠️ 无法获取系统音频: ' + getErr.message);
-                return;
-            }
-        }
-
-        if (!streamToUse) {
-            cheddar.setStatus('⚠️ 无系统音频流');
+        const audioTracks = quickRecordStream.getAudioTracks();
+        if (audioTracks.length === 0) {
+            quickRecordStream.getTracks().forEach(track => track.stop());
+            quickRecordStream = null;
+            cheddar.setStatus('⚠️ 未获取到系统音频（请勾选共享音频）');
+            await ipcRenderer.invoke('stop-live-asr').catch(() => {});
             return;
         }
 
-        const stopKey = platform === 'darwin' ? 'Cmd+L' : 'Ctrl+L';
-
-        quickRecordChunks = [];
+        const streamToUse = new MediaStream([audioTracks[0]]);
+        isQuickRecording = true;
+        isLiveAsrRunning = true;
         quickRecordStartTime = Date.now();
         quickRecordStallCount = 0;
-        isQuickRecording = true;
+
         quickRecorder = await createPcmRecorder({
             stream: streamToUse,
-            targetSampleRate: 16000,
-            chunkDurationSec: 0.25,
+            targetSampleRate: liveAsrSampleRate,
+            chunkDurationSec: 0.8,
             onChunk: msg => {
-                if (!isQuickRecording) return;
-                quickRecordChunks.push(Buffer.from(msg.buffer));
+                if (!isLiveAsrRunning) return;
+                const base64 = arrayBufferToBase64(msg.buffer);
+                ipcRenderer.invoke('push-live-audio-chunk', {
+                    pcmBase64: base64,
+                    sampleRate: liveAsrSampleRate,
+                }).catch(() => {});
             },
             onEvent: ev => {
                 if (ev && ev.type === 'stall') quickRecordStallCount++;
             },
         });
-        cheddar.setStatus(`🔊 录制系统音频... (${stopKey} 停止)`);
 
+        cheddar.setLiveAsrRunning(true);
+        const stopKey = platform === 'darwin' ? 'Cmd+L' : 'Ctrl+L';
+        cheddar.setStatus(`🎙️ 实时识别中... (再按 ${stopKey} 停止并提交给 AI)`);
     } catch (error) {
         cheddar.setStatus('Error: ' + error.message);
         isQuickRecording = false;
+        isLiveAsrRunning = false;
+        await ipcRenderer.invoke('stop-live-asr').catch(() => {});
     }
 }
 
+async function submitLiveTranscriptDelta() {
+    const submitText = liveTranscriptBuffer.substring(lastSubmittedOffset).trim();
+    if (!submitText) {
+        cheddar.setStatus('暂无新增转写');
+        return { success: false, submitted: false, reason: 'empty-delta' };
+    }
+
+    cheddar.setStatus('提交中...');
+    const result = await sendTextMessage(submitText);
+    if (result?.success) {
+        lastSubmittedOffset = liveTranscriptBuffer.length;
+        // 不在这里设状态——AI 流式回复期间 Qwen session 自己会设 '就绪'
+        return { success: true, submitted: true, text: submitText };
+    }
+    cheddar.setStatus('Error: ' + (result?.error || 'submit failed'));
+    return { success: false, submitted: false, reason: 'send-failed' };
+}
+
 window.startQuickAudioCapture = startQuickAudioCapture;
+window.submitLiveTranscriptDelta = submitLiveTranscriptDelta;
 
 function stopCapture() {
     if (screenshotInterval) {
@@ -1130,12 +1131,16 @@ const cheddar = {
     // Status and response functions
     setStatus: text => cheatingDaddyApp.setStatus(text),
     setResponse: response => cheatingDaddyApp.setResponse(response),
+    setLiveTranscript: transcript => cheatingDaddyApp.setLiveTranscript(transcript),
+    setLiveAsrRunning: running => cheatingDaddyApp.setLiveAsrRunning(running),
 
     // Core functionality
     initializeGemini,
     startCapture,
     stopCapture,
     sendTextMessage,
+    submitLiveTranscriptDelta,
+    clearLiveTranscript,
     handleShortcut,
 
     // Conversation history functions

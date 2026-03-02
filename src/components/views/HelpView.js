@@ -352,8 +352,12 @@ export class HelpView extends LitElement {
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.nextStep)}</div>
                             </div>
                             <div class="shortcut-item">
-                                <span class="shortcut-description">开始音频录制（转写）</span>
+                                <span class="shortcut-description">开始实时转写（再按停止并提交 AI）</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.audioCapture)}</div>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-description">清空转写内容</span>
+                                <div class="shortcut-keys"><span class="key">Ctrl</span><span class="key">Shift</span><span class="key">L</span></div>
                             </div>
                         </div>
 
@@ -406,7 +410,7 @@ export class HelpView extends LitElement {
                         <div class="usage-step"><strong>输入 License Key：</strong> 在首页输入你的 License Key（格式：CD-xxxxx），点击"开始会话"进行验证并进入窗口。</div>
                         <div class="usage-step"><strong>模型配置：</strong> 应用默认使用 Qwen 模型（qwen3-max 文本对话、qwen3-vl-plus 截图识别、qwen3-asr-flash 语音转写）。</div>
                         <div class="usage-step"><strong>截图与下一步：</strong> 使用 ${this.formatKeybind(this.keybinds.nextStep)} 截图并让 AI 给出下一步建议。</div>
-                        <div class="usage-step"><strong>音频录制：</strong> 在面试官开始说话前，使用 ${this.formatKeybind(this.keybinds.audioCapture)} 手动开始录音，结束后自动转写并回答。</div>
+                        <div class="usage-step"><strong>实时转写：</strong> 按 ${this.formatKeybind(this.keybinds.audioCapture)} 开始实时语音转写，对方说话内容实时显示；再次按下则停止并自动提交给 AI 获得回答。</div>
                         <div class="usage-step"><strong>窗口移动：</strong> 使用 ${this.formatKeybind(this.keybinds.moveUp)} / ${this.formatKeybind(this.keybinds.moveDown)} / ${this.formatKeybind(this.keybinds.moveLeft)} / ${this.formatKeybind(this.keybinds.moveRight)} 移动窗口到合适位置。</div>
                         <div class="usage-step"><strong>切换显示/隐藏：</strong> 使用 ${this.formatKeybind(this.keybinds.toggleVisibility)} 显示或隐藏窗口。</div>
                         <div class="usage-step"><strong>穿透模式：</strong> 使用 ${this.formatKeybind(this.keybinds.toggleClickThrough)} 让窗口可被点击穿透。</div>
@@ -450,7 +454,7 @@ export class HelpView extends LitElement {
                     <div class="option-label">
                         <span>音频输入</span>
                     </div>
-                    <div class="description">需要用户在面试官开始说话前，手动使用 ${this.formatKeybind(this.keybinds.audioCapture)} 开始录音；录音结束后会自动转写并用于生成回答。</div>
+                    <div class="description">按 ${this.formatKeybind(this.keybinds.audioCapture)} 开始实时语音转写，内容实时显示在转写框；再次按下则停止并自动提交全部转写内容给 AI 生成回答。按 Ctrl+Shift+L 可随时清空转写内容（不停止识别）。</div>
                 </div>
 
                 <div class="option-group">

@@ -2,6 +2,19 @@ if (require('electron-squirrel-startup')) {
     process.exit(0);
 }
 
+// Dev 热重载：修改 src/ 下任意文件后自动刷新渲染进程，无需重启
+if (process.env.NODE_ENV === 'development' || process.argv.includes('--dev')) {
+    try {
+        require('electron-reload')(require('path').join(__dirname), {
+            electron: require('path').join(__dirname, '..', 'node_modules', '.bin', 'electron'),
+            awaitWriteFinish: true,
+        });
+        console.log('🔥 [Dev] 热重载已启用，修改 src/ 文件后自动刷新');
+    } catch (e) {
+        console.warn('[Dev] electron-reload 加载失败:', e.message);
+    }
+}
+
 const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -39,6 +52,7 @@ let mainWindow = null;
 let creatingWindow = false;
 const DEFAULT_MODEL_API_BASE = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 const DEFAULT_ASR_API_BASE = 'https://dashscope.aliyuncs.com/api/v1';
+const liveAsrSessions = new Map();
 
 // Initialize random process names for stealth
 const randomNames = initializeRandomProcessNames();
@@ -168,6 +182,68 @@ async function transcribeAudio(filePath, apiKey, apiBase = DEFAULT_ASR_API_BASE)
         } catch (e2) {
             throw e2;
         }
+    }
+}
+
+function normalizeTranscriptText(input) {
+    return String(input || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+async function transcribePcmChunk({ pcmBase64, sampleRate, apiKey }) {
+    const pcmBuffer = Buffer.from(String(pcmBase64 || ''), 'base64');
+    if (!pcmBuffer.length) return { text: '' };
+
+    const { audioDir } = ensureDataDirectories();
+    const ts = Date.now();
+    const nonce = Math.random().toString(36).slice(2, 8);
+    const tempWavPath = path.join(audioDir, `audio_live_${ts}_${nonce}.wav`);
+
+    try {
+        pcmToWav(pcmBuffer, tempWavPath, sampleRate || 16000, 1, 16);
+        const result = await transcribeAudio(tempWavPath, apiKey, DEFAULT_ASR_API_BASE);
+        return { text: normalizeTranscriptText(result?.data?.text || '') };
+    } finally {
+        try {
+            if (fs.existsSync(tempWavPath)) fs.unlinkSync(tempWavPath);
+        } catch (_) {}
+    }
+}
+
+async function processLiveAsrQueue(webContentsId) {
+    const session = liveAsrSessions.get(webContentsId);
+    if (!session || session.processing) return;
+    session.processing = true;
+
+    try {
+        while (!session.stopped && session.queue.length > 0) {
+            const chunk = session.queue.shift();
+            if (!chunk?.pcmBase64) continue;
+
+            const { text } = await transcribePcmChunk({
+                pcmBase64: chunk.pcmBase64,
+                sampleRate: chunk.sampleRate || session.sampleRate || 16000,
+                apiKey: session.apiKey,
+            });
+
+            if (!text) continue;
+            session.transcriptPieces.push(text);
+            session.fullTranscript = normalizeTranscriptText(session.transcriptPieces.join(' '));
+            sendToRenderer('update-live-transcript', {
+                mode: 'replace',
+                text: session.fullTranscript,
+                delta: text,
+                isFinal: false,
+                speakerId: null,
+                timestamp: Date.now(),
+            });
+        }
+    } catch (err) {
+        console.error('❌ [live-asr] queue processing error:', err);
+        sendToRenderer('update-status', 'Error: ' + (err?.message || 'Live ASR failed'));
+    } finally {
+        session.processing = false;
     }
 }
 
@@ -337,6 +413,109 @@ function setupGeneralIpcHandlers() {
             return { success: true };
         } catch (error) {
             console.error('Error setting license key:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('start-live-asr', async (event, payload) => {
+        try {
+            const apiKey = String(payload?.apiKey || '').trim();
+            const sampleRate = Number(payload?.sampleRate) || 16000;
+            if (!apiKey) {
+                return { success: false, error: 'Missing API key' };
+            }
+
+            liveAsrSessions.set(event.sender.id, {
+                apiKey,
+                sampleRate,
+                queue: [],
+                processing: false,
+                stopped: false,
+                transcriptPieces: [],
+                fullTranscript: '',
+            });
+
+            sendToRenderer('update-live-transcript', {
+                mode: 'replace',
+                text: '',
+                delta: '',
+                isFinal: false,
+                speakerId: null,
+                timestamp: Date.now(),
+            });
+
+            return { success: true };
+        } catch (error) {
+            console.error('❌ [start-live-asr] error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('push-live-audio-chunk', async (event, payload) => {
+        try {
+            const session = liveAsrSessions.get(event.sender.id);
+            if (!session) return { success: false, error: 'Live ASR session not started' };
+            if (session.stopped) return { success: false, error: 'Live ASR session stopped' };
+
+            const pcmBase64 = String(payload?.pcmBase64 || '');
+            if (!pcmBase64) return { success: false, error: 'Missing chunk' };
+
+            session.queue.push({
+                pcmBase64,
+                sampleRate: Number(payload?.sampleRate) || session.sampleRate || 16000,
+            });
+
+            processLiveAsrQueue(event.sender.id).catch(() => {});
+            return { success: true };
+        } catch (error) {
+            console.error('❌ [push-live-audio-chunk] error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('stop-live-asr', async (event) => {
+        try {
+            const session = liveAsrSessions.get(event.sender.id);
+            if (!session) return { success: true, text: '' };
+
+            session.stopped = true;
+            while (session.processing) {
+                await new Promise(resolve => setTimeout(resolve, 20));
+            }
+            if (session.queue.length > 0) {
+                session.stopped = false;
+                await processLiveAsrQueue(event.sender.id);
+            }
+
+            session.stopped = true;
+            sendToRenderer('update-live-transcript', {
+                mode: 'replace',
+                text: session.fullTranscript || '',
+                delta: '',
+                isFinal: true,
+                speakerId: null,
+                timestamp: Date.now(),
+            });
+
+            const text = session.fullTranscript || '';
+            liveAsrSessions.delete(event.sender.id);
+            return { success: true, text };
+        } catch (error) {
+            console.error('❌ [stop-live-asr] error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('clear-live-transcript', async (event) => {
+        try {
+            const session = liveAsrSessions.get(event.sender.id);
+            if (session) {
+                session.transcriptPieces = [];
+                session.fullTranscript = '';
+            }
+            return { success: true };
+        } catch (error) {
+            console.error('❌ [clear-live-transcript] error:', error);
             return { success: false, error: error.message };
         }
     });
@@ -961,7 +1140,7 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
         const body = {
             model,
             messages: requestMessages,
-            stream: false,
+            stream: true,
             max_tokens: maxTokens,
             extra_body: { enable_thinking: false },
         };

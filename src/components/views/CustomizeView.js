@@ -674,7 +674,6 @@ export class CustomizeView extends LitElement {
             scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
             scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
             audioCapture: isMac ? 'Cmd+L' : 'Ctrl+L',
-            windowsAudioCapture: 'Ctrl+K',
             clearHistory: isMac ? "Cmd+'" : "Ctrl+'",
         };
     }
@@ -777,11 +776,6 @@ export class CustomizeView extends LitElement {
                 key: 'audioCapture',
                 name: t('keybind_audio_capture_name'),
                 description: t('keybind_audio_capture_desc'),
-            },
-            {
-                key: 'windowsAudioCapture',
-                name: t('keybind_windows_audio_capture_name'),
-                description: t('keybind_windows_audio_capture_desc'),
             },
             {
                 key: 'clearHistory',
@@ -1401,7 +1395,7 @@ export class CustomizeView extends LitElement {
                         <span>AI 模型设置</span>
                     </div>
                     <div class="form-description" style="margin-bottom: 16px;">
-                        当前使用 Qwen 模型（文本：${this.qwenTextModel}，视觉：${this.qwenVisionModel}，语音：${this.transcriptionModel}）
+                        当前使用 Qwen 模型（文本：${this.qwenTextModel}，视觉：${this.qwenVisionModel}，实时转写：${this.transcriptionModel}）
                     </div>
                     <div class="form-grid">
                         <div class="form-row">
@@ -1428,13 +1422,13 @@ export class CustomizeView extends LitElement {
 
                         <div class="form-row">
                             <div class="form-group">
-                                <label class="form-label">语音转写模型</label>
+                                <label class="form-label">实时转写模型</label>
                                 <select class="form-control" disabled .value=${this.transcriptionModel}>
                                     ${this.getTranscriptionModelOptions().map(
                                         option => html`<option value=${option.value} ?selected=${option.value === this.transcriptionModel}>${option.name}</option>`
                                     )}
                                 </select>
-                                <div class="form-description">当前仅支持 qwen3-asr-flash</div>
+                                <div class="form-description">用于 Ctrl+L 实时语音识别，当前仅支持 qwen3-asr-flash</div>
                             </div>
                         </div>
 

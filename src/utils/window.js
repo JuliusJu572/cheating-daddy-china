@@ -219,7 +219,6 @@ function getDefaultKeybinds() {
         emergencyErase: isMac ? 'Cmd+Shift+E' : 'Ctrl+Shift+E',
         audioCapture: isMac ? 'Cmd+L' : 'Ctrl+L',
         clearHistory: isMac ? "Cmd+'" : "Ctrl+'",
-        windowsAudioCapture: isMac ? 'Cmd+K' : 'Ctrl+K',
     };
 }
 
@@ -315,7 +314,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
                     await new Promise(r => setTimeout(r, 300)); // 等待窗口完全隐藏
                 }
                 try { 
-                    sendToRenderer('update-status', '正在录音...'); 
+                    sendToRenderer('update-status', '正在处理...'); 
                 } catch (_) {}
                 if (view === 'main') {
                     // ✅ 启动会话但阻止窗口显示
@@ -456,7 +455,6 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
         try {
             globalShortcut.register(keybinds.audioCapture, async () => {
                 try {
-                    sendToRenderer('update-status', '正在录音...');
                     await mainWindow.webContents.executeJavaScript(`(async () => { if (window.startQuickAudioCapture) { await window.startQuickAudioCapture(); } })()`);
                 } catch (e) {}
             });
@@ -476,18 +474,6 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
         }
     }
 
-    // Register Windows Audio Capture shortcut
-    if (keybinds.windowsAudioCapture && process.platform === 'win32') {
-        try {
-            globalShortcut.register(keybinds.windowsAudioCapture, () => {
-                console.log('Windows audio capture shortcut triggered (Ctrl+K)');
-                mainWindow.webContents.send('toggle-windows-audio-capture');
-            });
-            console.log(`Registered windowsAudioCapture: ${keybinds.windowsAudioCapture}`);
-        } catch (error) {
-            console.error(`Failed to register windowsAudioCapture (${keybinds.windowsAudioCapture}):`, error);
-        }
-    }
 }
 
 function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {

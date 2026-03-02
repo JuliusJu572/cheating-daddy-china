@@ -14,7 +14,8 @@ export class AssistantView extends LitElement {
         }
 
         .response-container {
-            height: calc(100% - 60px);
+            flex: 1;
+            min-height: 0;
             overflow-y: auto;
             border-radius: 10px;
             font-size: var(--response-font-size, 18px);
@@ -24,6 +25,61 @@ export class AssistantView extends LitElement {
             scroll-behavior: smooth;
             user-select: text;
             cursor: text;
+        }
+
+        .live-transcript-container {
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--button-border);
+            background: var(--input-background);
+            padding: 10px 12px;
+            max-height: 140px;
+            overflow-y: auto;
+            user-select: text;
+            transition: border-color 0.2s;
+        }
+
+        .live-transcript-container.recording {
+            border-color: #f44336;
+        }
+
+        .live-transcript-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .live-transcript-title {
+            font-size: 12px;
+            color: var(--description-color);
+        }
+
+        .clear-transcript-btn {
+            background: transparent;
+            border: none;
+            padding: 0 2px;
+            cursor: pointer;
+            color: var(--description-color);
+            font-size: 12px;
+            line-height: 1;
+            border-radius: 4px;
+            opacity: 0.6;
+            transition: opacity 0.15s;
+        }
+
+        .clear-transcript-btn:hover {
+            opacity: 1;
+            color: var(--text-color);
+        }
+
+        .live-transcript-content {
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--text-color);
+            white-space: pre-wrap;
+            word-break: break-word;
+            user-select: text;
         }
 
         /* Allow text selection for all content within the response container */
@@ -295,7 +351,11 @@ export class AssistantView extends LitElement {
         responses: { type: Array },
         currentResponseIndex: { type: Number },
         selectedProfile: { type: String },
+        liveTranscript: { type: String },
         onSendText: { type: Function },
+        onSubmitLiveTranscript: { type: Function },
+        onClearLiveTranscript: { type: Function },
+        isLiveAsrRunning: { type: Boolean },
         shouldAnimateResponse: { type: Boolean },
         savedResponses: { type: Array },
     };
@@ -305,7 +365,11 @@ export class AssistantView extends LitElement {
         this.responses = [];
         this.currentResponseIndex = -1;
         this.selectedProfile = 'interview';
+        this.liveTranscript = '';
         this.onSendText = () => {};
+        this.onSubmitLiveTranscript = async () => {};
+        this.onClearLiveTranscript = () => {};
+        this.isLiveAsrRunning = false;
         this._lastAnimatedWordCount = 0;
         this._mathInitialized = false;
         this._renderMathInElement = null;
@@ -662,10 +726,16 @@ export class AssistantView extends LitElement {
 
     async handleSendText() {
         const textInput = this.shadowRoot.querySelector('#textInput');
-        if (textInput && textInput.value.trim()) {
-            const message = textInput.value.trim();
-            textInput.value = ''; // Clear input
+        if (!textInput) return;
+
+        const message = textInput.value.trim();
+        textInput.value = '';
+        if (message) {
             await this.onSendText(message);
+            return;
+        }
+        if (typeof this.onSubmitLiveTranscript === 'function') {
+            await this.onSubmitLiveTranscript();
         }
     }
 
@@ -722,6 +792,17 @@ export class AssistantView extends LitElement {
             e.preventDefault();
             console.log("Ctrl+' detected, clearing history...");
             this.clearHistory();
+        }
+        // Ctrl+Shift+L to clear live transcript
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'L') {
+            e.preventDefault();
+            this.clearLiveTranscript();
+        }
+    }
+
+    clearLiveTranscript() {
+        if (typeof this.onClearLiveTranscript === 'function') {
+            this.onClearLiveTranscript();
         }
     }
 
@@ -787,6 +868,24 @@ export class AssistantView extends LitElement {
         const isSaved = this.isResponseSaved();
 
         return html`
+            <div class="live-transcript-container ${this.isLiveAsrRunning ? 'recording' : ''}">
+                <div class="live-transcript-header">
+                    <div class="live-transcript-title">
+                        ${this.isLiveAsrRunning
+                            ? html`🔴 实时识别中&nbsp;&nbsp;<span style="font-size:11px;opacity:0.7">再按 Ctrl+L 停止并提交给 AI</span>`
+                            : html`按 Ctrl+L 开始实时识别`}
+                    </div>
+                    ${this.liveTranscript ? html`
+                        <button
+                            class="clear-transcript-btn"
+                            @click=${this.clearLiveTranscript}
+                            title="清空转写 (Ctrl+Shift+L)"
+                        >✕ 清空</button>
+                    ` : ''}
+                </div>
+                <div class="live-transcript-content">${this.liveTranscript || (this.isLiveAsrRunning ? '等待语音输入...' : '按 Ctrl+L 开始实时识别')}</div>
+            </div>
+
             <div class="response-container" id="responseContainer"></div>
 
             <div class="text-input-container">
