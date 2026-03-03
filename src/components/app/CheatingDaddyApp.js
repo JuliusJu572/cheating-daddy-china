@@ -7,6 +7,7 @@ import { HistoryView } from '../views/HistoryView.js';
 import { AssistantView } from '../views/AssistantView.js';
 import { OnboardingView } from '../views/OnboardingView.js';
 import { AdvancedView } from '../views/AdvancedView.js';
+import { AuthView } from '../views/AuthView.js';
 
 export class CheatingDaddyApp extends LitElement {
     static styles = css`
@@ -112,6 +113,8 @@ export class CheatingDaddyApp extends LitElement {
         selectedImageQuality: { type: String },
         layoutMode: { type: String },
         advancedMode: { type: Boolean },
+        isUserLoggedIn: { type: Boolean },
+        userEmail: { type: String },
         _viewInstances: { type: Object, state: true },
         _isClickThrough: { state: true },
         _awaitingNewResponse: { state: true },
@@ -121,7 +124,7 @@ export class CheatingDaddyApp extends LitElement {
 
     constructor() {
         super();
-        this.currentView = localStorage.getItem('onboardingCompleted') ? 'main' : 'onboarding';
+        this.currentView = localStorage.getItem('onboardingCompleted') ? 'auth' : 'onboarding';
         this.statusText = '';
         this.startTime = null;
         this.isRecording = false;
@@ -132,6 +135,8 @@ export class CheatingDaddyApp extends LitElement {
         this.selectedImageQuality = localStorage.getItem('selectedImageQuality') || 'medium';
         this.layoutMode = localStorage.getItem('layoutMode') || 'normal';
         this.advancedMode = localStorage.getItem('advancedMode') === 'true';
+        this.isUserLoggedIn = false;
+        this.userEmail = '';
         this.responses = [];
         this.liveTranscript = '';
         this.isLiveAsrRunning = false;
@@ -165,7 +170,18 @@ export class CheatingDaddyApp extends LitElement {
             ipcRenderer.on('click-through-toggled', (_, isEnabled) => {
                 this._isClickThrough = isEnabled;
             });
+            ipcRenderer.on('user-auth-expired', (_, payload) => {
+                this.isUserLoggedIn = false;
+                this.userEmail = '';
+                this.currentView = 'auth';
+                if (payload?.message) {
+                    this.setStatus(payload.message);
+                }
+                this.requestUpdate();
+            });
         }
+
+        this.loadUserAuthState();
     }
 
     disconnectedCallback() {
@@ -176,7 +192,27 @@ export class CheatingDaddyApp extends LitElement {
             ipcRenderer.removeAllListeners('update-response-enrichment');
             ipcRenderer.removeAllListeners('update-status');
             ipcRenderer.removeAllListeners('click-through-toggled');
+            ipcRenderer.removeAllListeners('user-auth-expired');
         }
+    }
+
+    async loadUserAuthState() {
+        if (!window.require) return;
+        try {
+            const { ipcRenderer } = window.require('electron');
+            const authRes = await ipcRenderer.invoke('get-user-auth');
+            if (authRes?.success) {
+                this.isUserLoggedIn = Boolean(authRes.hasUserAuthToken);
+                if (this.currentView !== 'onboarding') {
+                    this.currentView = this.isUserLoggedIn ? 'main' : 'auth';
+                }
+            }
+            const profileRes = await ipcRenderer.invoke('user-get-profile');
+            if (profileRes?.success) {
+                this.userEmail = profileRes?.profile?.email || '';
+            }
+        } catch (_) {}
+        this.requestUpdate();
     }
 
     setStatus(text) {
@@ -269,9 +305,14 @@ export class CheatingDaddyApp extends LitElement {
         this.requestUpdate();
     }
 
+    handleAuthClick() {
+        this.currentView = 'auth';
+        this.requestUpdate();
+    }
+
     // 在 handleClose 函数中，添加 macOS 特定清理：
     async handleClose() {
-        if (this.currentView === 'customize' || this.currentView === 'help' || this.currentView === 'history') {
+        if (this.currentView === 'customize' || this.currentView === 'help' || this.currentView === 'history' || this.currentView === 'advanced') {
             this.currentView = 'main';
             this.requestUpdate();
         } else if (this.currentView === 'assistant') {
@@ -367,7 +408,11 @@ export class CheatingDaddyApp extends LitElement {
     }
 
     handleBackClick() {
-        this.currentView = 'main';
+        if (this.currentView === 'auth' && !localStorage.getItem('onboardingCompleted')) {
+            this.currentView = 'onboarding';
+        } else {
+            this.currentView = 'main';
+        }
         this.requestUpdate();
     }
 
@@ -411,7 +456,21 @@ export class CheatingDaddyApp extends LitElement {
 
     // Onboarding event handlers
     handleOnboardingComplete() {
+        this.currentView = 'auth';
+        this.requestUpdate();
+        this.loadUserAuthState();
+    }
+
+    handleAuthComplete(user) {
+        this.isUserLoggedIn = true;
+        this.userEmail = user?.email || '';
         this.currentView = 'main';
+        this.requestUpdate();
+    }
+
+    handleAuthSkip() {
+        this.currentView = 'main';
+        this.requestUpdate();
     }
 
     updated(changedProperties) {
@@ -473,6 +532,14 @@ export class CheatingDaddyApp extends LitElement {
                     ></main-view>
                 `;
 
+            case 'auth':
+                return html`
+                    <auth-view
+                        .onAuthComplete=${user => this.handleAuthComplete(user)}
+                        .onSkip=${() => this.handleAuthSkip()}
+                    ></auth-view>
+                `;
+
             case 'customize':
                 return html`
                     <customize-view
@@ -488,6 +555,7 @@ export class CheatingDaddyApp extends LitElement {
                         .onImageQualityChange=${quality => this.handleImageQualityChange(quality)}
                         .onLayoutModeChange=${layoutMode => this.handleLayoutModeChange(layoutMode)}
                         .onAdvancedModeChange=${advancedMode => this.handleAdvancedModeChange(advancedMode)}
+                        .onOpenAuth=${() => this.handleAuthClick()}
                     ></customize-view>
                 `;
 
@@ -498,7 +566,7 @@ export class CheatingDaddyApp extends LitElement {
                 return html` <history-view></history-view> `;
 
             case 'advanced':
-                return html` <advanced-view></advanced-view> `;
+                return html` <advanced-view .onOpenAuth=${() => this.handleAuthClick()}></advanced-view> `;
 
             case 'assistant':
                 return html`
@@ -539,10 +607,13 @@ export class CheatingDaddyApp extends LitElement {
                         .statusText=${this.statusText}
                         .startTime=${this.startTime}
                         .advancedMode=${this.advancedMode}
+                        .isUserLoggedIn=${this.isUserLoggedIn}
+                        .userEmail=${this.userEmail}
                         .onCustomizeClick=${() => this.handleCustomizeClick()}
                         .onHelpClick=${() => this.handleHelpClick()}
                         .onHistoryClick=${() => this.handleHistoryClick()}
                         .onAdvancedClick=${() => this.handleAdvancedClick()}
+                        .onAuthClick=${() => this.handleAuthClick()}
                         .onCloseClick=${() => this.handleClose()}
                         .onBackClick=${() => this.handleBackClick()}
                         .onHideToggleClick=${() => this.handleHideToggle()}

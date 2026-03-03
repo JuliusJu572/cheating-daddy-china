@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>用户登录</title>
+    <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<div class="container">
+    <div class="card" style="max-width:520px;margin:40px auto;">
+        <h1>账号登录 / 注册</h1>
+        <div class="muted">登录后可管理简历、录音和面试记录。</div>
+        <div class="row">
+            <button id="tab-login" class="primary">登录</button>
+            <button id="tab-register" class="primary" style="background:#334155;border-color:#334155;">注册</button>
+        </div>
+        <label for="email">邮箱</label>
+        <input id="email" type="email" placeholder="your@email.com" />
+        <label for="password">密码</label>
+        <input id="password" type="password" placeholder="至少 8 位" />
+        <button id="submit" class="primary">登录</button>
+        <div id="status"></div>
+    </div>
+</div>
+<script src="/js/api.js"></script>
+<script>
+    (function () {
+        const statusEl = document.getElementById('status');
+        const emailEl = document.getElementById('email');
+        const passwordEl = document.getElementById('password');
+        const submitEl = document.getElementById('submit');
+        const loginTab = document.getElementById('tab-login');
+        const registerTab = document.getElementById('tab-register');
+        let mode = 'login';
+
+        function setStatus(msg, type) {
+            statusEl.className = type ? `status ${type}` : '';
+            statusEl.textContent = msg || '';
+        }
+
+        function setMode(nextMode) {
+            mode = nextMode;
+            submitEl.textContent = mode === 'login' ? '登录' : '注册';
+            loginTab.style.background = mode === 'login' ? '#3b82f6' : '#334155';
+            loginTab.style.borderColor = mode === 'login' ? '#3b82f6' : '#334155';
+            registerTab.style.background = mode === 'register' ? '#3b82f6' : '#334155';
+            registerTab.style.borderColor = mode === 'register' ? '#3b82f6' : '#334155';
+            setStatus('');
+        }
+
+        loginTab.addEventListener('click', () => setMode('login'));
+        registerTab.addEventListener('click', () => setMode('register'));
+
+        submitEl.addEventListener('click', async () => {
+            const email = (emailEl.value || '').trim();
+            const password = (passwordEl.value || '').trim();
+            if (!email || !password) {
+                setStatus('请填写邮箱和密码', 'error');
+                return;
+            }
+            setStatus(mode === 'login' ? '登录中...' : '注册中...', 'success');
+            try {
+                const path = mode === 'login' ? '/auth/login' : '/auth/register';
+                const data = await WebApi.apiRequest(path, {
+                    method: 'POST',
+                    body: { email, password },
+                    requireAuth: false,
+                });
+                WebApi.setToken(data.token || '');
+                window.location.href = '/dashboard.html';
+            } catch (err) {
+                setStatus(err.message || '操作失败', 'error');
+            }
+        });
+
+        const token = WebApi.getToken();
+        if (token) {
+            WebApi.ensureLoggedIn().then(user => {
+                if (user) window.location.href = '/dashboard.html';
+            });
+        }
+    })();
+</script>
+</body>
+</html>

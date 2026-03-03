@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>个人资料</title>
+    <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<div class="container">
+    <div class="nav">
+        <a href="/dashboard.html">总览</a>
+        <a href="/resumes.html">简历</a>
+        <a href="/voices.html">录音</a>
+        <a href="/sessions.html">面试记录</a>
+        <a href="/profile.html">个人资料</a>
+    </div>
+    <div class="card">
+        <h1>个人资料</h1>
+        <div id="basic" class="muted"></div>
+    </div>
+    <div class="card">
+        <h2>编辑资料</h2>
+        <label for="displayName">昵称</label>
+        <input id="displayName" />
+        <label for="avatarUrl">头像地址</label>
+        <input id="avatarUrl" />
+        <label for="bio">简介</label>
+        <textarea id="bio"></textarea>
+        <button id="save-btn" class="primary">保存</button>
+        <div id="status"></div>
+    </div>
+</div>
+<script src="/js/api.js"></script>
+<script>
+    (function () {
+        const statusEl = document.getElementById('status');
+
+        function setStatus(msg, type) {
+            statusEl.className = msg ? `status ${type || 'success'}` : '';
+            statusEl.textContent = msg || '';
+        }
+
+        async function loadProfile() {
+            const me = await WebApi.apiRequest('/auth/me');
+            const profileRes = await WebApi.apiRequest('/api/profile');
+            const p = profileRes.profile || {};
+            document.getElementById('basic').textContent = `邮箱：${me.user?.email || p.email || '-'}；注册时间：${new Date(
+                me.user?.createdAt || p.createdAt || Date.now()
+            ).toLocaleString()}`;
+            document.getElementById('displayName').value = p.displayName || '';
+            document.getElementById('avatarUrl').value = p.avatarUrl || '';
+            document.getElementById('bio').value = p.bio || '';
+        }
+
+        document.getElementById('save-btn').addEventListener('click', async () => {
+            const displayName = document.getElementById('displayName').value || '';
+            const avatarUrl = document.getElementById('avatarUrl').value || '';
+            const bio = document.getElementById('bio').value || '';
+            try {
+                await WebApi.apiRequest('/api/profile', {
+                    method: 'PUT',
+                    body: { displayName, avatarUrl, bio },
+                });
+                setStatus('保存成功', 'success');
+                await loadProfile();
+            } catch (err) {
+                setStatus(err.message || '保存失败', 'error');
+            }
+        });
+
+        WebApi.ensureLoggedIn().then(user => {
+            if (!user) return;
+            loadProfile().catch(err => setStatus(err.message, 'error'));
+        });
+    })();
+</script>
+</body>
+</html>

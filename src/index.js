@@ -541,17 +541,45 @@ function setupGeneralIpcHandlers() {
         };
     }
 
-    async function userApiPost(path, body, token) {
-        const { userApiBase } = getUserApiConfig();
+    function notifyUserAuthExpired(message = '登录已过期，请重新登录') {
+        try {
+            const cfg = getLocalConfig();
+            if (cfg.userAuthToken) {
+                cfg.userAuthToken = '';
+                writeConfig(cfg);
+            }
+        } catch (_) {}
+        sendToRenderer('user-auth-expired', { message });
+    }
+
+    async function userApiRequest(path, options = {}) {
+        const { method = 'GET', body = null, headers = {}, requireAuth = false } = options;
+        const { userApiBase, userAuthToken } = getUserApiConfig();
         if (!userApiBase) throw new Error('未配置用户服务地址 (userApiBase)');
-        const headers = { 'Content-Type': 'application/json; charset=utf-8' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const finalHeaders = { ...headers };
+        if (requireAuth) {
+            if (!userAuthToken) {
+                return { ok: false, status: 401, data: { error: '请先登录账号' } };
+            }
+            finalHeaders.Authorization = `Bearer ${userAuthToken}`;
+        }
+
+        let payloadBody = body;
+        if (body && typeof body === 'object' && !(body instanceof FormData) && !finalHeaders['Content-Type']) {
+            finalHeaders['Content-Type'] = 'application/json; charset=utf-8';
+            payloadBody = JSON.stringify(body);
+        }
+
         const res = await fetch(`${userApiBase}${path}`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body || {}),
+            method,
+            headers: finalHeaders,
+            body: payloadBody,
         });
         const data = await res.json().catch(() => ({}));
+        if (requireAuth && res.status === 401) {
+            notifyUserAuthExpired(data?.error || '登录已过期，请重新登录');
+        }
         return { status: res.status, ok: res.ok, data };
     }
 
@@ -559,7 +587,7 @@ function setupGeneralIpcHandlers() {
         try {
             const { email, password } = payload || {};
             if (!email || !password) return { success: false, error: 'email/password required' };
-            const { ok, data } = await userApiPost('/auth/register', { email, password });
+            const { ok, data } = await userApiRequest('/auth/register', { method: 'POST', body: { email, password } });
             if (!ok) return { success: false, error: data?.error || 'register failed' };
             const cfg = getLocalConfig();
             cfg.userAuthToken = data.token || '';
@@ -575,7 +603,7 @@ function setupGeneralIpcHandlers() {
         try {
             const { email, password } = payload || {};
             if (!email || !password) return { success: false, error: 'email/password required' };
-            const { ok, data } = await userApiPost('/auth/login', { email, password });
+            const { ok, data } = await userApiRequest('/auth/login', { method: 'POST', body: { email, password } });
             if (!ok) return { success: false, error: data?.error || 'login failed' };
             const cfg = getLocalConfig();
             cfg.userAuthToken = data.token || '';
@@ -591,7 +619,7 @@ function setupGeneralIpcHandlers() {
         try {
             const licenseKey = String(payload?.licenseKey || '').trim();
             if (!licenseKey) return { success: false, error: 'licenseKey required' };
-            const { ok, data } = await userApiPost('/auth/license', { licenseKey });
+            const { ok, data } = await userApiRequest('/auth/license', { method: 'POST', body: { licenseKey } });
             if (!ok) return { success: false, error: data?.error || 'license login failed' };
             const cfg = getLocalConfig();
             cfg.userAuthToken = data.token || '';
@@ -615,6 +643,23 @@ function setupGeneralIpcHandlers() {
         }
     });
 
+    ipcMain.handle('user-get-profile', async () => {
+        try {
+            const { ok, status, data } = await userApiRequest('/auth/me', {
+                method: 'GET',
+                requireAuth: true,
+            });
+            if (!ok) {
+                if (status === 401) return { success: false, error: data?.error || 'login expired', authExpired: true };
+                return { success: false, error: data?.error || 'get profile failed' };
+            }
+            return { success: true, profile: data?.user || {} };
+        } catch (error) {
+            console.error('user-get-profile error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
     ipcMain.handle('user-upload-resume', async (_event, payload) => {
         try {
             const filePath = String(payload?.filePath || '').trim();
@@ -629,16 +674,16 @@ function setupGeneralIpcHandlers() {
             const form = new FormData();
             form.append('resume', fs.createReadStream(filePath));
 
-            const res = await fetch(`${userApiBase}/api/resume/upload`, {
+            const { ok, status, data } = await userApiRequest('/api/resume/upload', {
                 method: 'POST',
-                headers: {
-                    ...form.getHeaders(),
-                    Authorization: `Bearer ${userAuthToken}`,
-                },
+                headers: form.getHeaders(),
                 body: form,
+                requireAuth: true,
             });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) return { success: false, error: data?.error || 'upload failed' };
+            if (!ok) {
+                if (status === 401) return { success: false, error: data?.error || '登录已过期，请重新登录', authExpired: true };
+                return { success: false, error: data?.error || 'upload failed' };
+            }
             return { success: true, resume: data.resume };
         } catch (error) {
             console.error('user-upload-resume error:', error);
@@ -652,12 +697,14 @@ function setupGeneralIpcHandlers() {
             if (!userApiBase) return { success: false, error: '未配置用户服务地址' };
             if (!userAuthToken) return { success: false, resumes: [] };
 
-            const res = await fetch(`${userApiBase}/api/resume/list`, {
+            const { ok, status, data } = await userApiRequest('/api/resume/list', {
                 method: 'GET',
-                headers: { Authorization: `Bearer ${userAuthToken}` },
+                requireAuth: true,
             });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) return { success: false, error: data?.error || 'list failed' };
+            if (!ok) {
+                if (status === 401) return { success: false, resumes: [], error: data?.error || '登录已过期，请重新登录', authExpired: true };
+                return { success: false, error: data?.error || 'list failed' };
+            }
             return { success: true, resumes: data.resumes || [] };
         } catch (error) {
             console.error('user-list-resumes error:', error);

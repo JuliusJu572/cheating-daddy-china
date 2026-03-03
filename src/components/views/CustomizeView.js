@@ -434,6 +434,7 @@ export class CustomizeView extends LitElement {
         resumeMessage: { type: String },
         resumeMessageType: { type: String },
         isUserLoggedIn: { type: Boolean },
+        onOpenAuth: { type: Function },
     };
 
     constructor() {
@@ -483,6 +484,7 @@ export class CustomizeView extends LitElement {
         this.resumeMessage = '';
         this.resumeMessageType = '';
         this.isUserLoggedIn = false;
+        this.onOpenAuth = () => {};
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
@@ -1633,7 +1635,12 @@ export class CustomizeView extends LitElement {
                     </div>
                     ${!this.isUserLoggedIn ? html`
                         <div class="form-description" style="color:rgba(251,191,36,0.9);">
-                            请先在「高级设置」中登录账号，再上传简历。
+                            当前未登录，登录后可上传并管理简历上下文。
+                        </div>
+                        <div class="button-group" style="margin-top:10px;">
+                            <button class="action-button" @click=${() => this.onOpenAuth()}>
+                                前往登录 / 注册
+                            </button>
                         </div>
                     ` : html`
                         <div class="form-description">

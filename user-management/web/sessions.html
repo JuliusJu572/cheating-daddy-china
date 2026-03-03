@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>面试记录</title>
+    <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<div class="container">
+    <div class="nav">
+        <a href="/dashboard.html">总览</a>
+        <a href="/resumes.html">简历</a>
+        <a href="/voices.html">录音</a>
+        <a href="/sessions.html">面试记录</a>
+        <a href="/profile.html">个人资料</a>
+    </div>
+    <div class="card">
+        <h1>面试会话</h1>
+        <div class="row">
+            <input id="session-title" placeholder="会话标题（可选）" />
+            <input id="session-profile" placeholder="profileType" value="interview" />
+        </div>
+        <button id="create-session-btn" class="primary">创建会话</button>
+        <div id="status"></div>
+    </div>
+    <div class="card">
+        <h2>会话列表</h2>
+        <div id="session-list"></div>
+    </div>
+    <div class="card">
+        <h2>会话详情</h2>
+        <div id="session-detail" class="small">点击会话查看详情</div>
+    </div>
+</div>
+<script src="/js/api.js"></script>
+<script>
+    (function () {
+        const statusEl = document.getElementById('status');
+        const listEl = document.getElementById('session-list');
+        const detailEl = document.getElementById('session-detail');
+
+        function setStatus(msg, type) {
+            statusEl.className = msg ? `status ${type || 'success'}` : '';
+            statusEl.textContent = msg || '';
+        }
+
+        async function loadSessions() {
+            const data = await WebApi.apiRequest('/api/sessions');
+            const sessions = data.sessions || [];
+            listEl.innerHTML = sessions.length
+                ? sessions.map(s => `
+                    <div class="list-item">
+                        <div>
+                            <div>${s.title || '未命名会话'} (${s.profile_type})</div>
+                            <div class="small">状态: ${s.status}，轮次: ${s.total_turns || 0}，${new Date(s.created_at).toLocaleString()}</div>
+                        </div>
+                        <button class="primary" data-id="${s.id}">查看详情</button>
+                    </div>
+                `).join('')
+                : '<div class="small">暂无会话</div>';
+            listEl.querySelectorAll('button[data-id]').forEach(btn => {
+                btn.addEventListener('click', () => loadSessionDetail(btn.dataset.id));
+            });
+        }
+
+        async function loadSessionDetail(id) {
+            try {
+                const data = await WebApi.apiRequest(`/api/sessions/${id}`);
+                const s = data.session || {};
+                const rs = data.responses || [];
+                detailEl.innerHTML = `
+                    <div><strong>${s.title || '未命名会话'}</strong></div>
+                    <div class="small">profile: ${s.profile_type} | lang: ${s.language} | status: ${s.status}</div>
+                    <hr style="border-color:#25324a;">
+                    ${rs.length ? rs.map(r => `
+                        <div style="margin-bottom:10px;">
+                            <div><strong>Q${r.turn_index}:</strong> ${r.question_text || '-'}</div>
+                            <div class="small"><strong>A:</strong> ${r.answer_text || '-'}</div>
+                        </div>
+                    `).join('') : '<div class="small">暂无问答明细</div>'}
+                `;
+            } catch (err) {
+                setStatus(err.message, 'error');
+            }
+        }
+
+        document.getElementById('create-session-btn').addEventListener('click', async () => {
+            const title = (document.getElementById('session-title').value || '').trim();
+            const profileType = (document.getElementById('session-profile').value || 'interview').trim();
+            try {
+                await WebApi.apiRequest('/api/sessions', {
+                    method: 'POST',
+                    body: { title, profileType, language: 'zh-CN' },
+                });
+                setStatus('会话创建成功', 'success');
+                await loadSessions();
+            } catch (err) {
+                setStatus(err.message, 'error');
+            }
+        });
+
+        WebApi.ensureLoggedIn().then(user => {
+            if (!user) return;
+            loadSessions().catch(err => setStatus(err.message, 'error'));
+        });
+    })();
+</script>
+</body>
+</html>

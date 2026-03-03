@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>简历管理</title>
+    <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<div class="container">
+    <div class="nav">
+        <a href="/dashboard.html">总览</a>
+        <a href="/resumes.html">简历</a>
+        <a href="/voices.html">录音</a>
+        <a href="/sessions.html">面试记录</a>
+        <a href="/profile.html">个人资料</a>
+    </div>
+    <div class="card">
+        <h1>简历管理</h1>
+        <div class="muted">支持 PDF / DOCX，上传后会自动进行解析。</div>
+        <input id="resume-file" type="file" accept=".pdf,.docx" />
+        <button id="upload-btn" class="primary">上传简历</button>
+        <div id="status"></div>
+    </div>
+    <div class="card">
+        <h2>已上传简历</h2>
+        <div id="resume-list"></div>
+    </div>
+</div>
+<script src="/js/api.js"></script>
+<script>
+    (function () {
+        const statusEl = document.getElementById('status');
+        const listEl = document.getElementById('resume-list');
+        const fileEl = document.getElementById('resume-file');
+
+        function setStatus(msg, type) {
+            statusEl.className = msg ? `status ${type || 'success'}` : '';
+            statusEl.textContent = msg || '';
+        }
+
+        async function loadResumes() {
+            const data = await WebApi.apiRequest('/api/resume/list');
+            const rows = data.resumes || [];
+            listEl.innerHTML = rows.length
+                ? rows
+                    .map(r => `
+                        <div class="list-item">
+                            <div>
+                                <div>${r.original_filename || '简历'}</div>
+                                <div class="small">${new Date(r.created_at).toLocaleString()}</div>
+                            </div>
+                            <button class="danger" data-id="${r.id}">删除</button>
+                        </div>
+                    `)
+                    .join('')
+                : '<div class="small">暂无简历</div>';
+            listEl.querySelectorAll('button[data-id]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    try {
+                        await WebApi.apiRequest(`/api/resume/${btn.dataset.id}`, { method: 'DELETE' });
+                        await loadResumes();
+                    } catch (err) {
+                        setStatus(err.message, 'error');
+                    }
+                });
+            });
+        }
+
+        document.getElementById('upload-btn').addEventListener('click', async () => {
+            const file = fileEl.files?.[0];
+            if (!file) {
+                setStatus('请选择简历文件', 'error');
+                return;
+            }
+            const form = new FormData();
+            form.append('resume', file);
+            setStatus('上传中...');
+            try {
+                await WebApi.apiRequest('/api/resume/upload', { method: 'POST', body: form });
+                fileEl.value = '';
+                setStatus('上传成功', 'success');
+                await loadResumes();
+            } catch (err) {
+                setStatus(err.message || '上传失败', 'error');
+            }
+        });
+
+        WebApi.ensureLoggedIn().then(user => {
+            if (!user) return;
+            loadResumes().catch(err => setStatus(err.message, 'error'));
+        });
+    })();
+</script>
+</body>
+</html>

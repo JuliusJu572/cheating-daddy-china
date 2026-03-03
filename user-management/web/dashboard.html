@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>管理后台 - 总览</title>
+    <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<div class="container">
+    <div class="nav">
+        <a href="/dashboard.html">总览</a>
+        <a href="/resumes.html">简历</a>
+        <a href="/voices.html">录音</a>
+        <a href="/sessions.html">面试记录</a>
+        <a href="/profile.html">个人资料</a>
+        <button id="logout-btn">退出登录</button>
+    </div>
+    <div class="card">
+        <h1>管理后台总览</h1>
+        <div id="user-line" class="muted"></div>
+    </div>
+    <div class="row">
+        <div class="card"><h2>简历数量</h2><div id="resume-count">-</div></div>
+        <div class="card"><h2>录音数量</h2><div id="voice-count">-</div></div>
+    </div>
+    <div class="card"><h2>面试会话数量</h2><div id="session-count">-</div></div>
+</div>
+<script src="/js/api.js"></script>
+<script>
+    (async function () {
+        const user = await WebApi.ensureLoggedIn();
+        if (!user) return;
+        document.getElementById('user-line').textContent = `当前账号：${user.email || '未绑定邮箱'}`;
+
+        const [resumes, voices, sessions] = await Promise.all([
+            WebApi.apiRequest('/api/resume/list').catch(() => ({ resumes: [] })),
+            WebApi.apiRequest('/api/voice/list').catch(() => ({ voices: [] })),
+            WebApi.apiRequest('/api/sessions').catch(() => ({ sessions: [] })),
+        ]);
+        document.getElementById('resume-count').textContent = (resumes.resumes || []).length;
+        document.getElementById('voice-count').textContent = (voices.voices || []).length;
+        document.getElementById('session-count').textContent = (sessions.sessions || []).length;
+
+        document.getElementById('logout-btn').addEventListener('click', () => {
+            WebApi.setToken('');
+            window.location.href = '/index.html';
+        });
+    })();
+</script>
+</body>
+</html>

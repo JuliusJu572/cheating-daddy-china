@@ -87,6 +87,14 @@ export class AppHeader extends LitElement {
             font-size: 12px;
             margin: 0px;
         }
+
+        .auth-chip {
+            font-size: 11px;
+            border: 1px solid var(--button-border);
+            border-radius: 999px;
+            padding: 4px 8px;
+            color: var(--header-actions-color);
+        }
     `;
 
     static properties = {
@@ -102,6 +110,9 @@ export class AppHeader extends LitElement {
         isClickThrough: { type: Boolean, reflect: true },
         advancedMode: { type: Boolean },
         onAdvancedClick: { type: Function },
+        isUserLoggedIn: { type: Boolean },
+        userEmail: { type: String },
+        onAuthClick: { type: Function },
     };
 
     constructor() {
@@ -118,6 +129,9 @@ export class AppHeader extends LitElement {
         this.isClickThrough = false;
         this.advancedMode = false;
         this.onAdvancedClick = () => {};
+        this.isUserLoggedIn = false;
+        this.userEmail = '';
+        this.onAuthClick = () => {};
         this._timerInterval = null;
     }
 
@@ -182,6 +196,7 @@ export class AppHeader extends LitElement {
             history: t('header_title_history'),
             advanced: t('header_title_advanced'),
             assistant: t('header_title_assistant'),
+            auth: '账号登录',
         };
         return titles[this.currentView] || t('header_title_main');
     }
@@ -195,7 +210,7 @@ export class AppHeader extends LitElement {
     }
 
     isNavigationView() {
-        const navigationViews = ['customize', 'help', 'history', 'advanced'];
+        const navigationViews = ['customize', 'help', 'history', 'advanced', 'auth'];
         return navigationViews.includes(this.currentView);
     }
 
@@ -214,6 +229,9 @@ export class AppHeader extends LitElement {
                         : ''}
                     ${this.currentView === 'main'
                         ? html`
+                              ${this.isUserLoggedIn
+                                  ? html`<span class="auth-chip" title=${this.userEmail || '已登录'}>${this.userEmail || '已登录'}</span>`
+                                  : html`<button class="button" @click=${this.onAuthClick}>登录</button>`}
                               <button class="icon-button" @click=${this.onHistoryClick}>
                                   <?xml version="1.0" encoding="UTF-8"?><svg
                                       width="24px"

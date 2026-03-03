@@ -1,4 +1,5 @@
 const fs = require('node:fs');
+const path = require('node:path');
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
@@ -7,6 +8,9 @@ const pool = require('./db/pool');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const resumeRoutes = require('./routes/resume');
+const profileRoutes = require('./routes/profile');
+const voiceRoutes = require('./routes/voice');
+const sessionRoutes = require('./routes/sessions');
 
 if (!config.jwtSecret) {
     throw new Error('JWT_SECRET is required');
@@ -33,6 +37,14 @@ app.get('/healthz', async (_req, res) => {
 app.use('/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/resume', resumeRoutes);
+app.use('/api/profile', profileRoutes);
+app.use('/api/voice', voiceRoutes);
+app.use('/api/sessions', sessionRoutes);
+
+const webRoot = path.resolve(__dirname, '../web');
+if (fs.existsSync(webRoot)) {
+    app.use('/', express.static(webRoot));
+}
 
 app.listen(config.port, () => {
     console.log(`user-management listening on :${config.port}`);

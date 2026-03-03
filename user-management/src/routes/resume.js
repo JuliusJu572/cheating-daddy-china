@@ -3,6 +3,7 @@ const path = require('node:path');
 const express = require('express');
 const multer = require('multer');
 const config = require('../config');
+const pool = require('../db/pool');
 const { authRequired } = require('../middleware/auth');
 const { createResume, listResumesByUser } = require('../services/resumeService');
 
@@ -54,6 +55,33 @@ router.get('/list', authRequired, async (req, res) => {
     try {
         const rows = await listResumesByUser(req.user.id);
         return res.json({ success: true, resumes: rows });
+    } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.delete('/:id', authRequired, async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id)) {
+            return res.status(400).json({ success: false, error: 'invalid id' });
+        }
+        const deleted = await pool.query(
+            `
+            DELETE FROM resumes
+            WHERE id = $1 AND user_id = $2
+            RETURNING file_path
+            `,
+            [id, req.user.id]
+        );
+        if (deleted.rowCount === 0) {
+            return res.status(404).json({ success: false, error: 'resume not found' });
+        }
+        const filePath = deleted.rows[0].file_path;
+        try {
+            if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        } catch (_) {}
+        return res.json({ success: true });
     } catch (err) {
         return res.status(500).json({ success: false, error: err.message });
     }
