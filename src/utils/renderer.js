@@ -90,14 +90,11 @@ async function hydrateLocalStorageFromConfig() {
             const v = cfg.apiKey.trim();
             if (v) localStorage.setItem('apiKey', v);
         }
-        if (typeof cfg.enableIntentPrediction === 'boolean') {
-            localStorage.setItem('enableIntentPrediction', String(cfg.enableIntentPrediction));
-        }
         if (typeof cfg.enableEnrichment === 'boolean') {
             localStorage.setItem('enableEnrichment', String(cfg.enableEnrichment));
         }
         if (typeof cfg.asrChunkDurationSec === 'number' && Number.isFinite(cfg.asrChunkDurationSec)) {
-            const v = Math.max(0.5, Math.min(1.5, cfg.asrChunkDurationSec));
+            const v = Math.max(0, Math.min(10, cfg.asrChunkDurationSec));
             localStorage.setItem('asrChunkDurationSec', String(v));
         }
     } catch (e) {}
@@ -127,6 +124,8 @@ let quickRecordChunks = [];
 let quickRecordStartTime = null;
 let quickRecordStallCount = 0;
 let isLiveAsrRunning = false;
+let liveAsrNoChunking = false;
+let liveAsrBufferedChunks = [];
 let liveTranscriptBuffer = '';
 let lastSubmittedOffset = 0;
 let liveAsrSampleRate = 16000;
@@ -326,10 +325,6 @@ async function refineCurrentSegment() {
         if (committedRawLength !== committedRawLengthAtRequest) return;
         if (result?.success && result.cleaned) {
             currentSegmentCleaned = result.cleaned;
-            const enableIntent = localStorage.getItem('enableIntentPrediction') !== 'false';
-            if (enableIntent && typeof cheddar?.setIntentPreview === 'function' && result.intentPreview) {
-                cheddar.setIntentPreview(result.intentPreview);
-            }
         }
     } catch (e) {
         console.warn('[refine-segment]', e);
@@ -355,16 +350,12 @@ async function doCommitSegment() {
     if (!currentSegmentRaw || currentSegmentRaw.length < COMMIT_MIN_CHARS) return;
     isCommitting = true;
     const committedRawLengthAtRequest = liveTranscriptBuffer.length;
-    const enableIntent = localStorage.getItem('enableIntentPrediction') !== 'false';
     try {
         const result = await ipcRenderer.invoke('commit-transcript-segment', { transcript: currentSegmentRaw });
         if (result?.success && result.cleaned) {
             committedDisplay += (committedDisplay ? ' ' : '') + result.cleaned;
             committedRawLength = committedRawLengthAtRequest;
             currentSegmentCleaned = '';
-            if (enableIntent && result.intentPreview && typeof cheddar?.setIntentPreview === 'function') {
-                cheddar.setIntentPreview(result.intentPreview);
-            }
         }
     } catch (e) {
         console.warn('[commit-segment]', e);
@@ -393,13 +384,6 @@ ipcRenderer.on('update-live-transcript', (_event, payload) => {
         }
     } else {
         stopRefineInterval();
-    }
-});
-
-ipcRenderer.on('update-intent-preview', (_event, payload) => {
-    const text = typeof payload?.text === 'string' ? payload.text : '';
-    if (typeof cheddar?.setIntentPreview === 'function') {
-        cheddar.setIntentPreview(text);
     }
 });
 
@@ -895,6 +879,8 @@ async function captureManualScreenshot(imageQuality = null) {
 window.captureManualScreenshot = captureManualScreenshot;
 
 function resetLiveTranscriptState() {
+    liveAsrNoChunking = false;
+    liveAsrBufferedChunks = [];
     liveTranscriptBuffer = '';
     cleanedTranscriptDisplay = '';
     committedDisplay = '';
@@ -909,9 +895,6 @@ function resetLiveTranscriptState() {
     lastIntentPredictAt = 0;
     lastIntentPredictLen = 0;
     cheddar.setLiveTranscript('');
-    if (typeof cheddar?.setIntentPreview === 'function') {
-        cheddar.setIntentPreview('');
-    }
 }
 
 async function clearLiveTranscript() {
@@ -942,6 +925,21 @@ async function stopRealtimeAsrCapture() {
             await quickRecorder.stop().catch(() => {});
             quickRecorder = null;
         }
+        if (liveAsrNoChunking && liveAsrBufferedChunks.length > 0) {
+            const totalLength = liveAsrBufferedChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            if (totalLength > 0) {
+                const merged = new Uint8Array(totalLength);
+                let offset = 0;
+                for (const chunk of liveAsrBufferedChunks) {
+                    merged.set(chunk, offset);
+                    offset += chunk.length;
+                }
+                await ipcRenderer.invoke('push-live-audio-chunk', {
+                    pcmBase64: arrayBufferToBase64(merged.buffer),
+                    sampleRate: liveAsrSampleRate,
+                });
+            }
+        }
         if (quickRecordStream) {
             quickRecordStream.getTracks().forEach(track => track.stop());
             quickRecordStream = null;
@@ -957,9 +955,8 @@ async function stopRealtimeAsrCapture() {
     } finally {
         isQuickRecording = false;
         isLiveAsrRunning = false;
-        if (typeof cheddar?.setIntentPreview === 'function') {
-            cheddar.setIntentPreview('');
-        }
+        liveAsrNoChunking = false;
+        liveAsrBufferedChunks = [];
     }
 }
 
@@ -971,7 +968,6 @@ async function startQuickAudioCapture(options = {}) {
         await stopRealtimeAsrCapture();
         await submitLiveTranscriptDelta();
         cheddar.setLiveTranscript('');
-        if (typeof cheddar?.setIntentPreview === 'function') cheddar.setIntentPreview('');
         return;
     }
 
@@ -1063,22 +1059,36 @@ async function startQuickAudioCapture(options = {}) {
         isLiveAsrRunning = true;
         quickRecordStartTime = Date.now();
         quickRecordStallCount = 0;
+        liveAsrBufferedChunks = [];
 
-        const chunkDur = (() => {
-            const v = parseFloat(localStorage.getItem('asrChunkDurationSec') || '1');
-            return Number.isFinite(v) && v >= 0.5 && v <= 1.5 ? v : 1;
+        const asrChunkConfig = (() => {
+            const v = parseFloat(localStorage.getItem('asrChunkDurationSec') || '0');
+            const normalized = Number.isFinite(v) ? Math.max(0, Math.min(10, v)) : 0;
+            return {
+                raw: normalized,
+                noChunking: normalized === 0,
+                recorderChunkSec: normalized === 0 ? 0.25 : normalized,
+            };
         })();
+        liveAsrNoChunking = asrChunkConfig.noChunking;
+        const monitorStallMs = Math.max(1500, Math.round(asrChunkConfig.recorderChunkSec * 3000));
         quickRecorder = await createPcmRecorder({
             stream: streamToUse,
             targetSampleRate: liveAsrSampleRate,
-            chunkDurationSec: chunkDur,
+            chunkDurationSec: asrChunkConfig.recorderChunkSec,
+            monitorStallMs,
             onChunk: msg => {
                 if (!isLiveAsrRunning) return;
-                const base64 = arrayBufferToBase64(msg.buffer);
-                ipcRenderer.invoke('push-live-audio-chunk', {
-                    pcmBase64: base64,
-                    sampleRate: liveAsrSampleRate,
-                }).catch(() => {});
+                if (liveAsrNoChunking) {
+                    liveAsrBufferedChunks.push(new Uint8Array(msg.buffer));
+                    return;
+                }
+                ipcRenderer
+                    .invoke('push-live-audio-chunk', {
+                        pcmBase64: arrayBufferToBase64(msg.buffer),
+                        sampleRate: liveAsrSampleRate,
+                    })
+                    .catch(() => {});
             },
             onEvent: ev => {
                 if (ev && ev.type === 'stall') quickRecordStallCount++;
@@ -1101,6 +1111,8 @@ async function startQuickAudioCapture(options = {}) {
         cheddar.setStatus('Error: ' + error.message);
         isQuickRecording = false;
         isLiveAsrRunning = false;
+        liveAsrNoChunking = false;
+        liveAsrBufferedChunks = [];
         await ipcRenderer.invoke('stop-live-asr').catch(() => {});
     }
 }
@@ -1334,7 +1346,6 @@ const cheddar = {
     setStatus: text => cheatingDaddyApp.setStatus(text),
     setResponse: response => cheatingDaddyApp.setResponse(response),
     setLiveTranscript: transcript => cheatingDaddyApp.setLiveTranscript(transcript),
-    setIntentPreview: text => cheatingDaddyApp.setIntentPreview(text),
     setLiveAsrRunning: running => cheatingDaddyApp.setLiveAsrRunning(running),
 
     // Core functionality

@@ -41,7 +41,7 @@ function configureWindowsPaths() {
 configureWindowsPaths();
 const { createWindow, updateGlobalShortcuts, ensureDataDirectories } = require('./utils/window');
 const { setupGeminiIpcHandlers, stopMacOSAudioCapture, sendToRenderer, initializeGeminiSession } = require('./utils/gemini');
-const { getSystemPrompt, getIntentPredictionPrompt, getEnrichmentPromptAppend } = require('./utils/prompts');
+const { getSystemPrompt, getTranscriptCleanPrompt, getEnrichmentPromptAppend } = require('./utils/prompts');
 const { initializeRandomProcessNames } = require('./utils/processRandomizer');
 const { applyAntiAnalysisMeasures } = require('./utils/stealthFeatures');
 const { getLocalConfig, writeConfig } = require('./config');
@@ -406,14 +406,11 @@ function setupGeneralIpcHandlers() {
             if (typeof next.enableContext === 'boolean') {
                 cfg.enableContext = next.enableContext;
             }
-            if (typeof next.enableIntentPrediction === 'boolean') {
-                cfg.enableIntentPrediction = next.enableIntentPrediction;
-            }
             if (typeof next.enableEnrichment === 'boolean') {
                 cfg.enableEnrichment = next.enableEnrichment;
             }
             if (typeof next.asrChunkDurationSec === 'number' && Number.isFinite(next.asrChunkDurationSec)) {
-                const v = Math.max(0.5, Math.min(1.5, next.asrChunkDurationSec));
+                const v = Math.max(0, Math.min(10, next.asrChunkDurationSec));
                 cfg.asrChunkDurationSec = v;
             }
 
@@ -553,9 +550,8 @@ function setupGeneralIpcHandlers() {
         }
     });
 
-    function parseIntentPredictionResponse(text) {
+    function parseTranscriptCleanResponse(text) {
         let cleaned = '';
-        let intentPreview = '';
         try {
             let raw = (text || '').trim();
             raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
@@ -566,13 +562,11 @@ function setupGeneralIpcHandlers() {
             }
             const obj = JSON.parse(raw);
             cleaned = obj.cleaned || '';
-            const suggestions = obj.suggestions || '';
-            intentPreview = suggestions && suggestions !== '等待更多内容...' ? suggestions : '';
             if (cleaned === '等待更多内容...') cleaned = '';
         } catch (e) {
-            console.warn('[parseIntentPrediction] JSON parse failed:', e);
+            console.warn('[parseTranscriptClean] JSON parse failed:', e);
         }
-        return { cleaned, intentPreview };
+        return { cleaned };
     }
 
     async function fetchWithTimeout(url, options, timeoutMs) {
@@ -591,7 +585,7 @@ function setupGeneralIpcHandlers() {
         if (!apiKey) return { success: false, error: 'Missing API key' };
         const apiBase = (cfg?.modelApiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '');
         const endpoint = `${apiBase}/chat/completions`;
-        const sysPrompt = getIntentPredictionPrompt();
+        const sysPrompt = getTranscriptCleanPrompt();
         const preferredModel = (cfg?.qwenTextModel || '').trim();
         const modelCandidates = [];
         if (preferredModel) modelCandidates.push(preferredModel);
@@ -630,8 +624,8 @@ function setupGeneralIpcHandlers() {
                     }
                     const data = await res.json();
                     const text = data?.choices?.[0]?.message?.content || '';
-                    const parsed = parseIntentPredictionResponse(text);
-                    if (parsed.cleaned || parsed.intentPreview) {
+                    const parsed = parseTranscriptCleanResponse(text);
+                    if (parsed.cleaned) {
                         return parsed;
                     }
                     throw new Error('Empty parsed content');
@@ -648,30 +642,12 @@ function setupGeneralIpcHandlers() {
         try {
             const transcript = String(payload?.transcript || '').trim();
             if (!transcript || transcript.length < 3) {
-                return { success: true, cleaned: '', intentPreview: '' };
+                return { success: true, cleaned: '' };
             }
             const parsed = await callTranscriptCleanApi(transcript);
-            return { success: true, cleaned: parsed.cleaned || '', intentPreview: parsed.intentPreview || '' };
+            return { success: true, cleaned: parsed.cleaned || '' };
         } catch (error) {
             console.error('❌ [commit-transcript-segment] error:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('predict-intent', async (event, payload) => {
-        try {
-            const transcript = String(payload?.transcript || '').trim();
-            if (!transcript || transcript.length < 10) {
-                return { success: false, error: 'Transcript too short' };
-            }
-            const parsed = await callTranscriptCleanApi(transcript);
-            if (parsed.cleaned) {
-                sendToRenderer('update-cleaned-transcript', { text: parsed.cleaned });
-            }
-            sendToRenderer('update-intent-preview', { text: parsed.intentPreview });
-            return { success: true, text: parsed.intentPreview };
-        } catch (error) {
-            console.error('❌ [predict-intent] error:', error);
             return { success: false, error: error.message };
         }
     });

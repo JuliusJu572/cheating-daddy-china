@@ -106,7 +106,6 @@ export class CheatingDaddyApp extends LitElement {
         selectedLanguage: { type: String },
         responses: { type: Array },
         liveTranscript: { type: String },
-        intentPreview: { type: String },
         isLiveAsrRunning: { type: Boolean },
         currentResponseIndex: { type: Number },
         selectedScreenshotInterval: { type: String },
@@ -135,8 +134,6 @@ export class CheatingDaddyApp extends LitElement {
         this.advancedMode = localStorage.getItem('advancedMode') === 'true';
         this.responses = [];
         this.liveTranscript = '';
-        this.intentPreview = '';
-        this._intentSuggestions = [];
         this.isLiveAsrRunning = false;
         this.currentResponseIndex = -1;
         this._viewInstances = new Map();
@@ -239,25 +236,6 @@ export class CheatingDaddyApp extends LitElement {
 
     setLiveAsrRunning(running) {
         this.isLiveAsrRunning = !!running;
-        this.requestUpdate();
-    }
-
-    setIntentPreview(text) {
-        const s = typeof text === 'string' ? text.trim() : '';
-        if (!s) {
-            this._intentSuggestions = [];
-            this.intentPreview = '';
-        } else {
-            const normalized = s.replace(/\s+/g, ' ').toLowerCase();
-            const exists = (this._intentSuggestions || []).some(item => {
-                const n = String(item || '').replace(/\s+/g, ' ').toLowerCase();
-                return n === normalized || n.includes(normalized) || normalized.includes(n);
-            });
-            if (!exists) {
-                this._intentSuggestions = [...(this._intentSuggestions || []), s].slice(-3);
-            }
-            this.intentPreview = this._intentSuggestions.join('\n');
-        }
         this.requestUpdate();
     }
 
@@ -527,7 +505,6 @@ export class CheatingDaddyApp extends LitElement {
                     <assistant-view
                         .responses=${this.responses}
                         .liveTranscript=${this.liveTranscript}
-                        .intentPreview=${this.intentPreview}
                         .isLiveAsrRunning=${this.isLiveAsrRunning}
                         .currentResponseIndex=${this.currentResponseIndex}
                         .selectedProfile=${this.selectedProfile}

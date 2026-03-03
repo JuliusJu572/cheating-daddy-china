@@ -86,33 +86,6 @@ export class AssistantView extends LitElement {
             user-select: text;
         }
 
-        .intent-preview-container {
-            margin-bottom: 10px;
-            border-radius: 8px;
-            border: 1px solid rgba(34, 197, 94, 0.4);
-            background: rgba(34, 197, 94, 0.08);
-            padding: 10px 12px;
-            max-height: 120px;
-            overflow-y: auto;
-            user-select: text;
-        }
-
-        .intent-preview-title {
-            font-size: 11px;
-            color: rgba(34, 197, 94, 0.9);
-            margin-bottom: 6px;
-            font-weight: 600;
-        }
-
-        .intent-preview-content {
-            font-size: 13px;
-            line-height: 1.25;
-            letter-spacing: 0;
-            color: var(--text-color);
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-
         /* Allow text selection for all content within the response container */
         .response-container * {
             user-select: text;
@@ -407,7 +380,6 @@ export class AssistantView extends LitElement {
         currentResponseIndex: { type: Number },
         selectedProfile: { type: String },
         liveTranscript: { type: String },
-        intentPreview: { type: String },
         onSendText: { type: Function },
         onSubmitLiveTranscript: { type: Function },
         onClearLiveTranscript: { type: Function },
@@ -422,7 +394,6 @@ export class AssistantView extends LitElement {
         this.currentResponseIndex = -1;
         this.selectedProfile = 'interview';
         this.liveTranscript = '';
-        this.intentPreview = '';
         this.onSendText = () => {};
         this.onSubmitLiveTranscript = async () => {};
         this.onClearLiveTranscript = () => {};
@@ -881,17 +852,6 @@ export class AssistantView extends LitElement {
             }
             this.updateResponseContent();
         }
-        if (changedProperties.has('intentPreview') || changedProperties.has('isLiveAsrRunning')) {
-            const el = this.shadowRoot?.getElementById('intentPreviewContent');
-            if (el && this.intentPreview) {
-                const escaped = String(this.intentPreview)
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;');
-                el.innerHTML = escaped.replace(/\n/g, '<br>');
-            }
-        }
     }
 
     updateResponseContent() {
@@ -951,13 +911,6 @@ export class AssistantView extends LitElement {
                     ` : ''}
                 </div>
                 <div class="live-transcript-content">${this.liveTranscript || '等待语音输入...'}</div>
-            </div>
-            ` : ''}
-
-            ${this.isLiveAsrRunning && this.intentPreview ? html`
-            <div class="intent-preview-container">
-                <div class="intent-preview-title">回答建议</div>
-                <div class="intent-preview-content" id="intentPreviewContent"></div>
             </div>
             ` : ''}
 
