@@ -16,6 +16,8 @@ const DEFAULT_CONFIG = {
     asrChunkDurationSec: 0,
     licenseKey: '',
     apiKey: '',
+    userApiBase: 'https://sfhxbdwmwvrp.sealoshzh.site',
+    userAuthToken: '',
 };
 
 function getConfigDir() {

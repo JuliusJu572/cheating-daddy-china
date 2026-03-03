@@ -15,7 +15,7 @@ if (process.env.NODE_ENV === 'development' || process.argv.includes('--dev')) {
     }
 }
 
-const { app, BrowserWindow, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -59,6 +59,41 @@ const liveAsrSessions = new Map();
 
 // Initialize random process names for stealth
 const randomNames = initializeRandomProcessNames();
+
+async function fetchResumeContext({ userApiBase, userAuthToken }) {
+    const base = String(userApiBase || '').trim().replace(/\/$/, '');
+    const token = String(userAuthToken || '').trim();
+    if (!base || !token) return '';
+
+    try {
+        const endpoint = `${base}/api/user/resume-context`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch(endpoint, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+        }).finally(() => clearTimeout(timeoutId));
+        if (!res.ok) {
+            const text = await res.text();
+            console.warn(`⚠️ [resume-context] HTTP ${res.status}: ${text}`);
+            return '';
+        }
+        const data = await res.json();
+        return String(data?.context || '').trim();
+    } catch (error) {
+        console.warn('⚠️ [resume-context] fetch failed:', error?.message || error);
+        return '';
+    }
+}
+
+function mergeCustomPrompt(resumeContext, customPrompt) {
+    const left = String(resumeContext || '').trim();
+    const right = String(customPrompt || '').trim();
+    if (!left) return right;
+    if (!right) return left;
+    return `${left}\n\n${right}`;
+}
 
 async function createMainWindow() {
     if (creatingWindow) return mainWindow;
@@ -400,6 +435,9 @@ function setupGeneralIpcHandlers() {
             if (typeof next.modelApiBase === 'string') {
                 cfg.modelApiBase = next.modelApiBase.trim();
             }
+            if (typeof next.userApiBase === 'string') {
+                cfg.userApiBase = next.userApiBase.trim();
+            }
             if (typeof next.maxTokens === 'number' && Number.isFinite(next.maxTokens)) {
                 cfg.maxTokens = Math.max(1, Math.floor(next.maxTokens));
             }
@@ -446,6 +484,188 @@ function setupGeneralIpcHandlers() {
             return { success: false, error: error.message };
         }
     });
+
+    ipcMain.handle('set-user-auth', async (_event, payload) => {
+        try {
+            const cfg = getLocalConfig();
+            const next = payload && typeof payload === 'object' ? payload : {};
+            if (typeof next.userApiBase === 'string') {
+                cfg.userApiBase = next.userApiBase.trim();
+            }
+            if (typeof next.userAuthToken === 'string') {
+                cfg.userAuthToken = next.userAuthToken.trim();
+            }
+            writeConfig(cfg);
+            return {
+                success: true,
+                userApiBase: cfg.userApiBase || '',
+                hasUserAuthToken: Boolean(cfg.userAuthToken),
+            };
+        } catch (error) {
+            console.error('Error setting user auth config:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('get-user-auth', async () => {
+        try {
+            const cfg = getLocalConfig();
+            return {
+                success: true,
+                userApiBase: cfg.userApiBase || '',
+                hasUserAuthToken: Boolean(cfg.userAuthToken),
+            };
+        } catch (error) {
+            console.error('Error getting user auth config:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('show-open-dialog', async (_event, options) => {
+        try {
+            const result = await dialog.showOpenDialog(mainWindow, options || {});
+            return result;
+        } catch (error) {
+            console.error('show-open-dialog error:', error);
+            return { canceled: true, filePaths: [] };
+        }
+    });
+
+    // ─── 用户账号管理 IPC（代理到 user-management 后端） ───────────────────────
+
+    function getUserApiConfig() {
+        const cfg = getLocalConfig();
+        return {
+            userApiBase: String(cfg.userApiBase || '').trim().replace(/\/$/, ''),
+            userAuthToken: String(cfg.userAuthToken || '').trim(),
+        };
+    }
+
+    async function userApiPost(path, body, token) {
+        const { userApiBase } = getUserApiConfig();
+        if (!userApiBase) throw new Error('未配置用户服务地址 (userApiBase)');
+        const headers = { 'Content-Type': 'application/json; charset=utf-8' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${userApiBase}${path}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body || {}),
+        });
+        const data = await res.json().catch(() => ({}));
+        return { status: res.status, ok: res.ok, data };
+    }
+
+    ipcMain.handle('user-register', async (_event, payload) => {
+        try {
+            const { email, password } = payload || {};
+            if (!email || !password) return { success: false, error: 'email/password required' };
+            const { ok, data } = await userApiPost('/auth/register', { email, password });
+            if (!ok) return { success: false, error: data?.error || 'register failed' };
+            const cfg = getLocalConfig();
+            cfg.userAuthToken = data.token || '';
+            writeConfig(cfg);
+            return { success: true, user: data.user };
+        } catch (error) {
+            console.error('user-register error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('user-login', async (_event, payload) => {
+        try {
+            const { email, password } = payload || {};
+            if (!email || !password) return { success: false, error: 'email/password required' };
+            const { ok, data } = await userApiPost('/auth/login', { email, password });
+            if (!ok) return { success: false, error: data?.error || 'login failed' };
+            const cfg = getLocalConfig();
+            cfg.userAuthToken = data.token || '';
+            writeConfig(cfg);
+            return { success: true, user: data.user };
+        } catch (error) {
+            console.error('user-login error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('user-license-login', async (_event, payload) => {
+        try {
+            const licenseKey = String(payload?.licenseKey || '').trim();
+            if (!licenseKey) return { success: false, error: 'licenseKey required' };
+            const { ok, data } = await userApiPost('/auth/license', { licenseKey });
+            if (!ok) return { success: false, error: data?.error || 'license login failed' };
+            const cfg = getLocalConfig();
+            cfg.userAuthToken = data.token || '';
+            writeConfig(cfg);
+            return { success: true, user: data.user };
+        } catch (error) {
+            console.error('user-license-login error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('user-logout', async () => {
+        try {
+            const cfg = getLocalConfig();
+            cfg.userAuthToken = '';
+            writeConfig(cfg);
+            return { success: true };
+        } catch (error) {
+            console.error('user-logout error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('user-upload-resume', async (_event, payload) => {
+        try {
+            const filePath = String(payload?.filePath || '').trim();
+            if (!filePath) return { success: false, error: 'filePath required' };
+            if (!fs.existsSync(filePath)) return { success: false, error: 'file not found' };
+
+            const { userApiBase, userAuthToken } = getUserApiConfig();
+            if (!userApiBase) return { success: false, error: '未配置用户服务地址' };
+            if (!userAuthToken) return { success: false, error: '请先登录账号' };
+
+            const FormData = require('form-data');
+            const form = new FormData();
+            form.append('resume', fs.createReadStream(filePath));
+
+            const res = await fetch(`${userApiBase}/api/resume/upload`, {
+                method: 'POST',
+                headers: {
+                    ...form.getHeaders(),
+                    Authorization: `Bearer ${userAuthToken}`,
+                },
+                body: form,
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) return { success: false, error: data?.error || 'upload failed' };
+            return { success: true, resume: data.resume };
+        } catch (error) {
+            console.error('user-upload-resume error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('user-list-resumes', async () => {
+        try {
+            const { userApiBase, userAuthToken } = getUserApiConfig();
+            if (!userApiBase) return { success: false, error: '未配置用户服务地址' };
+            if (!userAuthToken) return { success: false, resumes: [] };
+
+            const res = await fetch(`${userApiBase}/api/resume/list`, {
+                method: 'GET',
+                headers: { Authorization: `Bearer ${userAuthToken}` },
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) return { success: false, error: data?.error || 'list failed' };
+            return { success: true, resumes: data.resumes || [] };
+        } catch (error) {
+            console.error('user-list-resumes error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
 
     ipcMain.handle('start-live-asr', async (event, payload) => {
         try {
@@ -804,14 +1024,24 @@ function setupGeneralIpcHandlers() {
                 return false;
             }
 
-
+            const localCfg = getLocalConfig();
+            const resumeContext = await fetchResumeContext({
+                userApiBase: localCfg?.userApiBase,
+                userAuthToken: localCfg?.userAuthToken,
+            });
+            const mergedCustomPrompt = mergeCustomPrompt(resumeContext, customPrompt || '');
+            console.log(
+                '🚀 [initialize-model] Resume context length:',
+                resumeContext.length,
+                'Merged prompt length:',
+                mergedCustomPrompt.length
+            );
 
             // ✅ Qwen - 使用 DashScope OpenAI 兼容接口
             const selectedModel = (model || '').trim();
             if (selectedModel === 'qwen') {
                 console.log('🔵 [initialize-model] 使用 Qwen session...');
-                const localCfg = getLocalConfig();
-                const sysPrompt = getSystemPrompt(profile || 'interview', customPrompt || '', false);
+                const sysPrompt = getSystemPrompt(profile || 'interview', mergedCustomPrompt, false);
                 console.log('🔵 [initialize-model] System prompt length:', sysPrompt.length);
 
                 const session = createQwenSession({
@@ -832,7 +1062,13 @@ function setupGeneralIpcHandlers() {
 
             // ✅ 不需要再次解密，直接使用
             if (typeof model !== 'string' || model.includes('gemini')) {
-                const session = await initializeGeminiSession(apiKey, customPrompt || '', profile || 'interview', language || 'zh-CN', maxTokens);
+                const session = await initializeGeminiSession(
+                    apiKey,
+                    mergedCustomPrompt,
+                    profile || 'interview',
+                    language || 'zh-CN',
+                    maxTokens
+                );
                 if (session) {
                     // ✅ 同步到本地与全局引用，确保 IPC 读取到当前会话
                     geminiSessionRef.current = session;
@@ -844,7 +1080,7 @@ function setupGeneralIpcHandlers() {
 
             // aihubmix and other OpenAI-compatible providers
             console.log('🔵 [initialize-model] 使用 aihubmix session...');
-            const sysPrompt = getSystemPrompt(profile || 'interview', customPrompt || '', false);
+            const sysPrompt = getSystemPrompt(profile || 'interview', mergedCustomPrompt, false);
             const session = createAihubmixSession({
                 model: model.startsWith('aihubmix:') ? model.slice('aihubmix:'.length) : model,
                 apiKey,  // ✅ 直接使用

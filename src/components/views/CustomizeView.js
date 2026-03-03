@@ -428,6 +428,12 @@ export class CustomizeView extends LitElement {
         enableContext: { type: Boolean },
         enableEnrichment: { type: Boolean },
         asrChunkDurationSec: { type: Number },
+        // 简历管理
+        resumeList: { type: Array },
+        isUploadingResume: { type: Boolean },
+        resumeMessage: { type: String },
+        resumeMessageType: { type: String },
+        isUserLoggedIn: { type: Boolean },
     };
 
     constructor() {
@@ -470,6 +476,13 @@ export class CustomizeView extends LitElement {
         this.enableEnrichment = localStorage.getItem('enableEnrichment') !== 'false';
         const asrDur = parseFloat(localStorage.getItem('asrChunkDurationSec') || '0');
         this.asrChunkDurationSec = Number.isFinite(asrDur) && asrDur >= 0 && asrDur <= 10 ? asrDur : 0;
+
+        // 简历管理
+        this.resumeList = [];
+        this.isUploadingResume = false;
+        this.resumeMessage = '';
+        this.resumeMessageType = '';
+        this.isUserLoggedIn = false;
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
@@ -550,6 +563,66 @@ export class CustomizeView extends LitElement {
         // Resize window for this view
         resizeLayout();
         document.addEventListener('keydown', this.boundKeydownHandler);
+
+        // Load resume list if logged in
+        this._loadResumeStatus();
+    }
+
+    async _loadResumeStatus() {
+        if (!window.require) return;
+        try {
+            const { ipcRenderer } = window.require('electron');
+            const authRes = await ipcRenderer.invoke('get-user-auth');
+            this.isUserLoggedIn = authRes?.hasUserAuthToken || false;
+            if (this.isUserLoggedIn) {
+                const listRes = await ipcRenderer.invoke('user-list-resumes');
+                this.resumeList = listRes?.resumes || [];
+            }
+        } catch (_) {}
+        this.requestUpdate();
+    }
+
+    async handleResumeUpload() {
+        if (!window.require || this.isUploadingResume) return;
+        const { ipcRenderer, dialog } = window.require('electron');
+        let filePath = '';
+        try {
+            const result = await ipcRenderer.invoke('show-open-dialog', {
+                title: '选择简历文件',
+                filters: [{ name: '简历文件', extensions: ['pdf', 'docx'] }],
+                properties: ['openFile'],
+            });
+            if (result?.canceled || !result?.filePaths?.[0]) return;
+            filePath = result.filePaths[0];
+        } catch (_) {
+            // Fallback: 让用户手动输入路径
+            const path = window.prompt('请输入简历文件的完整路径（.pdf 或 .docx）：');
+            if (!path) return;
+            filePath = path.trim();
+        }
+
+        this.isUploadingResume = true;
+        this.resumeMessage = '正在上传并解析简历，请稍候...';
+        this.resumeMessageType = 'info';
+        this.requestUpdate();
+        try {
+            const res = await ipcRenderer.invoke('user-upload-resume', { filePath });
+            if (!res?.success) {
+                this.resumeMessage = '上传失败: ' + (res?.error || '未知错误');
+                this.resumeMessageType = 'error';
+            } else {
+                this.resumeMessage = '✅ 简历上传并解析成功！下次会话将自动注入简历上下文。';
+                this.resumeMessageType = 'success';
+                const listRes = await ipcRenderer.invoke('user-list-resumes');
+                this.resumeList = listRes?.resumes || [];
+            }
+        } catch (error) {
+            this.resumeMessage = '上传失败: ' + (error?.message || '未知错误');
+            this.resumeMessageType = 'error';
+        } finally {
+            this.isUploadingResume = false;
+            this.requestUpdate();
+        }
     }
 
     getProfiles() {
@@ -1551,6 +1624,67 @@ export class CustomizeView extends LitElement {
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- 简历管理 Section -->
+                <div class="settings-section">
+                    <div class="section-title">
+                        <span>📄 简历管理</span>
+                    </div>
+                    ${!this.isUserLoggedIn ? html`
+                        <div class="form-description" style="color:rgba(251,191,36,0.9);">
+                            请先在「高级设置」中登录账号，再上传简历。
+                        </div>
+                    ` : html`
+                        <div class="form-description">
+                            上传简历后，AI 将在每次新会话中自动将简历摘要作为上下文，提升面试回答精准度。仅支持 .pdf 和 .docx 格式，最大 10MB。
+                        </div>
+                        <div class="form-grid">
+                            <div class="button-group">
+                                <button
+                                    class="action-button"
+                                    @click=${this.handleResumeUpload}
+                                    ?disabled=${this.isUploadingResume}
+                                >
+                                    ${this.isUploadingResume ? '上传解析中...' : '📤 上传简历'}
+                                </button>
+                            </div>
+
+                            ${this.resumeMessage ? html`
+                                <div class="status-message ${this.resumeMessageType === 'error' ? 'status-error' : 'status-success'}">
+                                    ${this.resumeMessage}
+                                </div>
+                            ` : ''}
+
+                            ${this.resumeList.length > 0 ? html`
+                                <div class="form-group full-width" style="margin-top:8px;">
+                                    <label class="form-label">已上传的简历</label>
+                                    <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+                                        ${this.resumeList.map((r, i) => html`
+                                            <div style="
+                                                display:flex;align-items:center;justify-content:space-between;
+                                                padding:8px 12px;
+                                                background:var(--card-background,rgba(255,255,255,0.04));
+                                                border:1px solid var(--card-border,rgba(255,255,255,0.1));
+                                                border-radius:6px;font-size:12px;
+                                                ${i === 0 ? 'border-color:rgba(34,197,94,0.4);' : ''}
+                                            ">
+                                                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                                                    ${i === 0 ? '✅ ' : ''}${r.original_filename}
+                                                </span>
+                                                <span style="color:var(--description-color,rgba(255,255,255,0.5));margin-left:8px;white-space:nowrap;">
+                                                    ${new Date(r.created_at).toLocaleDateString('zh-CN')}
+                                                </span>
+                                            </div>
+                                        `)}
+                                    </div>
+                                    <div class="form-description">✅ 最新简历（第一条）将自动注入每次会话上下文。</div>
+                                </div>
+                            ` : html`
+                                <div class="form-description" style="margin-top:4px;">暂无简历，请上传。</div>
+                            `}
+                        </div>
+                    `}
                 </div>
 
                 <div class="settings-note">💡 ${t('settings_saved_note')}</div>

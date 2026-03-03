@@ -365,6 +365,15 @@ export class AdvancedView extends LitElement {
         isClearingCache: { type: Boolean },
         cacheMessage: { type: String },
         cacheMessageType: { type: String },
+        // 用户账号管理
+        userAuthMode: { type: String },   // 'login' | 'register'
+        userEmail: { type: String },
+        userPassword: { type: String },
+        isUserLoading: { type: Boolean },
+        userMessage: { type: String },
+        userMessageType: { type: String },
+        isUserLoggedIn: { type: Boolean },
+        userApiBase: { type: String },
     };
 
     constructor() {
@@ -394,9 +403,20 @@ export class AdvancedView extends LitElement {
         this.cacheMessage = '';
         this.cacheMessageType = '';
 
+        // 用户账号管理
+        this.userAuthMode = 'login';
+        this.userEmail = '';
+        this.userPassword = '';
+        this.isUserLoading = false;
+        this.userMessage = '';
+        this.userMessageType = '';
+        this.isUserLoggedIn = false;
+        this.userApiBase = localStorage.getItem('userApiBase') || '';
+
         this.loadRateLimitSettings();
         this.loadContentProtectionSetting();
         this.checkApiKeyStatus();
+        this._loadUserAuthStatus();
     }
 
     connectedCallback() {
@@ -408,6 +428,111 @@ export class AdvancedView extends LitElement {
         const apiKey = localStorage.getItem('apiKey');
         this.hasApiKey = !!apiKey;
         this.apiKeyValid = !!apiKey;
+    }
+
+    async _loadUserAuthStatus() {
+        if (!window.require) return;
+        try {
+            const { ipcRenderer } = window.require('electron');
+            const res = await ipcRenderer.invoke('get-user-auth');
+            if (res?.success) {
+                this.isUserLoggedIn = res.hasUserAuthToken;
+                this.userApiBase = res.userApiBase || '';
+                localStorage.setItem('userApiBase', this.userApiBase);
+            }
+        } catch (_) {}
+        this.requestUpdate();
+    }
+
+    async _saveUserApiBase(value) {
+        this.userApiBase = String(value || '').trim();
+        localStorage.setItem('userApiBase', this.userApiBase);
+        if (!window.require) return;
+        try {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('set-user-auth', { userApiBase: this.userApiBase });
+        } catch (_) {}
+    }
+
+    async handleUserAuthSubmit() {
+        if (this.isUserLoading) return;
+        const email = this.userEmail.trim();
+        const password = this.userPassword.trim();
+        if (!email || !password) {
+            this.userMessage = '请填写邮箱和密码';
+            this.userMessageType = 'error';
+            this.requestUpdate();
+            return;
+        }
+        this.isUserLoading = true;
+        this.userMessage = this.userAuthMode === 'login' ? '登录中...' : '注册中...';
+        this.userMessageType = 'info';
+        this.requestUpdate();
+        try {
+            const { ipcRenderer } = window.require('electron');
+            const ipc = this.userAuthMode === 'login' ? 'user-login' : 'user-register';
+            const res = await ipcRenderer.invoke(ipc, { email, password });
+            if (!res?.success) {
+                this.userMessage = res?.error || '操作失败';
+                this.userMessageType = 'error';
+            } else {
+                this.isUserLoggedIn = true;
+                this.userPassword = '';
+                this.userMessage = this.userAuthMode === 'login' ? '✅ 登录成功' : '✅ 注册并登录成功';
+                this.userMessageType = 'success';
+            }
+        } catch (error) {
+            this.userMessage = '操作失败: ' + (error?.message || '未知错误');
+            this.userMessageType = 'error';
+        } finally {
+            this.isUserLoading = false;
+            this.requestUpdate();
+        }
+    }
+
+    async handleLicenseBindAccount() {
+        if (this.isUserLoading) return;
+        const licenseKey = (localStorage.getItem('licenseKey') || '').trim();
+        if (!licenseKey) {
+            this.userMessage = '请先保存 License Key，再绑定账号';
+            this.userMessageType = 'error';
+            this.requestUpdate();
+            return;
+        }
+        this.isUserLoading = true;
+        this.userMessage = '绑定中...';
+        this.userMessageType = 'info';
+        this.requestUpdate();
+        try {
+            const { ipcRenderer } = window.require('electron');
+            const res = await ipcRenderer.invoke('user-license-login', { licenseKey });
+            if (!res?.success) {
+                this.userMessage = res?.error || '绑定失败';
+                this.userMessageType = 'error';
+            } else {
+                this.isUserLoggedIn = true;
+                this.userMessage = '✅ License Key 绑定账号成功';
+                this.userMessageType = 'success';
+            }
+        } catch (error) {
+            this.userMessage = '绑定失败: ' + (error?.message || '未知错误');
+            this.userMessageType = 'error';
+        } finally {
+            this.isUserLoading = false;
+            this.requestUpdate();
+        }
+    }
+
+    async handleUserLogout() {
+        if (!window.require) return;
+        try {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('user-logout');
+        } catch (_) {}
+        this.isUserLoggedIn = false;
+        this.userMessage = '已退出登录';
+        this.userMessageType = 'success';
+        this.requestUpdate();
     }
 
     async clearLocalData() {
@@ -796,6 +921,108 @@ export class AdvancedView extends LitElement {
 
                         ${apiKeyMessageDisplay}
                     </div>
+                </div>
+
+                <!-- 用户账号管理 Section -->
+                <div class="advanced-section">
+                    <div class="section-title">
+                        <span>👤 用户账号管理</span>
+                    </div>
+                    <div class="advanced-description">
+                        登录账号后可上传简历，AI 将自动将简历内容作为上下文，提升面试回答精准度。
+                    </div>
+
+                    <!-- 服务地址配置 -->
+                    <div class="form-grid" style="margin-bottom:12px;">
+                        <div class="form-group">
+                            <label class="form-label">用户服务地址（userApiBase）</label>
+                            <input
+                                type="text"
+                                class="form-control"
+                                placeholder="例如: http://127.0.0.1:8787"
+                                .value=${this.userApiBase}
+                                @input=${e => this._saveUserApiBase(e.target.value)}
+                            />
+                            <div class="form-description">user-management 后端服务的地址</div>
+                        </div>
+                    </div>
+
+                    ${this.isUserLoggedIn ? html`
+                        <div class="api-key-status has-key" style="margin-bottom:12px;">
+                            <span class="success-icon">✅</span>
+                            <span>已登录账号</span>
+                        </div>
+                        <div class="button-group">
+                            <button class="action-button danger-button" @click=${this.handleUserLogout}>
+                                退出登录
+                            </button>
+                        </div>
+                    ` : html`
+                        <!-- 登录/注册 Tab -->
+                        <div style="display:flex;gap:8px;margin-bottom:12px;">
+                            <button
+                                class="action-button ${this.userAuthMode === 'login' ? '' : 'secondary'}"
+                                style="flex:1;${this.userAuthMode === 'login' ? '' : 'opacity:0.6;'}"
+                                @click=${() => { this.userAuthMode = 'login'; this.requestUpdate(); }}
+                            >邮箱登录</button>
+                            <button
+                                class="action-button ${this.userAuthMode === 'register' ? '' : 'secondary'}"
+                                style="flex:1;${this.userAuthMode === 'register' ? '' : 'opacity:0.6;'}"
+                                @click=${() => { this.userAuthMode = 'register'; this.requestUpdate(); }}
+                            >邮箱注册</button>
+                        </div>
+
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">邮箱</label>
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    placeholder="your@email.com"
+                                    .value=${this.userEmail}
+                                    @input=${e => { this.userEmail = e.target.value; }}
+                                    ?disabled=${this.isUserLoading}
+                                />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">密码</label>
+                                <input
+                                    type="password"
+                                    class="form-control"
+                                    placeholder="输入密码"
+                                    .value=${this.userPassword}
+                                    @input=${e => { this.userPassword = e.target.value; }}
+                                    ?disabled=${this.isUserLoading}
+                                />
+                            </div>
+                            <div class="button-group">
+                                <button
+                                    class="action-button"
+                                    @click=${this.handleUserAuthSubmit}
+                                    ?disabled=${this.isUserLoading}
+                                >
+                                    ${this.isUserLoading ? '处理中...' : (this.userAuthMode === 'login' ? '登录' : '注册')}
+                                </button>
+                                ${this.hasApiKey ? html`
+                                    <button
+                                        class="action-button"
+                                        style="opacity:0.85;"
+                                        @click=${this.handleLicenseBindAccount}
+                                        ?disabled=${this.isUserLoading}
+                                        title="使用已保存的 License Key 绑定/登录账号"
+                                    >
+                                        License Key 一键绑定
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `}
+
+                    ${this.userMessage ? html`
+                        <div class="status-message ${this.userMessageType === 'error' ? 'status-error' : 'status-success'}" style="margin-top:8px;">
+                            ${this.userMessage}
+                        </div>
+                    ` : ''}
                 </div>
 
                 <!-- Cache Clearing Section -->
