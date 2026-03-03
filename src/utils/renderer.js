@@ -90,6 +90,16 @@ async function hydrateLocalStorageFromConfig() {
             const v = cfg.apiKey.trim();
             if (v) localStorage.setItem('apiKey', v);
         }
+        if (typeof cfg.enableIntentPrediction === 'boolean') {
+            localStorage.setItem('enableIntentPrediction', String(cfg.enableIntentPrediction));
+        }
+        if (typeof cfg.enableEnrichment === 'boolean') {
+            localStorage.setItem('enableEnrichment', String(cfg.enableEnrichment));
+        }
+        if (typeof cfg.asrChunkDurationSec === 'number' && Number.isFinite(cfg.asrChunkDurationSec)) {
+            const v = Math.max(0.5, Math.min(1.5, cfg.asrChunkDurationSec));
+            localStorage.setItem('asrChunkDurationSec', String(v));
+        }
     } catch (e) {}
 }
 
@@ -120,6 +130,20 @@ let isLiveAsrRunning = false;
 let liveTranscriptBuffer = '';
 let lastSubmittedOffset = 0;
 let liveAsrSampleRate = 16000;
+let lastIntentPredictAt = 0;
+let lastIntentPredictLen = 0;
+let cleanedTranscriptDisplay = '';
+let committedDisplay = '';
+let committedRawLength = 0;
+let commitTimer = null;
+let refineIntervalId = null;
+let currentSegmentCleaned = '';
+let isCommitting = false;
+const INTENT_PREDICT_MIN_CHARS = 8;
+const INTENT_PREDICT_MIN_INTERVAL_MS = 2000;
+const COMMIT_SILENCE_MS = 800;
+const REFINE_INTERVAL_MS = 2000;
+const COMMIT_MIN_CHARS = 4;
 
 const isLinux = platform === 'linux';
 const isMacOS = platform === 'darwin';
@@ -277,14 +301,113 @@ ipcRenderer.on('update-status', (event, status) => {
     cheddar.setStatus(status);
 });
 
+function refreshTranscriptDisplay() {
+    const currentSegmentRaw = liveTranscriptBuffer.substring(committedRawLength);
+    const currentDisplay = currentSegmentCleaned || currentSegmentRaw;
+    const display = committedDisplay + currentDisplay;
+    if (typeof cheddar?.setLiveTranscript === 'function') {
+        cheddar.setLiveTranscript(display);
+    }
+}
+
+function getDisplayTranscriptForSubmit() {
+    const currentSegmentRaw = liveTranscriptBuffer.substring(committedRawLength);
+    const currentDisplay = currentSegmentCleaned || currentSegmentRaw;
+    return committedDisplay + currentDisplay;
+}
+
+async function refineCurrentSegment() {
+    if (isCommitting) return;
+    const currentSegmentRaw = liveTranscriptBuffer.substring(committedRawLength).trim();
+    if (!currentSegmentRaw || currentSegmentRaw.length < COMMIT_MIN_CHARS) return;
+    const committedRawLengthAtRequest = committedRawLength;
+    try {
+        const result = await ipcRenderer.invoke('commit-transcript-segment', { transcript: currentSegmentRaw });
+        if (committedRawLength !== committedRawLengthAtRequest) return;
+        if (result?.success && result.cleaned) {
+            currentSegmentCleaned = result.cleaned;
+            const enableIntent = localStorage.getItem('enableIntentPrediction') !== 'false';
+            if (enableIntent && typeof cheddar?.setIntentPreview === 'function' && result.intentPreview) {
+                cheddar.setIntentPreview(result.intentPreview);
+            }
+        }
+    } catch (e) {
+        console.warn('[refine-segment]', e);
+    }
+    refreshTranscriptDisplay();
+}
+
+function stopRefineInterval() {
+    if (refineIntervalId) {
+        clearInterval(refineIntervalId);
+        refineIntervalId = null;
+    }
+}
+
+async function doCommitSegment() {
+    if (commitTimer) {
+        clearTimeout(commitTimer);
+        commitTimer = null;
+    }
+    stopRefineInterval();
+    if (isCommitting) return;
+    const currentSegmentRaw = liveTranscriptBuffer.substring(committedRawLength).trim();
+    if (!currentSegmentRaw || currentSegmentRaw.length < COMMIT_MIN_CHARS) return;
+    isCommitting = true;
+    const committedRawLengthAtRequest = liveTranscriptBuffer.length;
+    const enableIntent = localStorage.getItem('enableIntentPrediction') !== 'false';
+    try {
+        const result = await ipcRenderer.invoke('commit-transcript-segment', { transcript: currentSegmentRaw });
+        if (result?.success && result.cleaned) {
+            committedDisplay += (committedDisplay ? ' ' : '') + result.cleaned;
+            committedRawLength = committedRawLengthAtRequest;
+            currentSegmentCleaned = '';
+            if (enableIntent && result.intentPreview && typeof cheddar?.setIntentPreview === 'function') {
+                cheddar.setIntentPreview(result.intentPreview);
+            }
+        }
+    } catch (e) {
+        console.warn('[commit-segment]', e);
+    } finally {
+        isCommitting = false;
+    }
+    refreshTranscriptDisplay();
+}
+
 ipcRenderer.on('update-live-transcript', (_event, payload) => {
     const nextText = typeof payload?.text === 'string' ? payload.text : '';
     liveTranscriptBuffer = nextText;
     if (lastSubmittedOffset > liveTranscriptBuffer.length) {
         lastSubmittedOffset = liveTranscriptBuffer.length;
     }
-    if (typeof cheddar?.setLiveTranscript === 'function') {
-        cheddar.setLiveTranscript(liveTranscriptBuffer);
+    if (commitTimer) {
+        clearTimeout(commitTimer);
+        commitTimer = null;
+    }
+    const currentSegmentRaw = liveTranscriptBuffer.substring(committedRawLength);
+    refreshTranscriptDisplay();
+    if (isLiveAsrRunning && currentSegmentRaw.length >= COMMIT_MIN_CHARS) {
+        commitTimer = setTimeout(doCommitSegment, COMMIT_SILENCE_MS);
+        if (!refineIntervalId) {
+            refineIntervalId = setInterval(refineCurrentSegment, REFINE_INTERVAL_MS);
+        }
+    } else {
+        stopRefineInterval();
+    }
+});
+
+ipcRenderer.on('update-intent-preview', (_event, payload) => {
+    const text = typeof payload?.text === 'string' ? payload.text : '';
+    if (typeof cheddar?.setIntentPreview === 'function') {
+        cheddar.setIntentPreview(text);
+    }
+});
+
+ipcRenderer.on('update-cleaned-transcript', (_event, payload) => {
+    const text = typeof payload?.text === 'string' ? payload.text : '';
+    cleanedTranscriptDisplay = text;
+    if (text && !committedDisplay) {
+        refreshTranscriptDisplay();
     }
 });
 
@@ -773,12 +896,35 @@ window.captureManualScreenshot = captureManualScreenshot;
 
 function resetLiveTranscriptState() {
     liveTranscriptBuffer = '';
+    cleanedTranscriptDisplay = '';
+    committedDisplay = '';
+    committedRawLength = 0;
+    currentSegmentCleaned = '';
+    if (commitTimer) {
+        clearTimeout(commitTimer);
+        commitTimer = null;
+    }
+    stopRefineInterval();
     lastSubmittedOffset = 0;
+    lastIntentPredictAt = 0;
+    lastIntentPredictLen = 0;
     cheddar.setLiveTranscript('');
+    if (typeof cheddar?.setIntentPreview === 'function') {
+        cheddar.setIntentPreview('');
+    }
 }
 
 async function clearLiveTranscript() {
     liveTranscriptBuffer = '';
+    cleanedTranscriptDisplay = '';
+    committedDisplay = '';
+    committedRawLength = 0;
+    currentSegmentCleaned = '';
+    if (commitTimer) {
+        clearTimeout(commitTimer);
+        commitTimer = null;
+    }
+    stopRefineInterval();
     lastSubmittedOffset = 0;
     cheddar.setLiveTranscript('');
     cheddar.setStatus('转写已清空');
@@ -811,6 +957,9 @@ async function stopRealtimeAsrCapture() {
     } finally {
         isQuickRecording = false;
         isLiveAsrRunning = false;
+        if (typeof cheddar?.setIntentPreview === 'function') {
+            cheddar.setIntentPreview('');
+        }
     }
 }
 
@@ -821,6 +970,8 @@ async function startQuickAudioCapture(options = {}) {
         cheddar.setLiveAsrRunning(false);
         await stopRealtimeAsrCapture();
         await submitLiveTranscriptDelta();
+        cheddar.setLiveTranscript('');
+        if (typeof cheddar?.setIntentPreview === 'function') cheddar.setIntentPreview('');
         return;
     }
 
@@ -913,10 +1064,14 @@ async function startQuickAudioCapture(options = {}) {
         quickRecordStartTime = Date.now();
         quickRecordStallCount = 0;
 
+        const chunkDur = (() => {
+            const v = parseFloat(localStorage.getItem('asrChunkDurationSec') || '1');
+            return Number.isFinite(v) && v >= 0.5 && v <= 1.5 ? v : 1;
+        })();
         quickRecorder = await createPcmRecorder({
             stream: streamToUse,
             targetSampleRate: liveAsrSampleRate,
-            chunkDurationSec: 1.0,
+            chunkDurationSec: chunkDur,
             onChunk: msg => {
                 if (!isLiveAsrRunning) return;
                 const base64 = arrayBufferToBase64(msg.buffer);
@@ -951,7 +1106,16 @@ async function startQuickAudioCapture(options = {}) {
 }
 
 async function submitLiveTranscriptDelta() {
-    const submitText = liveTranscriptBuffer.substring(lastSubmittedOffset).trim();
+    const hasUncommitted = liveTranscriptBuffer.substring(committedRawLength).trim().length >= COMMIT_MIN_CHARS;
+    if (hasUncommitted) {
+        if (commitTimer) {
+            clearTimeout(commitTimer);
+            commitTimer = null;
+        }
+        await doCommitSegment();
+    }
+    const textToSubmit = committedDisplay ? getDisplayTranscriptForSubmit() : liveTranscriptBuffer;
+    const submitText = textToSubmit.substring(lastSubmittedOffset).trim();
     if (!submitText) {
         cheddar.setStatus('暂无新增转写');
         return { success: false, submitted: false, reason: 'empty-delta' };
@@ -1170,6 +1334,7 @@ const cheddar = {
     setStatus: text => cheatingDaddyApp.setStatus(text),
     setResponse: response => cheatingDaddyApp.setResponse(response),
     setLiveTranscript: transcript => cheatingDaddyApp.setLiveTranscript(transcript),
+    setIntentPreview: text => cheatingDaddyApp.setIntentPreview(text),
     setLiveAsrRunning: running => cheatingDaddyApp.setLiveAsrRunning(running),
 
     // Core functionality

@@ -456,7 +456,7 @@ export class OnboardingView extends LitElement {
             {
                 icon: 'assets/onboarding/customize.svg',
                 title: '核心操作',
-                content: '',
+                content: '实时转写（Ctrl+L）和回答建议（意图预判、追问准备）默认开启，不习惯可在设置中关闭。',
                 showFeatures: true,
             },
             {

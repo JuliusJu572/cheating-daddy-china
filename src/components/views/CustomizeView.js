@@ -426,6 +426,9 @@ export class CustomizeView extends LitElement {
         modelTestStatus: { type: String },
         maxTokens: { type: Number },
         enableContext: { type: Boolean },
+        enableIntentPrediction: { type: Boolean },
+        enableEnrichment: { type: Boolean },
+        asrChunkDurationSec: { type: Number },
     };
 
     constructor() {
@@ -464,7 +467,11 @@ export class CustomizeView extends LitElement {
         this.modelApiKey = localStorage.getItem('modelApiKey') || '';
         this.modelTestStatus = '';
         this.maxTokens = parseInt(localStorage.getItem('maxTokens') || '4096', 10);
-        this.enableContext = localStorage.getItem('enableContext') !== 'false'; // Default true
+        this.enableContext = localStorage.getItem('enableContext') !== 'false';
+        this.enableIntentPrediction = localStorage.getItem('enableIntentPrediction') !== 'false';
+        this.enableEnrichment = localStorage.getItem('enableEnrichment') !== 'false';
+        const asrDur = parseFloat(localStorage.getItem('asrChunkDurationSec') || '1');
+        this.asrChunkDurationSec = Number.isFinite(asrDur) && asrDur >= 0.5 && asrDur <= 1.5 ? asrDur : 1;
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
@@ -498,6 +505,11 @@ export class CustomizeView extends LitElement {
                     this.modelApiBase = cfg.modelApiBase || this.modelApiBase;
                     if (cfg.maxTokens) this.maxTokens = cfg.maxTokens;
                     if (typeof cfg.enableContext === 'boolean') this.enableContext = cfg.enableContext;
+                    if (typeof cfg.enableIntentPrediction === 'boolean') this.enableIntentPrediction = cfg.enableIntentPrediction;
+                    if (typeof cfg.enableEnrichment === 'boolean') this.enableEnrichment = cfg.enableEnrichment;
+                    if (typeof cfg.asrChunkDurationSec === 'number' && Number.isFinite(cfg.asrChunkDurationSec)) {
+                        this.asrChunkDurationSec = Math.max(0.5, Math.min(1.5, cfg.asrChunkDurationSec));
+                    }
                     if (cfg.apiKey) this.modelApiKey = cfg.apiKey;
                     
                     // Update localStorage to match
@@ -507,6 +519,11 @@ export class CustomizeView extends LitElement {
                     if (cfg.modelApiBase) localStorage.setItem('modelApiBase', cfg.modelApiBase);
                     if (cfg.maxTokens) localStorage.setItem('maxTokens', String(cfg.maxTokens));
                     if (typeof cfg.enableContext === 'boolean') localStorage.setItem('enableContext', String(cfg.enableContext));
+                    if (typeof cfg.enableIntentPrediction === 'boolean') localStorage.setItem('enableIntentPrediction', String(cfg.enableIntentPrediction));
+                    if (typeof cfg.enableEnrichment === 'boolean') localStorage.setItem('enableEnrichment', String(cfg.enableEnrichment));
+                    if (typeof cfg.asrChunkDurationSec === 'number' && Number.isFinite(cfg.asrChunkDurationSec)) {
+                        localStorage.setItem('asrChunkDurationSec', String(cfg.asrChunkDurationSec));
+                    }
                     if (cfg.apiKey) localStorage.setItem('modelApiKey', cfg.apiKey);
                     
                     this.requestUpdate();
@@ -1015,6 +1032,9 @@ export class CustomizeView extends LitElement {
                 modelApiBase: this.modelApiBase,
                 maxTokens: this.maxTokens,
                 enableContext: this.enableContext,
+                enableIntentPrediction: this.enableIntentPrediction,
+                enableEnrichment: this.enableEnrichment,
+                asrChunkDurationSec: this.asrChunkDurationSec,
             });
         } catch (e) {}
     }
@@ -1074,6 +1094,30 @@ export class CustomizeView extends LitElement {
         localStorage.setItem('enableContext', String(this.enableContext));
         this.persistModelConfig();
         this.requestUpdate();
+    }
+
+    handleEnableIntentPredictionChange(e) {
+        this.enableIntentPrediction = e.target.checked;
+        localStorage.setItem('enableIntentPrediction', String(this.enableIntentPrediction));
+        this.persistModelConfig();
+        this.requestUpdate();
+    }
+
+    handleEnableEnrichmentChange(e) {
+        this.enableEnrichment = e.target.checked;
+        localStorage.setItem('enableEnrichment', String(this.enableEnrichment));
+        this.persistModelConfig();
+        this.requestUpdate();
+    }
+
+    handleAsrChunkDurationChange(e) {
+        const val = parseFloat(e.target.value);
+        if (!Number.isNaN(val) && val >= 0.5 && val <= 1.5) {
+            this.asrChunkDurationSec = val;
+            localStorage.setItem('asrChunkDurationSec', String(val));
+            this.persistModelConfig();
+            this.requestUpdate();
+        }
     }
 
     async handleTestModelConnection() {
@@ -1450,6 +1494,24 @@ export class CustomizeView extends LitElement {
 
                         <div class="form-row">
                             <div class="form-group">
+                                <label class="form-label">ASR 截断时间（秒）</label>
+                                <select
+                                    class="form-control"
+                                    .value=${String(this.asrChunkDurationSec)}
+                                    @change=${this.handleAsrChunkDurationChange}
+                                >
+                                    <option value="0.5">0.5 秒</option>
+                                    <option value="1">1 秒（推荐）</option>
+                                    <option value="1.5">1.5 秒</option>
+                                </select>
+                                <div class="form-description">
+                                    实时转写时每段音频的截断间隔。qwen3-asr-flash 实测 1 秒最稳定，2 秒及以上可能导致识别异常。
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
                                 <label class="form-label">启用上下文 (多轮对话)</label>
                                 <div class="checkbox-group">
                                     <input
@@ -1460,6 +1522,40 @@ export class CustomizeView extends LitElement {
                                     />
                                     <span class="form-description">
                                         开启后，AI 将记住之前的对话内容。关闭此选项可解决消息数异常增长的问题。
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">意图预判</label>
+                                <div class="checkbox-group">
+                                    <input
+                                        type="checkbox"
+                                        class="checkbox-input"
+                                        .checked=${this.enableIntentPrediction}
+                                        @change=${this.handleEnableIntentPredictionChange}
+                                    />
+                                    <span class="form-description">
+                                        实时转写时，每新增 10 字预测面试官意图并提前给出回答建议（需额外 API 调用）。
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">追问准备</label>
+                                <div class="checkbox-group">
+                                    <input
+                                        type="checkbox"
+                                        class="checkbox-input"
+                                        .checked=${this.enableEnrichment}
+                                        @change=${this.handleEnableEnrichmentChange}
+                                    />
+                                    <span class="form-description">
+                                        主回复完成后自动补充名词解释和可能追问的参考答案，便于应对追问。
                                     </span>
                                 </div>
                             </div>

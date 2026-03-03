@@ -235,7 +235,38 @@ function getSystemPrompt(profile, customPrompt = '', googleSearchEnabled = true)
     return buildSystemPrompt(promptParts, customPrompt, googleSearchEnabled);
 }
 
+const INTENT_PREDICTION_PROMPT = `你是面试者的实时提词助手。转写来自实时语音识别（ASR），常有断句、语气词、误识别（如把中文听成英文）。
+
+任务：1）将断句整理成连贯句子，**纠正 ASR 误识别**（英文错听→还原为正确中文）；2）给出回答要点提示。
+
+cleaned 要求：去除「嗯啊呃」，合并断句，**把误识别的英文改回合理的中文**（如 "Thank you"→"谢谢"，"generally"→"一般来说"）。面试场景以中文为主。
+
+suggestions 要求：每条一句话、具体可操作，不要抽象概括。示例：「可以从数据增强、正则化、早停三方面简要回答」「建议先说概念再举1个例子」。
+
+**必须输出纯 JSON**，格式：
+{"cleaned":"整理后的连贯句子","suggestions":"2-3 条回答要点，每条一句话，用逗号或句号分隔"}
+
+- 若转写太短无法判断，cleaned 和 suggestions 均填 "等待更多内容..."
+- **cleaned 和 suggestions 一律用中文**，技术术语可保留英文（如 Dropout、L2）`;
+
+const ENRICHMENT_PROMPT_APPEND = `请根据以上面试问题和回答，补充以下内容（用 markdown 格式，面向无专业背景的面试者）：
+
+1. **名词解释**：仅列出回答中出现的 2-4 个核心术语，每条一句话解释（如：**XX**：指...）
+2. **具体用例**：1-2 个「比如...」式的例子，帮助记忆和延伸回答（每例 1-2 句）
+
+保持极简，便于快速扫一眼。`;
+
+function getIntentPredictionPrompt() {
+    return INTENT_PREDICTION_PROMPT;
+}
+
+function getEnrichmentPromptAppend() {
+    return ENRICHMENT_PROMPT_APPEND;
+}
+
 module.exports = {
     profilePrompts,
     getSystemPrompt,
+    getIntentPredictionPrompt,
+    getEnrichmentPromptAppend,
 };

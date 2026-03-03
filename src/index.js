@@ -41,7 +41,7 @@ function configureWindowsPaths() {
 configureWindowsPaths();
 const { createWindow, updateGlobalShortcuts, ensureDataDirectories } = require('./utils/window');
 const { setupGeminiIpcHandlers, stopMacOSAudioCapture, sendToRenderer, initializeGeminiSession } = require('./utils/gemini');
-const { getSystemPrompt } = require('./utils/prompts');
+const { getSystemPrompt, getIntentPredictionPrompt, getEnrichmentPromptAppend } = require('./utils/prompts');
 const { initializeRandomProcessNames } = require('./utils/processRandomizer');
 const { applyAntiAnalysisMeasures } = require('./utils/stealthFeatures');
 const { getLocalConfig, writeConfig } = require('./config');
@@ -52,6 +52,9 @@ let mainWindow = null;
 let creatingWindow = false;
 const DEFAULT_MODEL_API_BASE = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 const DEFAULT_ASR_API_BASE = 'https://dashscope.aliyuncs.com/api/v1';
+const TRANSCRIPT_CLEAN_MODEL_CANDIDATES = ['deepseek-v3.2', 'qwen-flash', 'qwen3.5-flash'];
+const TRANSCRIPT_CLEAN_TIMEOUT_MS = 12000;
+const TRANSCRIPT_CLEAN_RETRIES = 1;
 const liveAsrSessions = new Map();
 
 // Initialize random process names for stealth
@@ -109,7 +112,7 @@ async function transcribeAudio(filePath, apiKey, apiBase = DEFAULT_ASR_API_BASE)
                     ],
                 },
                 parameters: {
-                    asr_options: { enable_itn: false },
+                    asr_options: { language: 'zh', enable_itn: false },
                 },
             }),
         });
@@ -153,7 +156,7 @@ async function transcribeAudio(filePath, apiKey, apiBase = DEFAULT_ASR_API_BASE)
                     },
                 ],
                 stream: false,
-                extra_body: { asr_options: { enable_itn: false } },
+                extra_body: { asr_options: { language: 'zh', enable_itn: false } },
             }),
         });
 
@@ -189,6 +192,26 @@ function normalizeTranscriptText(input) {
     return String(input || '')
         .replace(/\s+/g, ' ')
         .trim();
+}
+
+function mergeTranscriptText(existing, incoming) {
+    const prev = normalizeTranscriptText(existing);
+    const next = normalizeTranscriptText(incoming);
+    if (!next) return prev;
+    if (!prev) return next;
+    if (prev.includes(next)) return prev;
+    if (next.includes(prev)) return next;
+
+    const maxOverlap = Math.min(prev.length, next.length);
+    let overlap = 0;
+    for (let i = maxOverlap; i > 0; i--) {
+        if (prev.slice(-i) === next.slice(0, i)) {
+            overlap = i;
+            break;
+        }
+    }
+    const merged = prev + next.slice(overlap);
+    return normalizeTranscriptText(merged);
 }
 
 async function transcribePcmChunk({ pcmBase64, sampleRate, apiKey }) {
@@ -229,7 +252,7 @@ async function processLiveAsrQueue(webContentsId) {
 
             if (!text) continue;
             session.transcriptPieces.push(text);
-            session.fullTranscript = normalizeTranscriptText(session.transcriptPieces.join(' '));
+            session.fullTranscript = mergeTranscriptText(session.fullTranscript, text);
             sendToRenderer('update-live-transcript', {
                 mode: 'replace',
                 text: session.fullTranscript,
@@ -383,6 +406,16 @@ function setupGeneralIpcHandlers() {
             if (typeof next.enableContext === 'boolean') {
                 cfg.enableContext = next.enableContext;
             }
+            if (typeof next.enableIntentPrediction === 'boolean') {
+                cfg.enableIntentPrediction = next.enableIntentPrediction;
+            }
+            if (typeof next.enableEnrichment === 'boolean') {
+                cfg.enableEnrichment = next.enableEnrichment;
+            }
+            if (typeof next.asrChunkDurationSec === 'number' && Number.isFinite(next.asrChunkDurationSec)) {
+                const v = Math.max(0.5, Math.min(1.5, next.asrChunkDurationSec));
+                cfg.asrChunkDurationSec = v;
+            }
 
             writeConfig(cfg);
             return { success: true, config: cfg };
@@ -516,6 +549,129 @@ function setupGeneralIpcHandlers() {
             return { success: true };
         } catch (error) {
             console.error('❌ [clear-live-transcript] error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    function parseIntentPredictionResponse(text) {
+        let cleaned = '';
+        let intentPreview = '';
+        try {
+            let raw = (text || '').trim();
+            raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+            const firstBrace = raw.indexOf('{');
+            const lastBrace = raw.lastIndexOf('}');
+            if (firstBrace >= 0 && lastBrace > firstBrace) {
+                raw = raw.slice(firstBrace, lastBrace + 1);
+            }
+            const obj = JSON.parse(raw);
+            cleaned = obj.cleaned || '';
+            const suggestions = obj.suggestions || '';
+            intentPreview = suggestions && suggestions !== '等待更多内容...' ? suggestions : '';
+            if (cleaned === '等待更多内容...') cleaned = '';
+        } catch (e) {
+            console.warn('[parseIntentPrediction] JSON parse failed:', e);
+        }
+        return { cleaned, intentPreview };
+    }
+
+    async function fetchWithTimeout(url, options, timeoutMs) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    async function callTranscriptCleanApi(transcript) {
+        const cfg = getLocalConfig();
+        const apiKey = cfg?.apiKey || '';
+        if (!apiKey) return { success: false, error: 'Missing API key' };
+        const apiBase = (cfg?.modelApiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '');
+        const endpoint = `${apiBase}/chat/completions`;
+        const sysPrompt = getIntentPredictionPrompt();
+        const preferredModel = (cfg?.qwenTextModel || '').trim();
+        const modelCandidates = [];
+        if (preferredModel) modelCandidates.push(preferredModel);
+        for (const m of TRANSCRIPT_CLEAN_MODEL_CANDIDATES) {
+            if (!modelCandidates.includes(m)) modelCandidates.push(m);
+        }
+
+        let lastError = null;
+        for (const model of modelCandidates) {
+            for (let attempt = 0; attempt <= TRANSCRIPT_CLEAN_RETRIES; attempt++) {
+                try {
+                    const res = await fetchWithTimeout(
+                        endpoint,
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json; charset=utf-8',
+                                'Authorization': `Bearer ${apiKey}`,
+                            },
+                            body: JSON.stringify({
+                                model,
+                                messages: [
+                                    { role: 'system', content: sysPrompt },
+                                    { role: 'user', content: `当前转写：\n${transcript}` },
+                                ],
+                                stream: false,
+                                max_tokens: 512,
+                                extra_body: { enable_thinking: false },
+                            }),
+                        },
+                        TRANSCRIPT_CLEAN_TIMEOUT_MS
+                    );
+                    if (!res.ok) {
+                        const text = await res.text();
+                        throw new Error(`API ${res.status}: ${text}`);
+                    }
+                    const data = await res.json();
+                    const text = data?.choices?.[0]?.message?.content || '';
+                    const parsed = parseIntentPredictionResponse(text);
+                    if (parsed.cleaned || parsed.intentPreview) {
+                        return parsed;
+                    }
+                    throw new Error('Empty parsed content');
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+        }
+
+        throw lastError || new Error('Transcript clean API failed');
+    }
+
+    ipcMain.handle('commit-transcript-segment', async (event, payload) => {
+        try {
+            const transcript = String(payload?.transcript || '').trim();
+            if (!transcript || transcript.length < 3) {
+                return { success: true, cleaned: '', intentPreview: '' };
+            }
+            const parsed = await callTranscriptCleanApi(transcript);
+            return { success: true, cleaned: parsed.cleaned || '', intentPreview: parsed.intentPreview || '' };
+        } catch (error) {
+            console.error('❌ [commit-transcript-segment] error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('predict-intent', async (event, payload) => {
+        try {
+            const transcript = String(payload?.transcript || '').trim();
+            if (!transcript || transcript.length < 10) {
+                return { success: false, error: 'Transcript too short' };
+            }
+            const parsed = await callTranscriptCleanApi(transcript);
+            if (parsed.cleaned) {
+                sendToRenderer('update-cleaned-transcript', { text: parsed.cleaned });
+            }
+            sendToRenderer('update-intent-preview', { text: parsed.intentPreview });
+            return { success: true, text: parsed.intentPreview };
+        } catch (error) {
+            console.error('❌ [predict-intent] error:', error);
             return { success: false, error: error.message };
         }
     });
@@ -1121,6 +1277,57 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
         if (buf.length) onDataLine(buf.trimEnd());
     }
 
+    async function requestEnrichment(transcript, primaryResponse) {
+        if (!transcript || !primaryResponse) return;
+        const cfg = getLocalConfig();
+        if (cfg?.enableEnrichment === false) return;
+        const enrichPrompt = getEnrichmentPromptAppend();
+        const userContent = `面试问题（转写）：\n${transcript}\n\n回答：\n${primaryResponse}`;
+        const enrichMessages = [
+            { role: 'system', content: enrichPrompt },
+            { role: 'user', content: userContent },
+        ];
+        sendToRenderer('update-status', '准备追问参考...');
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: qwenTextModel,
+                messages: enrichMessages,
+                stream: true,
+                max_tokens: Math.min(maxTokens, 1024),
+                extra_body: { enable_thinking: false },
+            }),
+        });
+        if (!res.ok) throw new Error(`Enrichment API ${res.status}`);
+        const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+        let fullEnrich = '';
+        if (contentType.includes('text/event-stream')) {
+            await readStreamText(res, line => {
+                if (!line || !line.startsWith('data:')) return;
+                const dataStr = line.slice('data:'.length).trim();
+                if (!dataStr || dataStr === '[DONE]') return;
+                try {
+                    const evt = JSON.parse(dataStr);
+                    const delta = evt?.choices?.[0]?.delta;
+                    const deltaText = typeof delta?.content === 'string' ? delta.content : '';
+                    if (deltaText) {
+                        fullEnrich += deltaText;
+                        sendToRenderer('update-response-enrichment', fullEnrich);
+                    }
+                } catch (_) {}
+            });
+        } else {
+            const data = await res.json();
+            fullEnrich = data?.choices?.[0]?.message?.content || '';
+            if (fullEnrich) sendToRenderer('update-response-enrichment', fullEnrich);
+        }
+        sendToRenderer('update-status', '就绪');
+    }
+
     async function callChatCompletions(model, messagesList, options = {}) {
         const { skipFinalStatus = false } = options;
 
@@ -1235,7 +1442,18 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
             if (payload?.text) {
                 console.log('📝 [sendRealtimeInput] Processing text message...');
                 messages.push({ role: 'user', content: payload.text });
-                await callChatCompletions(qwenTextModel, messages, { skipFinalStatus });
+                const willEnrich = getLocalConfig()?.enableEnrichment !== false;
+                const fullContent = await callChatCompletions(qwenTextModel, messages, {
+                    skipFinalStatus: skipFinalStatus || willEnrich,
+                });
+                if (willEnrich && fullContent) {
+                    requestEnrichment(payload.text, fullContent).catch(err => {
+                        console.warn('Enrichment failed:', err);
+                        sendToRenderer('update-status', '就绪');
+                    });
+                } else if (!skipFinalStatus) {
+                    sendToRenderer('update-status', '就绪');
+                }
                 console.log('✅ [sendRealtimeInput] Text message processed');
                 return;
             }

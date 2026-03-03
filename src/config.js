@@ -12,6 +12,9 @@ const DEFAULT_CONFIG = {
     modelApiBase: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     maxTokens: 4096,
     enableContext: true,
+    enableIntentPrediction: true,
+    enableEnrichment: true,
+    asrChunkDurationSec: 1,
     licenseKey: '',
     apiKey: '',
 };

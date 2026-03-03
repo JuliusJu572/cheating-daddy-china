@@ -106,6 +106,7 @@ export class CheatingDaddyApp extends LitElement {
         selectedLanguage: { type: String },
         responses: { type: Array },
         liveTranscript: { type: String },
+        intentPreview: { type: String },
         isLiveAsrRunning: { type: Boolean },
         currentResponseIndex: { type: Number },
         selectedScreenshotInterval: { type: String },
@@ -115,6 +116,7 @@ export class CheatingDaddyApp extends LitElement {
         _viewInstances: { type: Object, state: true },
         _isClickThrough: { state: true },
         _awaitingNewResponse: { state: true },
+        _lastPrimaryResponse: { state: true },
         shouldAnimateResponse: { type: Boolean },
     };
 
@@ -133,12 +135,15 @@ export class CheatingDaddyApp extends LitElement {
         this.advancedMode = localStorage.getItem('advancedMode') === 'true';
         this.responses = [];
         this.liveTranscript = '';
+        this.intentPreview = '';
+        this._intentSuggestions = [];
         this.isLiveAsrRunning = false;
         this.currentResponseIndex = -1;
         this._viewInstances = new Map();
         this._isClickThrough = false;
         this._awaitingNewResponse = false;
         this._currentResponseIsComplete = true;
+        this._lastPrimaryResponse = null;
         this.shouldAnimateResponse = false;
 
         // Apply layout mode to document root
@@ -154,6 +159,9 @@ export class CheatingDaddyApp extends LitElement {
             ipcRenderer.on('update-response', (_, response) => {
                 this.setResponse(response);
             });
+            ipcRenderer.on('update-response-enrichment', (_, content) => {
+                this.setResponse(content, { mode: 'enrichment' });
+            });
             ipcRenderer.on('update-status', (_, status) => {
                 this.setStatus(status);
             });
@@ -168,6 +176,7 @@ export class CheatingDaddyApp extends LitElement {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.removeAllListeners('update-response');
+            ipcRenderer.removeAllListeners('update-response-enrichment');
             ipcRenderer.removeAllListeners('update-status');
             ipcRenderer.removeAllListeners('click-through-toggled');
         }
@@ -183,8 +192,19 @@ export class CheatingDaddyApp extends LitElement {
         }
     }
 
-    setResponse(response) {
-        // Check if this looks like a filler response (very short responses to hmm, ok, etc)
+    setResponse(response, options = {}) {
+        const { mode } = options;
+        if (mode === 'enrichment') {
+            if (this.responses.length === 0) return;
+            const primary = this._lastPrimaryResponse ?? this.responses[this.responses.length - 1];
+            if (!this._lastPrimaryResponse) this._lastPrimaryResponse = primary;
+            const enriched = primary + '\n\n---\n\n**追问参考：**\n' + (response || '');
+            this.responses = [...this.responses.slice(0, -1), enriched];
+            this.shouldAnimateResponse = true;
+            this.requestUpdate();
+            return;
+        }
+        this._lastPrimaryResponse = null;
         const isFillerResponse =
             response.length < 30 &&
             (response.toLowerCase().includes('hmm') ||
@@ -194,19 +214,15 @@ export class CheatingDaddyApp extends LitElement {
                 response.toLowerCase().includes('continue'));
 
         if (this._awaitingNewResponse || this.responses.length === 0) {
-            // Always add as new response when explicitly waiting for one
             this.responses = [...this.responses, response];
             this.currentResponseIndex = this.responses.length - 1;
             this._awaitingNewResponse = false;
             this._currentResponseIsComplete = false;
             console.log('[setResponse] Pushed new response:', response);
         } else if (!this._currentResponseIsComplete && !isFillerResponse && this.responses.length > 0) {
-            // For substantial responses, update the last one (streaming behavior)
-            // Only update if the current response is not marked as complete
             this.responses = [...this.responses.slice(0, this.responses.length - 1), response];
             console.log('[setResponse] Updated last response:', response);
         } else {
-            // For filler responses or when current response is complete, add as new
             this.responses = [...this.responses, response];
             this.currentResponseIndex = this.responses.length - 1;
             this._currentResponseIsComplete = false;
@@ -223,6 +239,25 @@ export class CheatingDaddyApp extends LitElement {
 
     setLiveAsrRunning(running) {
         this.isLiveAsrRunning = !!running;
+        this.requestUpdate();
+    }
+
+    setIntentPreview(text) {
+        const s = typeof text === 'string' ? text.trim() : '';
+        if (!s) {
+            this._intentSuggestions = [];
+            this.intentPreview = '';
+        } else {
+            const normalized = s.replace(/\s+/g, ' ').toLowerCase();
+            const exists = (this._intentSuggestions || []).some(item => {
+                const n = String(item || '').replace(/\s+/g, ' ').toLowerCase();
+                return n === normalized || n.includes(normalized) || normalized.includes(n);
+            });
+            if (!exists) {
+                this._intentSuggestions = [...(this._intentSuggestions || []), s].slice(-3);
+            }
+            this.intentPreview = this._intentSuggestions.join('\n');
+        }
         this.requestUpdate();
     }
 
@@ -492,6 +527,7 @@ export class CheatingDaddyApp extends LitElement {
                     <assistant-view
                         .responses=${this.responses}
                         .liveTranscript=${this.liveTranscript}
+                        .intentPreview=${this.intentPreview}
                         .isLiveAsrRunning=${this.isLiveAsrRunning}
                         .currentResponseIndex=${this.currentResponseIndex}
                         .selectedProfile=${this.selectedProfile}
