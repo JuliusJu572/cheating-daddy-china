@@ -95,6 +95,79 @@ function mergeCustomPrompt(resumeContext, customPrompt) {
     return `${left}\n\n${right}`;
 }
 
+async function extractTextFromFile(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.pdf') {
+        const pdfParse = require('pdf-parse');
+        const buffer = fs.readFileSync(filePath);
+        const result = await pdfParse(buffer);
+        return result.text || '';
+    } else if (ext === '.docx' || ext === '.doc') {
+        const mammoth = require('mammoth');
+        const result = await mammoth.extractRawText({ path: filePath });
+        return result.value || '';
+    } else if (ext === '.txt') {
+        return fs.readFileSync(filePath, 'utf-8');
+    }
+    throw new Error(`不支持的文件格式：${ext}，请上传 PDF、DOCX 或 TXT 文件`);
+}
+
+async function analyzeResumeLocally(rawText, apiKey, modelApiBase) {
+    const key = String(apiKey || '').trim();
+    if (!key) throw new Error('缺少 API Key，请先配置 License Key 或直接填写 API Key');
+
+    const base = String(modelApiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '');
+    const endpoint = `${base}/chat/completions`;
+    const analysisPrompt = [
+        '你是简历结构化分析助手。请将用户简历提炼成可直接注入面试 AI 的上下文。',
+        '',
+        '输出要求：',
+        '1) 使用以下固定小节标题，每节单独成段：',
+        '【候选人定位】',
+        '【核心技能】',
+        '【工作经历亮点】',
+        '【项目亮点】',
+        '【教育背景】',
+        '【可展开提问点】',
+        '2) 每节标题后换行，再写该节内容。',
+        '3) 只输出纯文本，不要 Markdown 或代码块。总长度控制在 1200 字以内。',
+        '',
+        '以下是简历原文：',
+        rawText || '',
+    ].join('\n');
+
+    const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+            model: 'qwen-plus',
+            messages: [
+                { role: 'system', content: '你是资深技术招聘顾问。' },
+                { role: 'user', content: analysisPrompt },
+            ],
+            temperature: 0.2,
+            stream: false,
+        }),
+    });
+
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`简历分析失败：HTTP ${res.status} ${text}`);
+    }
+
+    const data = await res.json();
+    const content = data?.choices?.[0]?.message?.content ?? '';
+    if (typeof content === 'string') return content.trim();
+    if (Array.isArray(content)) {
+        const textPart = content.find(x => typeof x?.text === 'string');
+        return String(textPart?.text || '').trim();
+    }
+    return '';
+}
+
 async function createMainWindow() {
     if (creatingWindow) return mainWindow;
     if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
@@ -692,6 +765,44 @@ function setupGeneralIpcHandlers() {
         }
     });
 
+    ipcMain.handle('user-parse-resume-local', async (_event, { filePath } = {}) => {
+        try {
+            const fp = String(filePath || '').trim();
+            if (!fp) return { success: false, error: 'filePath 不能为空' };
+            if (!fs.existsSync(fp)) return { success: false, error: '文件不存在' };
+
+            const rawText = await extractTextFromFile(fp);
+            if (!rawText || !rawText.trim()) return { success: false, error: '无法从文件中提取文本内容' };
+
+            const cfg = getLocalConfig();
+            const apiKey = String(cfg.apiKey || '').trim();
+            if (!apiKey) return { success: false, error: '请先配置 API Key 或用 License Key 登录' };
+
+            const analyzedContent = await analyzeResumeLocally(rawText, apiKey, cfg.modelApiBase);
+            return { success: true, analyzedContent, rawText };
+        } catch (error) {
+            console.error('user-parse-resume-local error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('user-notify-resume-upload', async (_event, { filename, size } = {}) => {
+        try {
+            const { userApiBase, userAuthToken } = getUserApiConfig();
+            if (!userApiBase || !userAuthToken) return { success: false, error: '未登录，跳过元数据上报' };
+
+            const { ok, data } = await userApiRequest('/api/resume/upload-meta', {
+                method: 'POST',
+                body: { filename: String(filename || ''), size: Number(size) || 0 },
+                requireAuth: true,
+            });
+            return ok ? { success: true } : { success: false, error: data?.error || 'upload-meta failed' };
+        } catch (error) {
+            console.error('user-notify-resume-upload error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
     ipcMain.handle('user-list-resumes', async () => {
         try {
             const { userApiBase, userAuthToken } = getUserApiConfig();
@@ -1102,7 +1213,7 @@ function setupGeneralIpcHandlers() {
 
     ipcMain.handle('initialize-model', async (event, payload) => {
         try {
-            const { model, apiKey, apiBase, customPrompt, profile, language, maxTokens } = payload || {};
+            const { model, apiKey, apiBase, customPrompt, localResumeContext, profile, language, maxTokens } = payload || {};
             console.log('🚀 [initialize-model] 初始化模型...');
             console.log('🚀 [initialize-model] Model:', model);
             console.log('🚀 [initialize-model] Profile:', profile);
@@ -1114,14 +1225,19 @@ function setupGeneralIpcHandlers() {
             }
 
             const localCfg = getLocalConfig();
-            const resumeContext = await fetchResumeContext({
+            const backendContext = await fetchResumeContext({
                 userApiBase: localCfg?.userApiBase,
                 userAuthToken: localCfg?.userAuthToken,
             });
-            const mergedCustomPrompt = mergeCustomPrompt(resumeContext, customPrompt || '');
+            const mergedCustomPrompt = mergeCustomPrompt(
+                mergeCustomPrompt(backendContext, localResumeContext || ''),
+                customPrompt || ''
+            );
             console.log(
-                '🚀 [initialize-model] Resume context length:',
-                resumeContext.length,
+                '🚀 [initialize-model] Backend context length:',
+                backendContext.length,
+                'Local resume context length:',
+                (localResumeContext || '').length,
                 'Merged prompt length:',
                 mergedCustomPrompt.length
             );

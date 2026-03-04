@@ -73,6 +73,21 @@ router.post('/upload', authRequired, upload.single('resume'), async (req, res) =
     }
 });
 
+router.post('/upload-meta', authRequired, async (req, res) => {
+    try {
+        const filename = String(req.body?.filename || '').trim().slice(0, 255);
+        const size = Number(req.body?.size) || 0;
+        await pool.query(
+            `INSERT INTO resumes (user_id, original_filename, file_size, created_at)
+             VALUES ($1, $2, $3, NOW())`,
+            [req.user.id, filename, size]
+        );
+        return res.json({ success: true });
+    } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 router.get('/list', authRequired, async (req, res) => {
     try {
         const rows = await listResumesByUser(req.user.id);

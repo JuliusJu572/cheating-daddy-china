@@ -855,21 +855,6 @@ export class AdvancedView extends LitElement {
                         登录账号后可上传简历，AI 将自动将简历内容作为上下文，提升面试回答精准度。
                     </div>
 
-                    <!-- 服务地址配置 -->
-                    <div class="form-grid" style="margin-bottom:12px;">
-                        <div class="form-group">
-                            <label class="form-label">用户服务地址（userApiBase）</label>
-                            <input
-                                type="text"
-                                class="form-control"
-                                placeholder="例如: http://127.0.0.1:8787"
-                                .value=${this.userApiBase}
-                                @input=${e => this._saveUserApiBase(e.target.value)}
-                            />
-                            <div class="form-description">后端服务地址，用于登录、简历上传等。用户操作均在软件内完成。</div>
-                        </div>
-                    </div>
-
                     ${this.isUserLoggedIn ? html`
                         <div class="api-key-status has-key" style="margin-bottom:12px;">
                             <span class="success-icon">✅</span>

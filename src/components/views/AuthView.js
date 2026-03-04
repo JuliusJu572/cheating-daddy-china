@@ -294,7 +294,6 @@ export class AuthView extends LitElement {
                     />
                 </div>
 
-                <div class="service-info">用户服务地址：${this.userApiBase || '未配置'}</div>
 
                 ${this.statusMessage
                     ? html`<div class="status ${this.statusType}">${this.statusMessage}</div>`

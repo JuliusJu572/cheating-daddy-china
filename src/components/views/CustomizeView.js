@@ -631,50 +631,73 @@ export class CustomizeView extends LitElement {
             const { ipcRenderer } = window.require('electron');
             const authRes = await ipcRenderer.invoke('get-user-auth');
             this.isUserLoggedIn = authRes?.hasUserAuthToken || false;
-            if (this.isUserLoggedIn) {
-                const listRes = await ipcRenderer.invoke('user-list-resumes');
-                this.resumeList = listRes?.resumes || [];
-            }
         } catch (_) {}
+        this._loadLocalResumeList();
         this.requestUpdate();
+    }
+
+    _loadLocalResumeList() {
+        try {
+            const raw = localStorage.getItem('localResumeList');
+            this.resumeList = raw ? JSON.parse(raw) : [];
+        } catch (_) {
+            this.resumeList = [];
+        }
+    }
+
+    _saveLocalResumeList(list) {
+        localStorage.setItem('localResumeList', JSON.stringify(list));
+        // 始终将第一条作为注入上下文
+        const first = list[0];
+        if (first) {
+            localStorage.setItem('localResumeContext', first.analyzedContent || '');
+        } else {
+            localStorage.removeItem('localResumeContext');
+        }
     }
 
     async handleResumeUpload() {
         if (!window.require || this.isUploadingResume) return;
-        const { ipcRenderer, dialog } = window.require('electron');
+        const { ipcRenderer } = window.require('electron');
         let filePath = '';
         try {
             const result = await ipcRenderer.invoke('show-open-dialog', {
                 title: '选择简历文件',
-                filters: [{ name: '简历文件', extensions: ['pdf', 'docx'] }],
+                filters: [{ name: '简历文件', extensions: ['pdf', 'docx', 'txt'] }],
                 properties: ['openFile'],
             });
             if (result?.canceled || !result?.filePaths?.[0]) return;
             filePath = result.filePaths[0];
         } catch (_) {
-            // Fallback: 让用户手动输入路径
-            const path = window.prompt('请输入简历文件的完整路径（.pdf 或 .docx）：');
-            if (!path) return;
-            filePath = path.trim();
+            const p = window.prompt('请输入简历文件的完整路径（.pdf、.docx 或 .txt）：');
+            if (!p) return;
+            filePath = p.trim();
         }
 
+        const filename = filePath.split(/[\\/]/).pop() || filePath;
         this.isUploadingResume = true;
-        this.resumeMessage = '正在上传并解析简历，请稍候...';
+        this.resumeMessage = '正在本地解析简历，请稍候...';
         this.resumeMessageType = 'info';
         this.requestUpdate();
         try {
-            const res = await ipcRenderer.invoke('user-upload-resume', { filePath });
+            const res = await ipcRenderer.invoke('user-parse-resume-local', { filePath });
             if (!res?.success) {
-                this.resumeMessage = '上传失败: ' + (res?.error || '未知错误');
+                this.resumeMessage = '解析失败: ' + (res?.error || '未知错误');
                 this.resumeMessageType = 'error';
             } else {
-                this.resumeMessage = '✅ 简历上传并解析成功！下次会话将自动注入简历上下文。';
+                const list = this.resumeList.slice();
+                list.unshift({ filename, analyzedContent: res.analyzedContent, savedAt: new Date().toISOString() });
+                this._saveLocalResumeList(list);
+                this.resumeList = list;
+                this.resumeMessage = '✅ 简历解析成功！下次会话将自动注入简历上下文。';
                 this.resumeMessageType = 'success';
-                const listRes = await ipcRenderer.invoke('user-list-resumes');
-                this.resumeList = listRes?.resumes || [];
+                // 已登录时额外上报元数据
+                if (this.isUserLoggedIn) {
+                    ipcRenderer.invoke('user-notify-resume-upload', { filename }).catch(() => {});
+                }
             }
         } catch (error) {
-            this.resumeMessage = '上传失败: ' + (error?.message || '未知错误');
+            this.resumeMessage = '解析失败: ' + (error?.message || '未知错误');
             this.resumeMessageType = 'error';
         } finally {
             this.isUploadingResume = false;
@@ -682,22 +705,11 @@ export class CustomizeView extends LitElement {
         }
     }
 
-    async handleResumeEditClick(id) {
-        if (!window.require) return;
-        const { ipcRenderer } = window.require('electron');
-        try {
-            const res = await ipcRenderer.invoke('user-get-resume', { id });
-            if (!res?.success) {
-                this.resumeMessage = res?.error || '加载失败';
-                this.resumeMessageType = 'error';
-            } else {
-                this.editingResumeId = id;
-                this.editingContent = res.resume?.analyzed_content || '';
-            }
-        } catch (e) {
-            this.resumeMessage = e?.message || '加载失败';
-            this.resumeMessageType = 'error';
-        }
+    handleResumeEditClick(index) {
+        const item = this.resumeList[index];
+        if (!item) return;
+        this.editingResumeId = index;
+        this.editingContent = item.analyzedContent || '';
         this.requestUpdate();
     }
 
@@ -707,27 +719,19 @@ export class CustomizeView extends LitElement {
         this.requestUpdate();
     }
 
-    async handleResumeEditSave() {
-        if (!window.require || this.isSavingResume || !this.editingResumeId) return;
-        const { ipcRenderer } = window.require('electron');
+    handleResumeEditSave() {
+        if (this.isSavingResume || this.editingResumeId === null) return;
         this.isSavingResume = true;
         this.requestUpdate();
         try {
-            const res = await ipcRenderer.invoke('user-update-resume', {
-                id: this.editingResumeId,
-                analyzedContent: this.editingContent,
-            });
-            if (!res?.success) {
-                this.resumeMessage = res?.error || '保存失败';
-                this.resumeMessageType = 'error';
-            } else {
-                this.resumeMessage = '✅ 解析内容已更新';
-                this.resumeMessageType = 'success';
-                this.editingResumeId = null;
-                this.editingContent = '';
-                const listRes = await ipcRenderer.invoke('user-list-resumes');
-                this.resumeList = listRes?.resumes || [];
-            }
+            const list = this.resumeList.slice();
+            list[this.editingResumeId] = { ...list[this.editingResumeId], analyzedContent: this.editingContent };
+            this._saveLocalResumeList(list);
+            this.resumeList = list;
+            this.resumeMessage = '✅ 解析内容已更新';
+            this.resumeMessageType = 'success';
+            this.editingResumeId = null;
+            this.editingContent = '';
         } catch (e) {
             this.resumeMessage = e?.message || '保存失败';
             this.resumeMessageType = 'error';
@@ -735,6 +739,16 @@ export class CustomizeView extends LitElement {
             this.isSavingResume = false;
             this.requestUpdate();
         }
+    }
+
+    handleResumeDelete(index) {
+        const list = this.resumeList.slice();
+        list.splice(index, 1);
+        this._saveLocalResumeList(list);
+        this.resumeList = list;
+        this.resumeMessage = '已删除';
+        this.resumeMessageType = 'info';
+        this.requestUpdate();
     }
 
     getProfiles() {
@@ -1743,80 +1757,75 @@ export class CustomizeView extends LitElement {
                     <div class="section-title">
                         <span>📄 简历管理</span>
                     </div>
-                    ${!this.isUserLoggedIn ? html`
-                        <div class="form-description" style="color:rgba(251,191,36,0.9);">
-                            当前未登录，登录后可上传并管理简历上下文。
-                        </div>
-                        <div class="button-group" style="margin-top:10px;">
-                            <button class="action-button" @click=${() => this.onOpenAuth()}>
-                                前往登录 / 注册
+                    <div class="form-description">
+                        上传简历后，AI 将在每次新会话中自动将简历摘要作为上下文，提升回答精准度。支持 .pdf、.docx、.txt 格式。解析在本地完成，内容仅保存在本机。
+                    </div>
+                    <div class="form-grid">
+                        <div class="button-group">
+                            <button
+                                class="action-button"
+                                @click=${this.handleResumeUpload}
+                                ?disabled=${this.isUploadingResume}
+                            >
+                                ${this.isUploadingResume ? '解析中...' : '📤 上传并解析简历'}
                             </button>
                         </div>
-                    ` : html`
-                        <div class="form-description">
-                            上传简历后，AI 将在每次新会话中自动将简历摘要作为上下文，提升面试回答精准度。仅支持 .pdf 和 .docx 格式，最大 10MB。
-                        </div>
-                        <div class="form-grid">
-                            <div class="button-group">
-                                <button
-                                    class="action-button"
-                                    @click=${this.handleResumeUpload}
-                                    ?disabled=${this.isUploadingResume}
-                                >
-                                    ${this.isUploadingResume ? '上传解析中...' : '📤 上传简历'}
-                                </button>
+
+                        ${this.resumeMessage ? html`
+                            <div class="status-message ${this.resumeMessageType === 'error' ? 'status-error' : this.resumeMessageType === 'success' ? 'status-success' : ''}">
+                                ${this.resumeMessage}
                             </div>
+                        ` : ''}
 
-                            ${this.resumeMessage ? html`
-                                <div class="status-message ${this.resumeMessageType === 'error' ? 'status-error' : 'status-success'}">
-                                    ${this.resumeMessage}
-                                </div>
-                            ` : ''}
-
-                            ${this.resumeList.length > 0 ? html`
-                                <div class="form-group full-width" style="margin-top:8px;">
-                                    <label class="form-label">已上传的简历</label>
-                                    <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
-                                        ${this.resumeList.map((r, i) => html`
-                                            <div style="
-                                                display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;
-                                                padding:8px 12px;
-                                                background:var(--card-background,rgba(255,255,255,0.04));
-                                                border:1px solid var(--card-border,rgba(255,255,255,0.1));
-                                                border-radius:6px;font-size:12px;
-                                                ${i === 0 ? 'border-color:rgba(34,197,94,0.4);' : ''}
-                                            ">
-                                                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                                                    ${i === 0 ? '✅ ' : ''}${r.original_filename}
+                        ${this.resumeList.length > 0 ? html`
+                            <div class="form-group full-width" style="margin-top:8px;">
+                                <label class="form-label">本地已保存简历</label>
+                                <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+                                    ${this.resumeList.map((r, i) => html`
+                                        <div style="
+                                            display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;
+                                            padding:8px 12px;
+                                            background:var(--card-background,rgba(255,255,255,0.04));
+                                            border:1px solid ${i === 0 ? 'rgba(34,197,94,0.4)' : 'var(--card-border,rgba(255,255,255,0.1))'};
+                                            border-radius:6px;font-size:12px;
+                                        ">
+                                            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                                                ${i === 0 ? '✅ ' : ''}${r.filename}
+                                            </span>
+                                            <span style="display:flex;align-items:center;gap:8px;">
+                                                <span style="color:var(--description-color,rgba(255,255,255,0.5));white-space:nowrap;">
+                                                    ${new Date(r.savedAt).toLocaleDateString('zh-CN')}
                                                 </span>
-                                                <span style="display:flex;align-items:center;gap:8px;">
-                                                    <span style="color:var(--description-color,rgba(255,255,255,0.5));white-space:nowrap;">
-                                                        ${new Date(r.created_at).toLocaleDateString('zh-CN')}
-                                                    </span>
-                                                    <button
-                                                        class="form-control"
-                                                        style="padding:4px 10px;cursor:pointer;font-size:11px;"
-                                                        @click=${() => this.handleResumeEditClick(r.id)}
-                                                    >
-                                                        编辑解析内容
-                                                    </button>
-                                                </span>
-                                            </div>
-                                        `)}
-                                    </div>
-                                    <div class="form-description">✅ 最新简历（第一条）将自动注入每次会话上下文。可点击「编辑解析内容」查看或修改 AI 提取的信息。</div>
+                                                <button
+                                                    class="form-control"
+                                                    style="padding:4px 10px;cursor:pointer;font-size:11px;"
+                                                    @click=${() => this.handleResumeEditClick(i)}
+                                                >
+                                                    编辑
+                                                </button>
+                                                <button
+                                                    class="form-control"
+                                                    style="padding:4px 10px;cursor:pointer;font-size:11px;color:rgba(239,68,68,0.9);border-color:rgba(239,68,68,0.3);"
+                                                    @click=${() => this.handleResumeDelete(i)}
+                                                >
+                                                    删除
+                                                </button>
+                                            </span>
+                                        </div>
+                                    `)}
                                 </div>
-                            ` : html`
-                                <div class="form-description" style="margin-top:4px;">暂无简历，请上传。</div>
-                            `}
-                        </div>
-                    `}
+                                <div class="form-description">✅ 第一条简历将自动注入每次会话上下文。可点击「编辑」查看或修改 AI 提取的内容。</div>
+                            </div>
+                        ` : html`
+                            <div class="form-description" style="margin-top:4px;">暂无本地简历，请上传。</div>
+                        `}
+                    </div>
                 </div>
 
                 <div class="settings-note">💡 ${t('settings_saved_note')}</div>
             </div>
 
-            ${this.editingResumeId ? html`
+            ${this.editingResumeId !== null ? html`
                 <div class="resume-edit-overlay" @click=${(e) => e.target === e.currentTarget && this.handleResumeEditCancel()}>
                     <div class="resume-edit-modal" @click=${(e) => e.stopPropagation()}>
                         <div class="modal-header">
@@ -1825,7 +1834,7 @@ export class CustomizeView extends LitElement {
                         </div>
                         <div class="modal-body">
                             <div class="resume-edit-usage">
-                                以下内容会作为「用户提供的上下文」注入到面试 AI 的系统提示中，用于面试辅导、模拟面试等场景。
+                                以下内容会作为「用户提供的上下文」注入到面试 AI 的系统提示中，用于面试辅导、模拟面试等场景。修改后保存即生效（本地存储）。
                             </div>
                             <textarea
                                 class="form-control"
