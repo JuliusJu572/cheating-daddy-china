@@ -54,6 +54,7 @@ let mainWindow = null;
 let creatingWindow = false;
 const DEFAULT_MODEL_API_BASE = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 const DEFAULT_ASR_API_BASE = 'https://dashscope.aliyuncs.com/api/v1';
+const PROXY_API_BASE = 'https://muwadxphkifm.sealoshzh.site';
 const TRANSCRIPT_CLEAN_MODEL_CANDIDATES = ['deepseek-v3.2', 'qwen-flash', 'qwen3.5-flash'];
 const TRANSCRIPT_CLEAN_TIMEOUT_MS = 12000;
 const TRANSCRIPT_CLEAN_RETRIES = 1;
@@ -134,7 +135,7 @@ async function extractTextFromFile(filePath) {
 async function analyzeResumeLocally(rawText, apiKey, modelApiBase) {
     const key = String(apiKey || '').trim();
     const proxyCfg = getUserAiProxyConfig();
-    if (!key && !proxyCfg.enabled) throw new Error('缺少 API Key，请先配置 License Key 或直接填写 API Key');
+    if (!key && !proxyCfg.enabled) throw new Error('缺少 API Key，请先填写 API Key 或登录账号');
 
     const base = String(modelApiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '');
     const endpoint = `${base}/chat/completions`;
@@ -266,10 +267,10 @@ function normalizeHotwords(raw) {
 
 function getUserAiProxyConfig() {
     const cfg = getLocalConfig();
-    const userApiBase = String(cfg?.userApiBase || '').trim().replace(/\/$/, '');
+    const userApiBase = PROXY_API_BASE;
     const userAuthToken = String(cfg?.userAuthToken || '').trim();
     const licenseKey = String(cfg?.licenseKey || '').trim();
-    const enabled = Boolean(userApiBase && licenseKey);
+    const enabled = Boolean(userApiBase && userAuthToken && licenseKey);
     return { enabled, userApiBase, userAuthToken, licenseKey };
 }
 
@@ -277,11 +278,11 @@ function buildUserAiProxyHeaders(proxyCfg) {
     const headers = {
         'Content-Type': 'application/json; charset=utf-8',
     };
-    if (proxyCfg?.licenseKey) {
-        headers['x-license-key'] = proxyCfg.licenseKey;
-    }
     if (proxyCfg?.userAuthToken) {
         headers.Authorization = `Bearer ${proxyCfg.userAuthToken}`;
+    }
+    if (proxyCfg?.licenseKey) {
+        headers['x-license-key'] = proxyCfg.licenseKey;
     }
     return headers;
 }
@@ -309,9 +310,6 @@ function getUserFacingAiErrorMessage(error) {
 async function callUserAiProxyJson(path, payload) {
     const proxyCfg = getUserAiProxyConfig();
     const { enabled, userApiBase } = proxyCfg;
-    if (!enabled && proxyCfg.licenseKey) {
-        throw new Error('已配置 License Key，请先配置 userApiBase 以启用后端计量与配额');
-    }
     if (!enabled) return null;
     const url = `${userApiBase}${path}`;
     const res = await fetch(url, {
@@ -329,7 +327,7 @@ async function callUserAiProxyJson(path, payload) {
 async function analyzeJdLocally(rawText, apiKey, modelApiBase) {
     const key = String(apiKey || '').trim();
     const proxyCfg = getUserAiProxyConfig();
-    if (!key && !proxyCfg.enabled) throw new Error('缺少 API Key，请先配置 API Key 或 License Key');
+    if (!key && !proxyCfg.enabled) throw new Error('缺少 API Key，请先填写 API Key 或登录账号');
 
     const base = String(modelApiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '');
     const endpoint = `${base}/chat/completions`;
@@ -843,7 +841,7 @@ function setupGeneralIpcHandlers() {
             writeConfig(cfg);
             return {
                 success: true,
-                userApiBase: cfg.userApiBase || '',
+                userApiBase: PROXY_API_BASE,
                 hasUserAuthToken: Boolean(cfg.userAuthToken),
             };
         } catch (error) {
@@ -857,7 +855,7 @@ function setupGeneralIpcHandlers() {
             const cfg = getLocalConfig();
             return {
                 success: true,
-                userApiBase: cfg.userApiBase || '',
+                userApiBase: PROXY_API_BASE,
                 hasUserAuthToken: Boolean(cfg.userAuthToken),
             };
         } catch (error) {
@@ -881,7 +879,7 @@ function setupGeneralIpcHandlers() {
     function getUserApiConfig() {
         const cfg = getLocalConfig();
         return {
-            userApiBase: String(cfg.userApiBase || '').trim().replace(/\/$/, ''),
+            userApiBase: PROXY_API_BASE,
             userAuthToken: String(cfg.userAuthToken || '').trim(),
         };
     }
@@ -2111,9 +2109,6 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
         sendToRenderer('update-status', '准备追问参考...');
         const proxyCfg = getUserAiProxyConfig();
         const useProxy = proxyCfg.enabled;
-        if (!useProxy && proxyCfg.licenseKey) {
-            throw new Error('已配置 License Key，请先配置 userApiBase 以启用后端计量与配额');
-        }
         const targetEndpoint = useProxy ? `${proxyCfg.userApiBase}/api/ai/enrich` : endpoint;
         const res = await fetch(targetEndpoint, {
             method: 'POST',
@@ -2174,9 +2169,6 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
 
         const proxyCfg = getUserAiProxyConfig();
         const useProxy = proxyCfg.enabled;
-        if (!useProxy && proxyCfg.licenseKey) {
-            throw new Error('已配置 License Key，请先配置 userApiBase 以启用后端计量与配额');
-        }
         const targetEndpoint = useProxy ? `${proxyCfg.userApiBase}/api/ai/chat` : endpoint;
         const headers = useProxy
             ? buildUserAiProxyHeaders(proxyCfg)
@@ -2396,9 +2388,6 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
 
         const proxyCfg = getUserAiProxyConfig();
         const useProxy = proxyCfg.enabled;
-        if (!useProxy && proxyCfg.licenseKey) {
-            throw new Error('已配置 License Key，请先配置 userApiBase 以启用后端计量与配额');
-        }
         const targetEndpoint = useProxy ? `${proxyCfg.userApiBase}/api/ai/chat` : endpoint;
         const headers = useProxy
             ? buildUserAiProxyHeaders(proxyCfg)

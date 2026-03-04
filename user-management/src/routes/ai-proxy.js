@@ -65,84 +65,38 @@ function decryptLicenseKeyToApiKey(licenseKey) {
     return plain;
 }
 
-async function resolveUserByLicenseKey(licenseKey) {
-    const normalized = String(licenseKey || '').trim();
-    if (!normalized) return null;
-
-    const existing = await pool.query(
-        `SELECT id, email, role, license_key FROM users WHERE license_key = $1 LIMIT 1`,
-        [normalized]
-    );
-    if (existing.rows[0]) return existing.rows[0];
-
-    const inserted = await pool.query(
-        `
-        INSERT INTO users(license_key, role)
-        VALUES($1, 'user')
-        RETURNING id, email, role, license_key
-        `,
-        [normalized]
-    );
-    return inserted.rows[0] || null;
-}
-
-async function authByTokenOrLicense(req, res, next) {
-    try {
-        const authHeader = req.headers.authorization || '';
-        const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : '';
-        const licenseKey =
-            String(req.headers['x-license-key'] || req.body?.licenseKey || req.body?.license_key || '')
-                .trim();
-
-        let tokenUser = null;
-        if (bearer) {
-            try {
-                const payload = jwt.verify(bearer, config.jwtSecret);
-                const tokenUserRes = await pool.query(
-                    `SELECT id, email, role, license_key FROM users WHERE id = $1 LIMIT 1`,
-                    [payload.uid]
-                );
-                tokenUser = tokenUserRes.rows[0] || null;
-            } catch (_) {
-                // token invalid 时继续尝试 license 鉴权
-            }
-        }
-
-        if (licenseKey) {
-            const licenseUser = await resolveUserByLicenseKey(licenseKey);
-            if (!licenseUser) {
-                return fail(res, 401, 'invalid license key', 'LICENSE_INVALID');
-            }
-            req.user = {
-                id: licenseUser.id,
-                email: licenseUser.email || '',
-                role: licenseUser.role || 'user',
-                licenseKey,
-            };
-            req.upstreamApiKey = decryptLicenseKeyToApiKey(licenseKey);
-            return next();
-        }
-
-        if (tokenUser) {
-            req.user = {
-                id: tokenUser.id,
-                email: tokenUser.email || '',
-                role: tokenUser.role || 'user',
-                licenseKey: tokenUser.license_key || '',
-            };
-            if (tokenUser.license_key) {
-                req.upstreamApiKey = decryptLicenseKeyToApiKey(tokenUser.license_key);
-            } else {
-                return fail(res, 401, 'missing license key for current account', 'LICENSE_REQUIRED');
-            }
-            return next();
-        }
-
-        return fail(res, 401, 'Missing bearer token or license key', 'AUTH_MISSING');
-    } catch (error) {
-        return fail(res, 401, error?.message || 'auth failed', 'AUTH_FAILED');
+async function authJwtAndLicense(req, res, next) {
+    const authHeader = req.headers.authorization || '';
+    const bearer = authHeader.startsWith('Bearer ')
+        ? authHeader.slice('Bearer '.length).trim()
+        : '';
+    if (!bearer) {
+        return fail(res, 401, 'Missing bearer token', 'AUTH_MISSING');
     }
+    let payload = null;
+    try {
+        payload = jwt.verify(bearer, config.jwtSecret);
+    } catch (_) {
+        return fail(res, 401, 'Invalid token', 'TOKEN_INVALID');
+    }
+
+    const licenseKey = String(req.headers['x-license-key'] || '').trim();
+    if (!licenseKey) {
+        return fail(res, 401, 'Missing license key', 'LICENSE_MISSING');
+    }
+
+    let upstreamApiKey = '';
+    try {
+        upstreamApiKey = decryptLicenseKeyToApiKey(licenseKey);
+    } catch (_) {
+        return fail(res, 401, 'Invalid license key', 'LICENSE_INVALID');
+    }
+
+    req.user = { id: payload.uid };
+    req.upstreamApiKey = upstreamApiKey;
+    return next();
 }
+
 
 async function getUserQuotaState(userId) {
     const result = await pool.query(
@@ -341,7 +295,7 @@ async function proxySse({ req, res, callType, endpoint, buildPayload }) {
     }
 }
 
-router.post('/chat', authByTokenOrLicense, async (req, res) => {
+router.post('/chat', authJwtAndLicense, async (req, res) => {
     const base = sanitizeBase(config.aiApiBase, 'https://dashscope.aliyuncs.com/compatible-mode/v1');
     const endpoint = `${base}/chat/completions`;
     return proxySse({
@@ -358,7 +312,7 @@ router.post('/chat', authByTokenOrLicense, async (req, res) => {
     });
 });
 
-router.post('/enrich', authByTokenOrLicense, async (req, res) => {
+router.post('/enrich', authJwtAndLicense, async (req, res) => {
     const base = sanitizeBase(config.aiApiBase, 'https://dashscope.aliyuncs.com/compatible-mode/v1');
     const endpoint = `${base}/chat/completions`;
     return proxySse({
@@ -375,7 +329,7 @@ router.post('/enrich', authByTokenOrLicense, async (req, res) => {
     });
 });
 
-router.post('/resume', authByTokenOrLicense, async (req, res) => {
+router.post('/resume', authJwtAndLicense, async (req, res) => {
     const base = sanitizeBase(config.aiApiBase, 'https://dashscope.aliyuncs.com/compatible-mode/v1');
     const endpoint = `${base}/chat/completions`;
     return proxyJson({
@@ -392,7 +346,7 @@ router.post('/resume', authByTokenOrLicense, async (req, res) => {
     });
 });
 
-router.post('/jd', authByTokenOrLicense, async (req, res) => {
+router.post('/jd', authJwtAndLicense, async (req, res) => {
     const base = sanitizeBase(config.aiApiBase, 'https://dashscope.aliyuncs.com/compatible-mode/v1');
     const endpoint = `${base}/chat/completions`;
     return proxyJson({
@@ -409,7 +363,7 @@ router.post('/jd', authByTokenOrLicense, async (req, res) => {
     });
 });
 
-router.post('/clean', authByTokenOrLicense, async (req, res) => {
+router.post('/clean', authJwtAndLicense, async (req, res) => {
     const base = sanitizeBase(config.aiApiBase, 'https://dashscope.aliyuncs.com/compatible-mode/v1');
     const endpoint = `${base}/chat/completions`;
     return proxyJson({
@@ -427,7 +381,7 @@ router.post('/clean', authByTokenOrLicense, async (req, res) => {
     });
 });
 
-router.post('/asr', authByTokenOrLicense, async (req, res) => {
+router.post('/asr', authJwtAndLicense, async (req, res) => {
     const asrBase = sanitizeBase(config.aiAsrApiBase, 'https://dashscope.aliyuncs.com/api/v1');
     const endpoint = `${asrBase}/services/aigc/multimodal-generation/generation`;
     return proxyJson({
