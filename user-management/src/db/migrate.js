@@ -128,6 +128,29 @@ async function migrate() {
     `);
 
     await pool.query(`
+        CREATE TABLE IF NOT EXISTS admin_audit_logs (
+            id BIGSERIAL PRIMARY KEY,
+            admin_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+            admin_email TEXT NOT NULL DEFAULT '',
+            action TEXT NOT NULL,
+            target_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+            target_email TEXT NOT NULL DEFAULT '',
+            detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+    `);
+
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created_at
+        ON admin_audit_logs(created_at DESC);
+    `);
+
+    await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_target_user
+        ON admin_audit_logs(target_user_id, created_at DESC);
+    `);
+
+    await pool.query(`
         UPDATE users SET role = 'admin' WHERE LOWER(TRIM(email)) = '1272959954@qq.com';
     `);
 }

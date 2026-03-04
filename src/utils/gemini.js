@@ -18,6 +18,17 @@ function sendToRenderer(channel, payload) {
     }
 }
 
+function normalizeAppError(error, fallbackCode = 'UNKNOWN_ERROR') {
+    return {
+        message: error?.message || '请求失败',
+        code: String(error?.code || fallbackCode),
+        status: Number(error?.status || 0),
+        reason: String(error?.reason || ''),
+        requestId: String(error?.requestId || ''),
+        retryable: Boolean(error?.retryable),
+    };
+}
+
 function setupGeminiIpcHandlers(geminiSessionRef) {
     ipcMain.handle('send-image-content', async (event, { data, mimeType, debug }) => {
         try {
@@ -38,7 +49,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             return { success: true };
         } catch (error) {
             console.error('❌ [send-image-content] error:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: normalizeAppError(error, 'SEND_IMAGE_FAILED') };
         }
     });
 
@@ -59,7 +70,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             return { success: true };
         } catch (error) {
             console.error('❌ [send-text-message] error:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: normalizeAppError(error, 'SEND_TEXT_FAILED') };
         }
     });
 
@@ -88,7 +99,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             }
         } catch (error) {
             console.error('Error sending windows audio:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: normalizeAppError(error, 'SEND_AUDIO_FAILED') };
         }
     });
 

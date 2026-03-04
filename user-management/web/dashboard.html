@@ -26,15 +26,21 @@
         if (!user) return;
         WebApi.renderNav(user);
         document.getElementById('user-line').textContent = user.licenseKey ? `License Key 已绑定` : '当前账号';
-
-        const [resumes, voices, sessions] = await Promise.all([
-            WebApi.apiRequest('/api/resume/list').catch(() => ({ resumes: [] })),
-            WebApi.apiRequest('/api/voice/list').catch(() => ({ voices: [] })),
-            WebApi.apiRequest('/api/sessions').catch(() => ({ sessions: [] })),
-        ]);
-        document.getElementById('resume-count').textContent = (resumes.resumes || []).length;
-        document.getElementById('voice-count').textContent = (voices.voices || []).length;
-        document.getElementById('session-count').textContent = (sessions.sessions || []).length;
+        try {
+            const [resumes, voices, sessions] = await Promise.all([
+                WebApi.apiRequest('/api/resume/list'),
+                WebApi.apiRequest('/api/voice/list'),
+                WebApi.apiRequest('/api/sessions'),
+            ]);
+            document.getElementById('resume-count').textContent = (resumes.resumes || []).length;
+            document.getElementById('voice-count').textContent = (voices.voices || []).length;
+            document.getElementById('session-count').textContent = (sessions.sessions || []).length;
+        } catch (err) {
+            document.getElementById('user-line').textContent = WebApi.mapErrorToUserMessage(err);
+            document.getElementById('resume-count').textContent = '-';
+            document.getElementById('voice-count').textContent = '-';
+            document.getElementById('session-count').textContent = '-';
+        }
     })();
 </script>
 </body>

@@ -15,6 +15,12 @@
         .admin-actions button {
             padding: 4px 8px;
             cursor: pointer;
+            border: 1px solid #d1d5db;
+            background: #fff;
+            border-radius: 8px;
+        }
+        .admin-actions button:hover {
+            background: #f8fafc;
         }
         .pill {
             display: inline-block;
@@ -28,6 +34,91 @@
             border-color: #fecaca;
             background: #fef2f2;
             color: #b91c1c;
+        }
+        .pill.active {
+            border-color: #bbf7d0;
+            background: #f0fdf4;
+            color: #166534;
+        }
+        .user-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .user-table th,
+        .user-table td {
+            text-align: left;
+            padding: 8px;
+            border-bottom: 1px solid #f1f5f9;
+            vertical-align: middle;
+        }
+        .chart-box {
+            min-height: 300px;
+        }
+        .chart-wrap {
+            position: relative;
+            min-height: 250px;
+            height: 250px;
+        }
+        .chart-center-label {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            text-align: center;
+            color: #0f172a;
+            font-weight: 700;
+            line-height: 1.3;
+            font-size: 13px;
+        }
+        .chart-center-label .big {
+            display: block;
+            font-size: 20px;
+        }
+        .admin-form-row {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr 160px 130px auto;
+            gap: 10px;
+            align-items: end;
+        }
+        .admin-form-row > div {
+            min-width: 0;
+        }
+        .admin-form-row input,
+        .admin-form-row select {
+            margin-bottom: 0;
+        }
+        .admin-log-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .admin-log-list {
+            max-height: 260px;
+            overflow: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+        }
+        .admin-log-item {
+            padding: 10px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 13px;
+            color: #0f172a;
+        }
+        .admin-log-item:last-child {
+            border-bottom: none;
+        }
+        .admin-log-item .meta {
+            color: #64748b;
+            font-size: 12px;
+        }
+        .danger-action {
+            color: #b91c1c;
+            border-color: #fecaca !important;
+            background: #fff1f2 !important;
         }
         .modal-backdrop {
             position: fixed;
@@ -61,6 +152,9 @@
             .grid-2 {
                 grid-template-columns: 1fr;
             }
+            .admin-form-row {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -79,8 +173,44 @@
         <div class="card"><h2>总 Token 用量</h2><div id="token-count">-</div></div>
     </div>
     <div class="card">
+        <h2>新增用户</h2>
+        <div class="admin-form-row">
+            <div>
+                <label for="create-email">邮箱</label>
+                <input id="create-email" type="email" placeholder="user@example.com" />
+            </div>
+            <div>
+                <label for="create-password">密码（>=8 位）</label>
+                <input id="create-password" type="password" placeholder="请输入密码" />
+            </div>
+            <div>
+                <label for="create-role">角色</label>
+                <select id="create-role">
+                    <option value="user">普通用户</option>
+                    <option value="admin">管理员</option>
+                </select>
+            </div>
+            <div>
+                <label for="create-quota">配额</label>
+                <input id="create-quota" type="number" min="0" step="1" value="1000000" />
+            </div>
+            <div>
+                <button id="create-user-btn">添加用户</button>
+            </div>
+        </div>
+        <div id="create-user-status" class="small"></div>
+    </div>
+    <div class="card">
         <h2>用户列表（配额与冻结）</h2>
         <div id="user-list"></div>
+    </div>
+    <div class="card">
+        <h2>管理员操作日志</h2>
+        <div class="admin-log-toolbar">
+            <div class="small">所有修改记录自带时间戳，支持多管理员追踪</div>
+            <button id="refresh-logs-btn">刷新日志</button>
+        </div>
+        <div id="admin-log-list" class="admin-log-list"></div>
     </div>
 </div>
 
@@ -92,13 +222,18 @@
         </div>
         <div id="usage-modal-status" class="muted" style="margin-bottom:10px;"></div>
         <div class="grid-2">
-            <div class="card">
-                <h4>近 60 天每日 Token</h4>
-                <canvas id="usage-daily-canvas"></canvas>
+            <div class="card chart-box">
+                <h4>总额度占比</h4>
+                <div class="chart-wrap">
+                    <canvas id="usage-quota-canvas"></canvas>
+                    <div id="usage-quota-center" class="chart-center-label"></div>
+                </div>
             </div>
-            <div class="card">
-                <h4>按环节 Token 分布</h4>
-                <canvas id="usage-type-canvas"></canvas>
+            <div class="card chart-box">
+                <h4>已用额度按环节分布</h4>
+                <div class="chart-wrap">
+                    <canvas id="usage-type-canvas"></canvas>
+                </div>
             </div>
         </div>
     </div>
@@ -107,11 +242,92 @@
 <script src="/js/api.js"></script>
 <script>
     (async function () {
-        let dailyChart = null;
+        let quotaChart = null;
         let typeChart = null;
 
         function formatNumber(n) {
             return Number(n || 0).toLocaleString('zh-CN');
+        }
+
+        function formatDateTime(ts) {
+            return ts ? new Date(ts).toLocaleString('zh-CN') : '-';
+        }
+
+        function actionLabel(action) {
+            const map = {
+                create_user: '新增用户',
+                delete_user: '删除用户',
+                set_quota: '修改配额',
+                set_frozen: '冻结/解冻',
+            };
+            return map[action] || action || '-';
+        }
+
+        function renderAuditLogs(logs) {
+            const box = document.getElementById('admin-log-list');
+            if (!Array.isArray(logs) || logs.length === 0) {
+                box.innerHTML = '<div class="admin-log-item">暂无日志</div>';
+                return;
+            }
+            box.innerHTML = logs.map((log) => {
+                const detail = log.detail && typeof log.detail === 'object' ? JSON.stringify(log.detail) : '';
+                return `<div class="admin-log-item">
+                    <div><strong>${actionLabel(log.action)}</strong> · 目标：${log.targetEmail || '-'}（ID: ${log.targetUserId || '-'}）</div>
+                    <div class="meta">管理员：${log.adminEmail || '-'} · 时间：${formatDateTime(log.createdAt)}</div>
+                    <div class="meta">${detail}</div>
+                </div>`;
+            }).join('');
+        }
+
+        async function createUser() {
+            const statusEl = document.getElementById('create-user-status');
+            const email = String(document.getElementById('create-email').value || '').trim();
+            const password = String(document.getElementById('create-password').value || '');
+            const role = String(document.getElementById('create-role').value || 'user');
+            const quotaTokens = Number(document.getElementById('create-quota').value);
+
+            if (!email || !password) {
+                statusEl.textContent = '邮箱和密码必填';
+                return;
+            }
+            if (!Number.isFinite(quotaTokens) || quotaTokens < 0) {
+                statusEl.textContent = '配额必须是 >= 0 的数字';
+                return;
+            }
+            statusEl.textContent = '创建中...';
+            try {
+                await WebApi.apiRequest('/api/admin/users', {
+                    method: 'POST',
+                    body: {
+                        email,
+                        password,
+                        role,
+                        quota_tokens: Math.floor(quotaTokens),
+                    },
+                });
+                document.getElementById('create-password').value = '';
+                statusEl.textContent = `创建成功：${email}`;
+                await loadAdmin();
+            } catch (err) {
+                statusEl.textContent = WebApi.mapErrorToUserMessage(err);
+            }
+        }
+
+        async function deleteUser(userId, email) {
+            const ok = confirm(`确认删除用户 ${email}（ID: ${userId}）？此操作不可恢复。`);
+            if (!ok) return;
+            const verifyInput = prompt(`二次确认：请输入用户邮箱 "${email}" 后才能删除`);
+            if (verifyInput === null) return;
+            const normalizedInput = String(verifyInput || '').trim().toLowerCase();
+            const normalizedEmail = String(email || '').trim().toLowerCase();
+            if (!normalizedInput || normalizedInput !== normalizedEmail) {
+                alert('邮箱不匹配，已取消删除');
+                return;
+            }
+            await WebApi.apiRequest(`/api/admin/users/${userId}`, {
+                method: 'DELETE',
+            });
+            await loadAdmin();
         }
 
         async function setQuota(userId, currentQuota) {
@@ -132,15 +348,18 @@
         async function setFrozen(userId, frozen) {
             await WebApi.apiRequest(`/api/admin/usage/freeze/${userId}`, {
                 method: 'PUT',
-                body: { frozen: Boolean(frozen) },
+                body: {
+                    frozen: Boolean(frozen),
+                    freeze_reason: frozen ? 'manual_frozen_by_admin' : 'manual_unfrozen_by_admin',
+                },
             });
             await loadAdmin();
         }
 
         function destroyCharts() {
-            if (dailyChart) {
-                dailyChart.destroy();
-                dailyChart = null;
+            if (quotaChart) {
+                quotaChart.destroy();
+                quotaChart = null;
             }
             if (typeChart) {
                 typeChart.destroy();
@@ -159,29 +378,66 @@
 
             try {
                 const data = await WebApi.apiRequest(`/api/admin/usage/detail/${user.id}`);
-                const daily = Array.isArray(data.daily) ? data.daily.slice().reverse() : [];
                 const byType = Array.isArray(data.byType) ? data.byType : [];
-                status.textContent = `总用量 ${formatNumber(user.usedTokens)} / 配额 ${formatNumber(user.quotaTokens)}`;
+                const usedTokens = Math.max(0, Number(user.usedTokens || 0));
+                const quotaTokens = Math.max(0, Number(user.quotaTokens || 0));
+                const remainingTokens = Math.max(quotaTokens - usedTokens, 0);
+                const usedRatio = quotaTokens > 0 ? (usedTokens / quotaTokens) * 100 : 0;
+                status.textContent = `总用量 ${formatNumber(usedTokens)} / 配额 ${formatNumber(quotaTokens)}`;
+                document.getElementById('usage-quota-center').innerHTML = `<span><span class="big">${usedRatio.toFixed(2)}%</span>已使用</span>`;
 
-                dailyChart = new Chart(document.getElementById('usage-daily-canvas'), {
-                    type: 'bar',
+                quotaChart = new Chart(document.getElementById('usage-quota-canvas'), {
+                    type: 'doughnut',
                     data: {
-                        labels: daily.map(x => x.day),
-                        datasets: [{ label: 'Token', data: daily.map(x => x.totalTokens || 0) }],
+                        labels: ['已使用', '剩余额度'],
+                        datasets: [{
+                            label: '额度占比',
+                            data: [usedTokens, remainingTokens],
+                            backgroundColor: ['#f97316', '#22c55e'],
+                            borderColor: ['#ea580c', '#16a34a'],
+                            borderWidth: 1,
+                        }],
                     },
-                    options: { responsive: true, maintainAspectRatio: false },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom' },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => `${ctx.label}: ${formatNumber(ctx.raw)}`
+                                }
+                            }
+                        }
+                    },
                 });
 
                 typeChart = new Chart(document.getElementById('usage-type-canvas'), {
-                    type: 'bar',
+                    type: 'pie',
                     data: {
-                        labels: byType.map(x => x.callType),
-                        datasets: [{ label: 'Token', data: byType.map(x => x.totalTokens || 0) }],
+                        labels: byType.length ? byType.map(x => x.callType) : ['暂无数据'],
+                        datasets: [{
+                            label: '已用额度分布',
+                            data: byType.length ? byType.map(x => x.totalTokens || 0) : [1],
+                            backgroundColor: ['#3b82f6', '#a855f7', '#14b8a6', '#f59e0b', '#ef4444', '#6366f1'],
+                            borderWidth: 1,
+                        }],
                     },
-                    options: { responsive: true, maintainAspectRatio: false },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom' },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => `${ctx.label}: ${formatNumber(ctx.raw)}`
+                                }
+                            }
+                        }
+                    },
                 });
             } catch (err) {
-                status.textContent = err.message || '加载失败';
+                status.textContent = WebApi.mapErrorToUserMessage(err);
             }
         }
 
@@ -194,6 +450,8 @@
         }
 
         document.getElementById('stats-line').textContent = '实时数据，刷新页面更新';
+        document.getElementById('create-user-btn').addEventListener('click', createUser);
+        document.getElementById('refresh-logs-btn').addEventListener('click', loadAdmin);
         document.getElementById('usage-modal-close').addEventListener('click', () => {
             document.getElementById('usage-modal-backdrop').style.display = 'none';
             destroyCharts();
@@ -207,10 +465,11 @@
 
         async function loadAdmin() {
             try {
-                const [stats, users, usage] = await Promise.all([
+                const [stats, users, usage, logsData] = await Promise.all([
                     WebApi.apiRequest('/api/admin/stats'),
                     WebApi.apiRequest('/api/admin/users'),
                     WebApi.apiRequest('/api/admin/usage/summary'),
+                    WebApi.apiRequest('/api/admin/audit-logs?limit=100'),
                 ]);
 
                 const s = stats.stats || {};
@@ -223,24 +482,25 @@
                 const list = users.users || [];
                 const listById = new Map(list.map(x => [String(x.id), x]));
                 document.getElementById('user-list').innerHTML = list.length
-                    ? '<table style="width:100%;border-collapse:collapse;"><thead><tr><th style="text-align:left;padding:8px;">ID</th><th style="text-align:left;padding:8px;">邮箱</th><th style="text-align:left;padding:8px;">角色</th><th style="text-align:left;padding:8px;">简历</th><th style="text-align:left;padding:8px;">录音</th><th style="text-align:left;padding:8px;">会话</th><th style="text-align:left;padding:8px;">Token 使用 / 配额</th><th style="text-align:left;padding:8px;">状态</th><th style="text-align:left;padding:8px;">操作</th><th style="text-align:left;padding:8px;">注册时间</th></tr></thead><tbody>' +
+                    ? '<table class="user-table"><thead><tr><th>ID</th><th>邮箱</th><th>角色</th><th>简历</th><th>录音</th><th>会话</th><th>Token 使用 / 配额</th><th>状态</th><th>操作</th><th>注册时间</th></tr></thead><tbody>' +
                     list.map(u => `<tr>
-                        <td style="padding:8px;">${u.id}</td>
-                        <td style="padding:8px;">${u.email}</td>
-                        <td style="padding:8px;">${u.role}</td>
-                        <td style="padding:8px;">${u.resumeCount}</td>
-                        <td style="padding:8px;">${u.voiceCount}</td>
-                        <td style="padding:8px;">${u.sessionCount}</td>
-                        <td style="padding:8px;">${formatNumber(u.usedTokens)} / ${formatNumber(u.quotaTokens)}</td>
-                        <td style="padding:8px;"><span class="pill ${u.frozen ? 'frozen' : ''}">${u.frozen ? '已冻结' : '正常'}</span></td>
-                        <td style="padding:8px;">
+                        <td>${u.id}</td>
+                        <td>${u.email}</td>
+                        <td>${u.role}</td>
+                        <td>${u.resumeCount}</td>
+                        <td>${u.voiceCount}</td>
+                        <td>${u.sessionCount}</td>
+                        <td>${formatNumber(u.usedTokens)} / ${formatNumber(u.quotaTokens)}</td>
+                        <td><span class="pill ${u.frozen ? 'frozen' : 'active'}">${u.frozen ? '已冻结' : '正常'}</span></td>
+                        <td>
                             <div class="admin-actions">
                                 <button data-action="detail" data-id="${u.id}">明细</button>
                                 <button data-action="quota" data-id="${u.id}" data-quota="${u.quotaTokens}">配额</button>
                                 <button data-action="freeze" data-id="${u.id}" data-frozen="${u.frozen}">${u.frozen ? '解冻' : '冻结'}</button>
+                                <button class="danger-action" data-action="delete" data-id="${u.id}" data-email="${u.email}">删除</button>
                             </div>
                         </td>
-                        <td style="padding:8px;">${new Date(u.createdAt).toLocaleString()}</td>
+                        <td>${new Date(u.createdAt).toLocaleString()}</td>
                     </tr>`).join('') +
                     '</tbody></table>'
                     : '<div class="small">暂无用户</div>';
@@ -263,8 +523,21 @@
                         setFrozen(id, !frozen);
                     });
                 });
+                document.querySelectorAll('#user-list button[data-action="delete"]').forEach(el => {
+                    el.addEventListener('click', async () => {
+                        try {
+                            const id = el.getAttribute('data-id');
+                            const email = el.getAttribute('data-email');
+                            await deleteUser(id, email);
+                        } catch (err) {
+                            alert(WebApi.mapErrorToUserMessage(err));
+                        }
+                    });
+                });
+                renderAuditLogs(logsData?.logs || []);
             } catch (err) {
-                document.getElementById('user-list').innerHTML = '<div class="status error">' + (err.message || '加载失败') + '</div>';
+                document.getElementById('user-list').innerHTML = '<div class="status error">' + WebApi.mapErrorToUserMessage(err) + '</div>';
+                document.getElementById('admin-log-list').innerHTML = '<div class="admin-log-item">日志加载失败</div>';
             }
         }
 

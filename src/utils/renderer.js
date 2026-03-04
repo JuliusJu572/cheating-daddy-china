@@ -147,6 +147,15 @@ const COMMIT_MIN_CHARS = 4;
 const isLinux = platform === 'linux';
 const isMacOS = platform === 'darwin';
 
+function formatAppError(errorLike) {
+    if (!errorLike) return '未知错误（错误码: UNKNOWN）';
+    if (typeof errorLike === 'string') return errorLike;
+    const code = String(errorLike.code || 'UNKNOWN');
+    const message = String(errorLike.message || '请求失败');
+    const requestId = String(errorLike.requestId || '');
+    return requestId ? `${message}（错误码: ${code}，请求ID: ${requestId}）` : `${message}（错误码: ${code}）`;
+}
+
 async function getCurrentUserScope() {
     if (!isElectron) return '';
     try {
@@ -998,12 +1007,12 @@ async function stopRealtimeAsrCapture() {
         }
         const stopRes = await ipcRenderer.invoke('stop-live-asr');
         if (!stopRes?.success) {
-            cheddar.setStatus('Error: ' + (stopRes?.error || 'Live ASR stop failed'));
+            cheddar.setStatus('Error: ' + formatAppError(stopRes?.error || 'Live ASR stop failed'));
         } else {
             cheddar.setStatus('实时识别已停止');
         }
     } catch (error) {
-        cheddar.setStatus('Error: ' + error.message);
+        cheddar.setStatus('Error: ' + formatAppError(error));
     } finally {
         isQuickRecording = false;
         isLiveAsrRunning = false;
@@ -1057,7 +1066,7 @@ async function startQuickAudioCapture(options = {}) {
             hotwords,
         });
         if (!startLiveRes?.success) {
-            cheddar.setStatus('Error: ' + (startLiveRes?.error || 'Live ASR start failed'));
+            cheddar.setStatus('Error: ' + formatAppError(startLiveRes?.error || 'Live ASR start failed'));
             return;
         }
 
@@ -1171,7 +1180,7 @@ async function startQuickAudioCapture(options = {}) {
         const sourceName = useMic ? '麦克风' : '实时';
         cheddar.setStatus(`🎙️ ${sourceName}识别中... (再按 ${stopKey} 停止并提交给 AI)`);
     } catch (error) {
-        cheddar.setStatus('Error: ' + error.message);
+        cheddar.setStatus('Error: ' + formatAppError(error));
         isQuickRecording = false;
         isLiveAsrRunning = false;
         liveAsrNoChunking = false;
@@ -1203,7 +1212,7 @@ async function submitLiveTranscriptDelta() {
         // 不在这里设状态——AI 流式回复期间 Qwen session 自己会设 '就绪'
         return { success: true, submitted: true, text: submitText };
     }
-    cheddar.setStatus('Error: ' + (result?.error || 'submit failed'));
+    cheddar.setStatus('Error: ' + formatAppError(result?.error || 'submit failed'));
     return { success: false, submitted: false, reason: 'send-failed' };
 }
 
@@ -1263,12 +1272,14 @@ async function sendTextMessage(text) {
         if (result.success) {
             console.log('Text message sent successfully');
         } else {
-            console.error('Failed to send text message:', result.error);
+            const formattedError = formatAppError(result.error);
+            console.error('Failed to send text message:', formattedError);
+            return { success: false, error: formattedError, rawError: result.error };
         }
         return result;
     } catch (error) {
         console.error('Error sending text message:', error);
-        return { success: false, error: error.message };
+        return { success: false, error: formatAppError(error), rawError: error };
     }
 }
 

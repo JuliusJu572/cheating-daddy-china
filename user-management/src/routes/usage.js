@@ -9,6 +9,24 @@ function fail(res, status, error, code) {
     return res.status(status).json({ success: false, error, code });
 }
 
+async function writeAdminAuditLog(client, payload) {
+    await client.query(
+        `
+        INSERT INTO admin_audit_logs (
+            admin_user_id, admin_email, action, target_user_id, target_email, detail
+        ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+        `,
+        [
+            payload.adminUserId,
+            payload.adminEmail || '',
+            payload.action,
+            payload.targetUserId || null,
+            payload.targetEmail || '',
+            JSON.stringify(payload.detail || {}),
+        ]
+    );
+}
+
 router.get('/summary', authRequired, adminRequired, async (_req, res) => {
     try {
         const [totalsRes, usersRes] = await Promise.all([
@@ -118,7 +136,9 @@ router.get('/detail/:userId', authRequired, adminRequired, async (req, res) => {
 });
 
 router.put('/quota/:userId', authRequired, adminRequired, async (req, res) => {
+    let client = null;
     try {
+        client = await pool.connect();
         const userId = Number(req.params.userId);
         const quotaTokens = Number(req.body?.quota_tokens);
         if (!Number.isFinite(userId) || userId <= 0) {
@@ -128,20 +148,40 @@ router.put('/quota/:userId', authRequired, adminRequired, async (req, res) => {
             return fail(res, 400, 'quota_tokens must be >= 0', 'INVALID_QUOTA');
         }
 
-        const result = await pool.query(
+        await client.query('BEGIN');
+        const beforeRes = await client.query(
+            `SELECT id, email, COALESCE(quota_tokens, 1000000)::bigint AS quota_tokens FROM users WHERE id = $1 LIMIT 1`,
+            [userId]
+        );
+        if (beforeRes.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return fail(res, 404, 'user not found', 'USER_NOT_FOUND');
+        }
+        const before = beforeRes.rows[0];
+
+        const result = await client.query(
             `
             UPDATE users
             SET quota_tokens = $2::bigint,
                 updated_at = NOW()
             WHERE id = $1
-            RETURNING id, quota_tokens, frozen
+            RETURNING id, email, quota_tokens, frozen
             `,
             [userId, Math.floor(quotaTokens)]
         );
-        if (result.rowCount === 0) {
-            return fail(res, 404, 'user not found', 'USER_NOT_FOUND');
-        }
         const row = result.rows[0];
+        await writeAdminAuditLog(client, {
+            adminUserId: req.user.id,
+            adminEmail: req.user.email || '',
+            action: 'set_quota',
+            targetUserId: row.id,
+            targetEmail: row.email || '',
+            detail: {
+                beforeQuotaTokens: Number(before.quota_tokens || 0),
+                afterQuotaTokens: Number(row.quota_tokens || 0),
+            },
+        });
+        await client.query('COMMIT');
         return res.json({
             success: true,
             user: {
@@ -151,32 +191,61 @@ router.put('/quota/:userId', authRequired, adminRequired, async (req, res) => {
             },
         });
     } catch (error) {
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (_e) {}
+        }
         return fail(res, 500, error.message, 'USAGE_SET_QUOTA_FAILED');
+    } finally {
+        if (client) client.release();
     }
 });
 
 router.put('/freeze/:userId', authRequired, adminRequired, async (req, res) => {
+    let client = null;
     try {
+        client = await pool.connect();
         const userId = Number(req.params.userId);
         const frozen = Boolean(req.body?.frozen);
+        const freezeReasonInput = String(req.body?.freeze_reason || '').trim().toLowerCase();
         if (!Number.isFinite(userId) || userId <= 0) {
             return fail(res, 400, 'invalid userId', 'INVALID_USER_ID');
         }
 
-        const result = await pool.query(
+        await client.query('BEGIN');
+        const beforeRes = await client.query(
+            `SELECT id, email, COALESCE(frozen, FALSE) AS frozen FROM users WHERE id = $1 LIMIT 1`,
+            [userId]
+        );
+        if (beforeRes.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return fail(res, 404, 'user not found', 'USER_NOT_FOUND');
+        }
+        const before = beforeRes.rows[0];
+
+        const result = await client.query(
             `
             UPDATE users
             SET frozen = $2,
                 updated_at = NOW()
             WHERE id = $1
-            RETURNING id, quota_tokens, frozen
+            RETURNING id, email, quota_tokens, frozen
             `,
             [userId, frozen]
         );
-        if (result.rowCount === 0) {
-            return fail(res, 404, 'user not found', 'USER_NOT_FOUND');
-        }
         const row = result.rows[0];
+        await writeAdminAuditLog(client, {
+            adminUserId: req.user.id,
+            adminEmail: req.user.email || '',
+            action: 'set_frozen',
+            targetUserId: row.id,
+            targetEmail: row.email || '',
+            detail: {
+                beforeFrozen: Boolean(before.frozen),
+                afterFrozen: Boolean(row.frozen),
+                freezeReason: freezeReasonInput || (row.frozen ? 'manual_frozen_by_admin' : 'manual_unfrozen_by_admin'),
+            },
+        });
+        await client.query('COMMIT');
         return res.json({
             success: true,
             user: {
@@ -186,7 +255,12 @@ router.put('/freeze/:userId', authRequired, adminRequired, async (req, res) => {
             },
         });
     } catch (error) {
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (_e) {}
+        }
         return fail(res, 500, error.message, 'USAGE_SET_FROZEN_FAILED');
+    } finally {
+        if (client) client.release();
     }
 });
 

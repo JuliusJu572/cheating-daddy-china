@@ -168,7 +168,7 @@
                         await WebApi.apiRequest(`/api/resume/item/${btn.dataset.id}`, { method: 'DELETE' });
                         await loadResumes();
                     } catch (err) {
-                        setStatus(err.message, 'error');
+                        setStatus(WebApi.mapErrorToUserMessage(err), 'error');
                     }
                 });
             });
@@ -185,7 +185,7 @@
                 editContentEl.value = data.resume.analyzed_content || '';
                 modalEl.style.display = 'flex';
             } catch (err) {
-                setStatus(err.message || '加载失败，该简历可能已被删除', 'error');
+                setStatus(WebApi.mapErrorToUserMessage(err) || '加载失败，该简历可能已被删除', 'error');
                 await loadResumes();
             }
         }
@@ -209,14 +209,14 @@
                 closeEditModal();
                 setStatus('解析内容已更新', 'success');
             } catch (err) {
-                alert('保存失败: ' + err.message);
+                setStatus(WebApi.mapErrorToUserMessage(err), 'error');
             }
         });
 
         WebApi.ensureLoggedIn().then(user => {
             if (!user) return;
             WebApi.renderNav(user);
-            loadResumes().catch(err => setStatus(err.message, 'error'));
+            loadResumes().catch(err => setStatus(WebApi.mapErrorToUserMessage(err), 'error'));
         });
     })();
 </script>

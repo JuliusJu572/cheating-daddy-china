@@ -6,8 +6,16 @@ const config = require('../config');
 
 const router = express.Router();
 
-function fail(res, status, error, code) {
-    return res.status(status).json({ success: false, error, code });
+function fail(res, status, error, code, extras = {}) {
+    return res.status(status).json({
+        success: false,
+        status,
+        error,
+        code,
+        reason: extras.reason || '',
+        retryable: Boolean(extras.retryable),
+        requestId: extras.requestId || '',
+    });
 }
 
 function sanitizeBase(base, fallback) {
@@ -66,6 +74,7 @@ function decryptLicenseKeyToApiKey(licenseKey) {
 }
 
 async function authJwtAndLicense(req, res, next) {
+    req.requestId = req.requestId || crypto.randomUUID();
     const authHeader = req.headers.authorization || '';
     const bearer = authHeader.startsWith('Bearer ')
         ? authHeader.slice('Bearer '.length).trim()
@@ -120,14 +129,35 @@ async function getUserQuotaState(userId) {
 async function assertAccountAvailable(userId) {
     const row = await getUserQuotaState(userId);
     if (!row) {
-        return { ok: false, status: 404, error: 'user not found', code: 'USER_NOT_FOUND' };
+        return {
+            ok: false,
+            status: 404,
+            error: '用户不存在',
+            code: 'USER_NOT_FOUND',
+            reason: 'user_not_found',
+            retryable: false,
+        };
     }
     if (row.frozen) {
-        return { ok: false, status: 403, error: '账号已冻结，请联系管理员', code: 'account_frozen' };
+        return {
+            ok: false,
+            status: 403,
+            error: 'token 不足，账号已被冻结，请充值。',
+            code: 'account_frozen',
+            reason: 'manual_frozen_by_admin',
+            retryable: false,
+        };
     }
     if (Number(row.used_tokens) >= Number(row.quota_tokens)) {
         await pool.query(`UPDATE users SET frozen = TRUE WHERE id = $1`, [userId]);
-        return { ok: false, status: 403, error: '已超出 token 配额，账号已暂时冻结', code: 'quota_exceeded' };
+        return {
+            ok: false,
+            status: 403,
+            error: 'token 不足，账号已被冻结，请充值。',
+            code: 'quota_exceeded',
+            reason: 'auto_frozen_quota_exceeded',
+            retryable: false,
+        };
     }
     return { ok: true, state: row };
 }
@@ -161,7 +191,13 @@ function buildCommonHeaders(apiKey) {
 
 async function proxyJson({ req, res, callType, endpoint, buildPayload }) {
     const gate = await assertAccountAvailable(req.user.id);
-    if (!gate.ok) return fail(res, gate.status, gate.error, gate.code);
+    if (!gate.ok) {
+        return fail(res, gate.status, gate.error, gate.code, {
+            reason: gate.reason,
+            retryable: gate.retryable,
+            requestId: req.requestId,
+        });
+    }
 
     const payload = buildPayload(req.body || {});
     let upstreamRes;
@@ -172,7 +208,11 @@ async function proxyJson({ req, res, callType, endpoint, buildPayload }) {
             body: JSON.stringify(payload),
         });
     } catch (error) {
-        return fail(res, 502, error.message || 'upstream request failed', 'UPSTREAM_REQUEST_FAILED');
+        return fail(res, 502, error.message || 'upstream request failed', 'UPSTREAM_REQUEST_FAILED', {
+            reason: 'upstream_network_error',
+            retryable: true,
+            requestId: req.requestId,
+        });
     }
 
     const text = await upstreamRes.text();
@@ -182,11 +222,22 @@ async function proxyJson({ req, res, callType, endpoint, buildPayload }) {
     } catch (_) {}
 
     if (!upstreamRes.ok) {
-        return res.status(upstreamRes.status).json({
-            success: false,
-            error: data?.error?.message || data?.error || text || `upstream ${upstreamRes.status}`,
-            code: 'UPSTREAM_API_ERROR',
-        });
+        return fail(
+            res,
+            upstreamRes.status,
+            data?.error?.message || data?.error || text || `upstream ${upstreamRes.status}`,
+            'UPSTREAM_API_ERROR',
+            {
+                reason: `upstream_status_${upstreamRes.status}`,
+                retryable: upstreamRes.status >= 500 || upstreamRes.status === 429,
+                requestId: req.requestId,
+            }
+        );
+    }
+
+    if (data && typeof data === 'object') {
+        data.requestId = req.requestId;
+        data.success = data.success !== false;
     }
 
     try {
@@ -205,7 +256,13 @@ async function proxyJson({ req, res, callType, endpoint, buildPayload }) {
 
 async function proxySse({ req, res, callType, endpoint, buildPayload }) {
     const gate = await assertAccountAvailable(req.user.id);
-    if (!gate.ok) return fail(res, gate.status, gate.error, gate.code);
+    if (!gate.ok) {
+        return fail(res, gate.status, gate.error, gate.code, {
+            reason: gate.reason,
+            retryable: gate.retryable,
+            requestId: req.requestId,
+        });
+    }
 
     const payload = buildPayload(req.body || {});
     payload.stream = true;
@@ -219,15 +276,19 @@ async function proxySse({ req, res, callType, endpoint, buildPayload }) {
             body: JSON.stringify(payload),
         });
     } catch (error) {
-        return fail(res, 502, error.message || 'upstream request failed', 'UPSTREAM_REQUEST_FAILED');
+        return fail(res, 502, error.message || 'upstream request failed', 'UPSTREAM_REQUEST_FAILED', {
+            reason: 'upstream_network_error',
+            retryable: true,
+            requestId: req.requestId,
+        });
     }
 
     if (!upstreamRes.ok) {
         const text = await upstreamRes.text();
-        return res.status(upstreamRes.status).json({
-            success: false,
-            error: text || `upstream ${upstreamRes.status}`,
-            code: 'UPSTREAM_API_ERROR',
+        return fail(res, upstreamRes.status, text || `upstream ${upstreamRes.status}`, 'UPSTREAM_API_ERROR', {
+            reason: `upstream_status_${upstreamRes.status}`,
+            retryable: upstreamRes.status >= 500 || upstreamRes.status === 429,
+            requestId: req.requestId,
         });
     }
 

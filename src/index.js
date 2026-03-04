@@ -293,18 +293,35 @@ function createAccountLimitError(status, data, fallbackMessage) {
     const error = new Error(message);
     error.status = status;
     error.code = code;
+    error.reason = String(data?.reason || '');
+    error.requestId = String(data?.requestId || '');
+    error.retryable = Boolean(data?.retryable);
     return error;
+}
+
+function normalizeAppError(error, fallbackCode = 'UNKNOWN_ERROR') {
+    return {
+        message: String(error?.message || '请求失败'),
+        code: String(error?.code || fallbackCode),
+        status: Number(error?.status || 0),
+        reason: String(error?.reason || ''),
+        requestId: String(error?.requestId || ''),
+        retryable: Boolean(error?.retryable),
+    };
 }
 
 function getUserFacingAiErrorMessage(error) {
     const code = String(error?.code || '');
+    const requestId = String(error?.requestId || '');
+    const suffix = `（错误码: ${code || 'UNKNOWN'}${requestId ? `，请求ID: ${requestId}` : ''}）`;
     if (code === 'quota_exceeded') {
-        return '账号已超出 token 配额，已暂时冻结，请联系管理员。';
+        return `token 不足，账号已被冻结，请充值。${suffix}`;
     }
     if (code === 'account_frozen') {
-        return '账号已冻结，请联系管理员。';
+        return `账号已被冻结，请充值或联系管理员。${suffix}`;
     }
-    return error?.message || 'Unknown';
+    const reason = String(error?.message || 'LLM 调用失败');
+    return `${reason}${suffix}`;
 }
 
 async function callUserAiProxyJson(path, payload) {
@@ -1136,7 +1153,7 @@ function setupGeneralIpcHandlers() {
             return { success: true, analyzedContent, asrHotwords, rawText };
         } catch (error) {
             console.error('user-parse-resume-local error:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: normalizeAppError(error, 'USER_PARSE_RESUME_FAILED') };
         }
     });
 
@@ -1153,7 +1170,7 @@ function setupGeneralIpcHandlers() {
             return { success: true, jdContext };
         } catch (error) {
             console.error('user-analyze-jd error:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: normalizeAppError(error, 'USER_ANALYZE_JD_FAILED') };
         }
     });
 
@@ -1466,7 +1483,7 @@ function setupGeneralIpcHandlers() {
             return { success: true, cleaned: parsed.cleaned || '' };
         } catch (error) {
             console.error('❌ [commit-transcript-segment] error:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: normalizeAppError(error, 'TRANSCRIPT_COMMIT_FAILED') };
         }
     });
 
@@ -1978,8 +1995,8 @@ function setupGeneralIpcHandlers() {
             
         } catch (error) {
             console.error('❌ save-audio-and-transcribe error:', error);
-            sendToRenderer('update-status', 'Error: ' + (error.message || 'Unknown'));
-            return { success: false, error: error.message };
+            sendToRenderer('update-status', 'Error: ' + getUserFacingAiErrorMessage(error));
+            return { success: false, error: normalizeAppError(error, 'SAVE_AUDIO_TRANSCRIBE_FAILED') };
         }
     });
 
@@ -2341,6 +2358,7 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
         } catch (error) {
             console.error('❌ [sendRealtimeInput] Error:', error);
             sendToRenderer('update-status', 'Error: ' + getUserFacingAiErrorMessage(error));
+            throw error;
         }
     }
 
@@ -2489,6 +2507,7 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
         } catch (error) {
             console.error('Aihubmix sendRealtimeInput error:', error);
             sendToRenderer('update-status', 'Error: ' + getUserFacingAiErrorMessage(error));
+            throw error;
         }
     }
 

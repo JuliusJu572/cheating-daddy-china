@@ -1,5 +1,17 @@
 const TOKEN_KEY = 'userToken';
 
+class AppError extends Error {
+    constructor({ message, code = '', status = 0, reason = '', requestId = '', retryable = false } = {}) {
+        super(message || '请求失败');
+        this.name = 'AppError';
+        this.code = String(code || '');
+        this.status = Number(status || 0);
+        this.reason = String(reason || '');
+        this.requestId = String(requestId || '');
+        this.retryable = Boolean(retryable);
+    }
+}
+
 function getToken() {
     return localStorage.getItem(TOKEN_KEY) || '';
 }
@@ -13,13 +25,30 @@ function getBaseUrl() {
     return window.location.origin.replace(/\/$/, '');
 }
 
+function mapErrorToUserMessage(error) {
+    const code = String(error?.code || '');
+    const fallback = error?.message || '请求失败';
+    const map = {
+        quota_exceeded: 'token 不足，账号已被冻结，请充值。',
+        account_frozen: '账号已被冻结，请充值或联系管理员。',
+        TOKEN_INVALID: '登录已过期，请重新登录。',
+        LICENSE_INVALID: 'License 无效，请检查后重试。',
+        UPSTREAM_API_ERROR: 'LLM 服务暂时异常，请稍后重试。',
+        UPSTREAM_REQUEST_FAILED: '网络请求失败，请检查网络后重试。',
+    };
+    const primary = map[code] || fallback;
+    const detail = [`错误码: ${code || 'UNKNOWN'}`];
+    if (error?.requestId) detail.push(`请求ID: ${error.requestId}`);
+    return `${primary}（${detail.join('，')}）`;
+}
+
 async function apiRequest(path, options = {}) {
     const { method = 'GET', body, requireAuth = true, headers = {} } = options;
     const finalHeaders = { ...headers };
     if (requireAuth) {
         const token = getToken();
         if (!token) {
-            throw new Error('请先登录');
+            throw new AppError({ message: '请先登录', code: 'AUTH_MISSING', status: 401 });
         }
         finalHeaders.Authorization = `Bearer ${token}`;
     }
@@ -41,7 +70,14 @@ async function apiRequest(path, options = {}) {
                 window.location.href = '/index.html';
             }
         }
-        throw new Error(data?.error || `HTTP ${res.status}`);
+        throw new AppError({
+            message: data?.error || `HTTP ${res.status}`,
+            code: data?.code || '',
+            status: data?.status || res.status,
+            reason: data?.reason || '',
+            requestId: data?.requestId || '',
+            retryable: data?.retryable || false,
+        });
     }
     return data;
 }
@@ -67,6 +103,8 @@ window.WebApi = {
     apiRequest,
     ensureLoggedIn,
     renderNav,
+    AppError,
+    mapErrorToUserMessage,
 };
 
 function renderNav(user) {
