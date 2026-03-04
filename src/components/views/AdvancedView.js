@@ -370,6 +370,7 @@ export class AdvancedView extends LitElement {
         isUserLoggedIn: { type: Boolean },
         userApiBase: { type: String },
         onOpenAuth: { type: Function },
+        onLogout: { type: Function },
     };
 
     constructor() {
@@ -404,6 +405,7 @@ export class AdvancedView extends LitElement {
         this.isUserLoggedIn = false;
         this.userApiBase = localStorage.getItem('userApiBase') || '';
         this.onOpenAuth = () => {};
+        this.onLogout = () => {};
 
         this.loadRateLimitSettings();
         this.loadContentProtectionSetting();
@@ -455,6 +457,7 @@ export class AdvancedView extends LitElement {
         this.isUserLoggedIn = false;
         this.userMessage = '已退出登录';
         this.userMessageType = 'success';
+        if (typeof this.onLogout === 'function') this.onLogout();
         this.requestUpdate();
     }
 

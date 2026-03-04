@@ -578,7 +578,7 @@ export class CheatingDaddyApp extends LitElement {
                 return html` <history-view></history-view> `;
 
             case 'advanced':
-                return html` <advanced-view .onOpenAuth=${() => this.handleAuthClick()}></advanced-view> `;
+                return html` <advanced-view .onOpenAuth=${() => this.handleAuthClick()} .onLogout=${() => this.handleLogout()}></advanced-view> `;
 
             case 'assistant':
                 return html`
