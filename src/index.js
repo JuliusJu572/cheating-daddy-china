@@ -133,7 +133,8 @@ async function extractTextFromFile(filePath) {
 
 async function analyzeResumeLocally(rawText, apiKey, modelApiBase) {
     const key = String(apiKey || '').trim();
-    if (!key) throw new Error('缺少 API Key，请先配置 License Key 或直接填写 API Key');
+    const proxyCfg = getUserAiProxyConfig();
+    if (!key && !proxyCfg.enabled) throw new Error('缺少 API Key，请先配置 License Key 或直接填写 API Key');
 
     const base = String(modelApiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '');
     const endpoint = `${base}/chat/completions`;
@@ -158,6 +159,28 @@ async function analyzeResumeLocally(rawText, apiKey, modelApiBase) {
         '以下是简历原文：',
         rawText || '',
     ].join('\n');
+
+    // 登录态优先走后端代理，统一统计 token 用量与配额。
+    const proxied = await callUserAiProxyJson('/api/ai/resume', {
+        model: 'qwen-plus',
+        messages: [
+            { role: 'system', content: '你是资深技术招聘顾问。' },
+            { role: 'user', content: analysisPrompt },
+        ],
+        temperature: 0.2,
+    }).catch(err => {
+        if (err?.code === 'quota_exceeded' || err?.code === 'account_frozen') throw err;
+        return null;
+    });
+    if (proxied) {
+        const content = proxied?.choices?.[0]?.message?.content ?? '';
+        if (typeof content === 'string') return splitResumeAnalysisContent(content);
+        if (Array.isArray(content)) {
+            const textPart = content.find(x => typeof x?.text === 'string');
+            return splitResumeAnalysisContent(String(textPart?.text || ''));
+        }
+        return { analyzedContent: '', asrHotwords: [] };
+    }
 
     const res = await fetch(endpoint, {
         method: 'POST',
@@ -241,9 +264,72 @@ function normalizeHotwords(raw) {
     return words;
 }
 
+function getUserAiProxyConfig() {
+    const cfg = getLocalConfig();
+    const userApiBase = String(cfg?.userApiBase || '').trim().replace(/\/$/, '');
+    const userAuthToken = String(cfg?.userAuthToken || '').trim();
+    const licenseKey = String(cfg?.licenseKey || '').trim();
+    const enabled = Boolean(userApiBase && licenseKey);
+    return { enabled, userApiBase, userAuthToken, licenseKey };
+}
+
+function buildUserAiProxyHeaders(proxyCfg) {
+    const headers = {
+        'Content-Type': 'application/json; charset=utf-8',
+    };
+    if (proxyCfg?.licenseKey) {
+        headers['x-license-key'] = proxyCfg.licenseKey;
+    }
+    if (proxyCfg?.userAuthToken) {
+        headers.Authorization = `Bearer ${proxyCfg.userAuthToken}`;
+    }
+    return headers;
+}
+
+function createAccountLimitError(status, data, fallbackMessage) {
+    const code = String(data?.code || '');
+    const message = String(data?.error || fallbackMessage || '请求失败');
+    const error = new Error(message);
+    error.status = status;
+    error.code = code;
+    return error;
+}
+
+function getUserFacingAiErrorMessage(error) {
+    const code = String(error?.code || '');
+    if (code === 'quota_exceeded') {
+        return '账号已超出 token 配额，已暂时冻结，请联系管理员。';
+    }
+    if (code === 'account_frozen') {
+        return '账号已冻结，请联系管理员。';
+    }
+    return error?.message || 'Unknown';
+}
+
+async function callUserAiProxyJson(path, payload) {
+    const proxyCfg = getUserAiProxyConfig();
+    const { enabled, userApiBase } = proxyCfg;
+    if (!enabled && proxyCfg.licenseKey) {
+        throw new Error('已配置 License Key，请先配置 userApiBase 以启用后端计量与配额');
+    }
+    if (!enabled) return null;
+    const url = `${userApiBase}${path}`;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: buildUserAiProxyHeaders(proxyCfg),
+        body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw createAccountLimitError(res.status, data, `代理请求失败：HTTP ${res.status}`);
+    }
+    return data;
+}
+
 async function analyzeJdLocally(rawText, apiKey, modelApiBase) {
     const key = String(apiKey || '').trim();
-    if (!key) throw new Error('缺少 API Key，请先配置 API Key 或 License Key');
+    const proxyCfg = getUserAiProxyConfig();
+    if (!key && !proxyCfg.enabled) throw new Error('缺少 API Key，请先配置 API Key 或 License Key');
 
     const base = String(modelApiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '');
     const endpoint = `${base}/chat/completions`;
@@ -261,6 +347,28 @@ async function analyzeJdLocally(rawText, apiKey, modelApiBase) {
         '以下是 JD 原文：',
         rawText || '',
     ].join('\n');
+
+    // 登录态优先走后端代理，统一统计 token 用量与配额。
+    const proxied = await callUserAiProxyJson('/api/ai/jd', {
+        model: 'qwen-plus',
+        messages: [
+            { role: 'system', content: '你是资深技术招聘顾问。' },
+            { role: 'user', content: analysisPrompt },
+        ],
+        temperature: 0.2,
+    }).catch(err => {
+        if (err?.code === 'quota_exceeded' || err?.code === 'account_frozen') throw err;
+        return null;
+    });
+    if (proxied) {
+        const content = proxied?.choices?.[0]?.message?.content ?? '';
+        if (typeof content === 'string') return content.trim();
+        if (Array.isArray(content)) {
+            const textPart = content.find(x => typeof x?.text === 'string');
+            return String(textPart?.text || '').trim();
+        }
+        return '';
+    }
 
     const res = await fetch(endpoint, {
         method: 'POST',
@@ -328,10 +436,41 @@ async function transcribeAudio(filePath, apiKey, apiBase = DEFAULT_ASR_API_BASE,
 
     const audioBase64 = fs.readFileSync(filePath).toString('base64');
     const audioDataUrl = `data:${mimeType};base64,${audioBase64}`;
+    const vocabulary = normalizeHotwords(Array.isArray(hotwords) ? hotwords.join(',') : hotwords);
+
+    const proxyCfg = getUserAiProxyConfig();
+    if (proxyCfg.enabled) {
+        const proxyData = await callUserAiProxyJson('/api/ai/asr', {
+            model: 'qwen3-asr-flash',
+            input: {
+                messages: [
+                    { role: 'system', content: [{ text: '' }] },
+                    { role: 'user', content: [{ audio: audioDataUrl }] },
+                ],
+            },
+            parameters: {
+                asr_options: { language: 'zh', enable_itn: false },
+                ...(vocabulary.length > 0 ? { vocabulary } : {}),
+            },
+        }).catch(err => {
+            if (err?.code === 'quota_exceeded' || err?.code === 'account_frozen') throw err;
+            return null;
+        });
+
+        if (proxyData) {
+            const content = proxyData?.output?.choices?.[0]?.message?.content ?? proxyData?.output?.text ?? '';
+            const text =
+                typeof content === 'string'
+                    ? content
+                    : Array.isArray(content)
+                        ? (content.find(x => typeof x?.text === 'string')?.text || '')
+                        : '';
+            return { success: true, data: { text, raw: proxyData } };
+        }
+    }
 
     async function callDashScopeProtocol() {
         const endpoint = `${asrBase}/services/aigc/multimodal-generation/generation`;
-        const vocabulary = normalizeHotwords(Array.isArray(hotwords) ? hotwords.join(',') : hotwords);
         const res = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -1238,7 +1377,8 @@ function setupGeneralIpcHandlers() {
     async function callTranscriptCleanApi(transcript) {
         const cfg = getLocalConfig();
         const apiKey = cfg?.apiKey || '';
-        if (!apiKey) return { success: false, error: 'Missing API key' };
+        const proxyCfg = getUserAiProxyConfig();
+        if (!apiKey && !proxyCfg.enabled) return { success: false, error: 'Missing API key' };
         const apiBase = (cfg?.modelApiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '');
         const endpoint = `${apiBase}/chat/completions`;
         const sysPrompt = getTranscriptCleanPrompt();
@@ -1253,6 +1393,27 @@ function setupGeneralIpcHandlers() {
         for (const model of modelCandidates) {
             for (let attempt = 0; attempt <= TRANSCRIPT_CLEAN_RETRIES; attempt++) {
                 try {
+                    const proxyData = await callUserAiProxyJson('/api/ai/clean', {
+                        model,
+                        messages: [
+                            { role: 'system', content: sysPrompt },
+                            { role: 'user', content: `当前转写：\n${transcript}` },
+                        ],
+                        max_tokens: 512,
+                        extra_body: { enable_thinking: false },
+                    }).catch(err => {
+                        if (err?.code === 'quota_exceeded' || err?.code === 'account_frozen') throw err;
+                        return null;
+                    });
+                    if (proxyData) {
+                        const text = proxyData?.choices?.[0]?.message?.content || '';
+                        const parsed = parseTranscriptCleanResponse(text);
+                        if (parsed.cleaned) {
+                            return parsed;
+                        }
+                        throw new Error('Empty parsed content');
+                    }
+
                     const res = await fetchWithTimeout(
                         endpoint,
                         {
@@ -1286,6 +1447,9 @@ function setupGeneralIpcHandlers() {
                     }
                     throw new Error('Empty parsed content');
                 } catch (error) {
+                    if (error?.code === 'quota_exceeded' || error?.code === 'account_frozen') {
+                        throw error;
+                    }
                     lastError = error;
                 }
             }
@@ -1945,12 +2109,20 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
             { role: 'user', content: userContent },
         ];
         sendToRenderer('update-status', '准备追问参考...');
-        const res = await fetch(endpoint, {
+        const proxyCfg = getUserAiProxyConfig();
+        const useProxy = proxyCfg.enabled;
+        if (!useProxy && proxyCfg.licenseKey) {
+            throw new Error('已配置 License Key，请先配置 userApiBase 以启用后端计量与配额');
+        }
+        const targetEndpoint = useProxy ? `${proxyCfg.userApiBase}/api/ai/enrich` : endpoint;
+        const res = await fetch(targetEndpoint, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json; charset=utf-8',
-                'Authorization': `Bearer ${apiKey}`,
-            },
+            headers: useProxy
+                ? buildUserAiProxyHeaders(proxyCfg)
+                : {
+                    'Content-Type': 'application/json; charset=utf-8',
+                    'Authorization': `Bearer ${apiKey}`,
+                },
             body: JSON.stringify({
                 model: qwenTextModel,
                 messages: enrichMessages,
@@ -1959,7 +2131,12 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
                 extra_body: { enable_thinking: false },
             }),
         });
-        if (!res.ok) throw new Error(`Enrichment API ${res.status}`);
+        if (!res.ok) {
+            const text = await res.text();
+            let data = {};
+            try { data = text ? JSON.parse(text) : {}; } catch (_) {}
+            throw createAccountLimitError(res.status, data, `Enrichment API ${res.status}`);
+        }
         const contentType = String(res.headers.get('content-type') || '').toLowerCase();
         let fullEnrich = '';
         if (contentType.includes('text/event-stream')) {
@@ -1995,10 +2172,18 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
 
         sendToRenderer('update-status', '回答中...');
 
-        const headers = {
-            'Content-Type': 'application/json; charset=utf-8',
-            'Authorization': `Bearer ${apiKey}`,
-        };
+        const proxyCfg = getUserAiProxyConfig();
+        const useProxy = proxyCfg.enabled;
+        if (!useProxy && proxyCfg.licenseKey) {
+            throw new Error('已配置 License Key，请先配置 userApiBase 以启用后端计量与配额');
+        }
+        const targetEndpoint = useProxy ? `${proxyCfg.userApiBase}/api/ai/chat` : endpoint;
+        const headers = useProxy
+            ? buildUserAiProxyHeaders(proxyCfg)
+            : {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Authorization': `Bearer ${apiKey}`,
+            };
 
         const requestMessages = buildRequestMessages(messagesList);
         const body = {
@@ -2010,7 +2195,7 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
         };
 
         const startedAt = Date.now();
-        const res = await fetch(endpoint, {
+        const res = await fetch(targetEndpoint, {
             method: 'POST',
             headers,
             body: JSON.stringify(body),
@@ -2020,8 +2205,10 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
 
         if (!res.ok) {
             const text = await res.text();
+            let data = {};
+            try { data = text ? JSON.parse(text) : {}; } catch (_) {}
             console.error('❌ [callChatCompletions] API Error Response:', text);
-            throw new Error(`API error ${res.status}: ${text}`);
+            throw createAccountLimitError(res.status, data, `API error ${res.status}: ${text}`);
         }
 
         let contentType = '';
@@ -2106,7 +2293,7 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
                 if (willEnrich && fullContent) {
                     requestEnrichment(payload.text, fullContent).catch(err => {
                         console.warn('Enrichment failed:', err);
-                        sendToRenderer('update-status', '就绪');
+                        sendToRenderer('update-status', 'Error: ' + getUserFacingAiErrorMessage(err));
                     });
                 } else if (!skipFinalStatus) {
                     sendToRenderer('update-status', '就绪');
@@ -2161,7 +2348,7 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
             console.warn('⚠️ [sendRealtimeInput] Unknown payload type');
         } catch (error) {
             console.error('❌ [sendRealtimeInput] Error:', error);
-            sendToRenderer('update-status', 'Error: ' + (error?.message || 'Unknown'));
+            sendToRenderer('update-status', 'Error: ' + getUserFacingAiErrorMessage(error));
         }
     }
 
@@ -2207,10 +2394,18 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
 
         sendToRenderer('update-status', '回答中...');
 
-        const headers = {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-        };
+        const proxyCfg = getUserAiProxyConfig();
+        const useProxy = proxyCfg.enabled;
+        if (!useProxy && proxyCfg.licenseKey) {
+            throw new Error('已配置 License Key，请先配置 userApiBase 以启用后端计量与配额');
+        }
+        const targetEndpoint = useProxy ? `${proxyCfg.userApiBase}/api/ai/chat` : endpoint;
+        const headers = useProxy
+            ? buildUserAiProxyHeaders(proxyCfg)
+            : {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${apiKey}`,
+            };
 
         const body = {
             model,
@@ -2219,7 +2414,7 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
             max_tokens: maxTokens,
         };
 
-        const res = await fetch(endpoint, {
+        const res = await fetch(targetEndpoint, {
             method: 'POST',
             headers,
             body: JSON.stringify(body),
@@ -2229,8 +2424,10 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
 
         if (!res.ok) {
             const text = await res.text();
+            let data = {};
+            try { data = text ? JSON.parse(text) : {}; } catch (_) {}
             console.error('❌ [callChatCompletions] API Error Response:', text);
-            throw new Error(`aihubmix error ${res.status}: ${text}`);
+            throw createAccountLimitError(res.status, data, `aihubmix error ${res.status}: ${text}`);
         }
 
         const data = await res.json();
@@ -2302,7 +2499,7 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
             }
         } catch (error) {
             console.error('Aihubmix sendRealtimeInput error:', error);
-            sendToRenderer('update-status', 'Error: ' + (error?.message || 'Unknown'));
+            sendToRenderer('update-status', 'Error: ' + getUserFacingAiErrorMessage(error));
         }
     }
 

@@ -65,6 +65,12 @@ export class CheatingDaddyApp extends LitElement {
             background: transparent;
         }
 
+        .main-content.auth-view {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
         .view-container {
             opacity: 1;
             transform: translateY(0);
@@ -603,7 +609,7 @@ export class CheatingDaddyApp extends LitElement {
     render() {
         const mainContentClass = `main-content ${
             this.currentView === 'assistant' ? 'assistant-view' : this.currentView === 'onboarding' ? 'onboarding-view' : 'with-border'
-        }`;
+        }${this.currentView === 'auth' ? ' auth-view' : ''}`;
 
         return html`
             <div class="window-container">

@@ -12,6 +12,8 @@ const profileRoutes = require('./routes/profile');
 const voiceRoutes = require('./routes/voice');
 const sessionRoutes = require('./routes/sessions');
 const adminRoutes = require('./routes/admin');
+const aiProxyRoutes = require('./routes/ai-proxy');
+const usageRoutes = require('./routes/usage');
 
 if (!config.jwtSecret) {
     throw new Error('JWT_SECRET is required');
@@ -50,6 +52,8 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/voice', voiceRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/ai', aiProxyRoutes);
+app.use('/api/admin/usage', usageRoutes);
 
 const webRoot = path.resolve(__dirname, '../web');
 if (fs.existsSync(webRoot)) {

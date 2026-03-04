@@ -5,6 +5,64 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>管理员 - 用户统计</title>
     <link rel="stylesheet" href="/css/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .admin-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .admin-actions button {
+            padding: 4px 8px;
+            cursor: pointer;
+        }
+        .pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+        }
+        .pill.frozen {
+            border-color: #fecaca;
+            background: #fef2f2;
+            color: #b91c1c;
+        }
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.35);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+        }
+        .modal {
+            width: min(920px, 96vw);
+            max-height: 90vh;
+            overflow: auto;
+            background: #fff;
+            border-radius: 12px;
+            padding: 16px;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        @media (max-width: 900px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
 <body>
 <div class="container">
@@ -18,15 +76,115 @@
         <div class="card"><h2>简历总数</h2><div id="resume-count">-</div></div>
         <div class="card"><h2>录音总数</h2><div id="voice-count">-</div></div>
         <div class="card"><h2>会话总数</h2><div id="session-count">-</div></div>
+        <div class="card"><h2>总 Token 用量</h2><div id="token-count">-</div></div>
     </div>
     <div class="card">
-        <h2>用户列表</h2>
+        <h2>用户列表（配额与冻结）</h2>
         <div id="user-list"></div>
     </div>
 </div>
+
+<div id="usage-modal-backdrop" class="modal-backdrop">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 id="usage-modal-title">用户用量明细</h3>
+            <button id="usage-modal-close">关闭</button>
+        </div>
+        <div id="usage-modal-status" class="muted" style="margin-bottom:10px;"></div>
+        <div class="grid-2">
+            <div class="card">
+                <h4>近 60 天每日 Token</h4>
+                <canvas id="usage-daily-canvas"></canvas>
+            </div>
+            <div class="card">
+                <h4>按环节 Token 分布</h4>
+                <canvas id="usage-type-canvas"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="/js/api.js"></script>
 <script>
     (async function () {
+        let dailyChart = null;
+        let typeChart = null;
+
+        function formatNumber(n) {
+            return Number(n || 0).toLocaleString('zh-CN');
+        }
+
+        async function setQuota(userId, currentQuota) {
+            const input = prompt('请输入新配额（token 数）', String(currentQuota || 0));
+            if (input === null) return;
+            const nextQuota = Number(input);
+            if (!Number.isFinite(nextQuota) || nextQuota < 0) {
+                alert('配额必须是 >= 0 的数字');
+                return;
+            }
+            await WebApi.apiRequest(`/api/admin/usage/quota/${userId}`, {
+                method: 'PUT',
+                body: { quota_tokens: Math.floor(nextQuota) },
+            });
+            await loadAdmin();
+        }
+
+        async function setFrozen(userId, frozen) {
+            await WebApi.apiRequest(`/api/admin/usage/freeze/${userId}`, {
+                method: 'PUT',
+                body: { frozen: Boolean(frozen) },
+            });
+            await loadAdmin();
+        }
+
+        function destroyCharts() {
+            if (dailyChart) {
+                dailyChart.destroy();
+                dailyChart = null;
+            }
+            if (typeChart) {
+                typeChart.destroy();
+                typeChart = null;
+            }
+        }
+
+        async function showUsageDetail(user) {
+            const backdrop = document.getElementById('usage-modal-backdrop');
+            const title = document.getElementById('usage-modal-title');
+            const status = document.getElementById('usage-modal-status');
+            title.textContent = `用户用量明细 - ${user.email}`;
+            status.textContent = '加载中...';
+            backdrop.style.display = 'flex';
+            destroyCharts();
+
+            try {
+                const data = await WebApi.apiRequest(`/api/admin/usage/detail/${user.id}`);
+                const daily = Array.isArray(data.daily) ? data.daily.slice().reverse() : [];
+                const byType = Array.isArray(data.byType) ? data.byType : [];
+                status.textContent = `总用量 ${formatNumber(user.usedTokens)} / 配额 ${formatNumber(user.quotaTokens)}`;
+
+                dailyChart = new Chart(document.getElementById('usage-daily-canvas'), {
+                    type: 'bar',
+                    data: {
+                        labels: daily.map(x => x.day),
+                        datasets: [{ label: 'Token', data: daily.map(x => x.totalTokens || 0) }],
+                    },
+                    options: { responsive: true, maintainAspectRatio: false },
+                });
+
+                typeChart = new Chart(document.getElementById('usage-type-canvas'), {
+                    type: 'bar',
+                    data: {
+                        labels: byType.map(x => x.callType),
+                        datasets: [{ label: 'Token', data: byType.map(x => x.totalTokens || 0) }],
+                    },
+                    options: { responsive: true, maintainAspectRatio: false },
+                });
+            } catch (err) {
+                status.textContent = err.message || '加载失败';
+            }
+        }
+
         const user = await WebApi.ensureLoggedIn();
         if (!user) return;
         WebApi.renderNav(user);
@@ -36,24 +194,75 @@
         }
 
         document.getElementById('stats-line').textContent = '实时数据，刷新页面更新';
+        document.getElementById('usage-modal-close').addEventListener('click', () => {
+            document.getElementById('usage-modal-backdrop').style.display = 'none';
+            destroyCharts();
+        });
+        document.getElementById('usage-modal-backdrop').addEventListener('click', (e) => {
+            if (e.target.id === 'usage-modal-backdrop') {
+                document.getElementById('usage-modal-backdrop').style.display = 'none';
+                destroyCharts();
+            }
+        });
 
         async function loadAdmin() {
             try {
-                const stats = await WebApi.apiRequest('/api/admin/stats');
-                const users = await WebApi.apiRequest('/api/admin/users');
+                const [stats, users, usage] = await Promise.all([
+                    WebApi.apiRequest('/api/admin/stats'),
+                    WebApi.apiRequest('/api/admin/users'),
+                    WebApi.apiRequest('/api/admin/usage/summary'),
+                ]);
 
                 const s = stats.stats || {};
                 document.getElementById('user-count').textContent = s.users ?? '-';
                 document.getElementById('resume-count').textContent = s.resumes ?? '-';
                 document.getElementById('voice-count').textContent = s.voices ?? '-';
                 document.getElementById('session-count').textContent = s.sessions ?? '-';
+                document.getElementById('token-count').textContent = formatNumber(usage?.totals?.totalTokens || s.totalTokens || 0);
 
                 const list = users.users || [];
+                const listById = new Map(list.map(x => [String(x.id), x]));
                 document.getElementById('user-list').innerHTML = list.length
-                    ? '<table style="width:100%;border-collapse:collapse;"><thead><tr><th style="text-align:left;padding:8px;">ID</th><th style="text-align:left;padding:8px;">邮箱</th><th style="text-align:left;padding:8px;">角色</th><th style="text-align:left;padding:8px;">简历</th><th style="text-align:left;padding:8px;">录音</th><th style="text-align:left;padding:8px;">会话</th><th style="text-align:left;padding:8px;">注册时间</th></tr></thead><tbody>' +
-                    list.map(u => `<tr><td style="padding:8px;">${u.id}</td><td style="padding:8px;">${u.email}</td><td style="padding:8px;">${u.role}</td><td style="padding:8px;">${u.resumeCount}</td><td style="padding:8px;">${u.voiceCount}</td><td style="padding:8px;">${u.sessionCount}</td><td style="padding:8px;">${new Date(u.createdAt).toLocaleString()}</td></tr>`).join('') +
+                    ? '<table style="width:100%;border-collapse:collapse;"><thead><tr><th style="text-align:left;padding:8px;">ID</th><th style="text-align:left;padding:8px;">邮箱</th><th style="text-align:left;padding:8px;">角色</th><th style="text-align:left;padding:8px;">简历</th><th style="text-align:left;padding:8px;">录音</th><th style="text-align:left;padding:8px;">会话</th><th style="text-align:left;padding:8px;">Token 使用 / 配额</th><th style="text-align:left;padding:8px;">状态</th><th style="text-align:left;padding:8px;">操作</th><th style="text-align:left;padding:8px;">注册时间</th></tr></thead><tbody>' +
+                    list.map(u => `<tr>
+                        <td style="padding:8px;">${u.id}</td>
+                        <td style="padding:8px;">${u.email}</td>
+                        <td style="padding:8px;">${u.role}</td>
+                        <td style="padding:8px;">${u.resumeCount}</td>
+                        <td style="padding:8px;">${u.voiceCount}</td>
+                        <td style="padding:8px;">${u.sessionCount}</td>
+                        <td style="padding:8px;">${formatNumber(u.usedTokens)} / ${formatNumber(u.quotaTokens)}</td>
+                        <td style="padding:8px;"><span class="pill ${u.frozen ? 'frozen' : ''}">${u.frozen ? '已冻结' : '正常'}</span></td>
+                        <td style="padding:8px;">
+                            <div class="admin-actions">
+                                <button data-action="detail" data-id="${u.id}">明细</button>
+                                <button data-action="quota" data-id="${u.id}" data-quota="${u.quotaTokens}">配额</button>
+                                <button data-action="freeze" data-id="${u.id}" data-frozen="${u.frozen}">${u.frozen ? '解冻' : '冻结'}</button>
+                            </div>
+                        </td>
+                        <td style="padding:8px;">${new Date(u.createdAt).toLocaleString()}</td>
+                    </tr>`).join('') +
                     '</tbody></table>'
                     : '<div class="small">暂无用户</div>';
+
+                document.querySelectorAll('#user-list button[data-action="detail"]').forEach(el => {
+                    el.addEventListener('click', () => {
+                        const id = String(el.getAttribute('data-id') || '');
+                        const u = listById.get(id);
+                        if (!u) return;
+                        showUsageDetail(u);
+                    });
+                });
+                document.querySelectorAll('#user-list button[data-action="quota"]').forEach(el => {
+                    el.addEventListener('click', () => setQuota(el.getAttribute('data-id'), el.getAttribute('data-quota')));
+                });
+                document.querySelectorAll('#user-list button[data-action="freeze"]').forEach(el => {
+                    el.addEventListener('click', () => {
+                        const id = el.getAttribute('data-id');
+                        const frozen = String(el.getAttribute('data-frozen')) === 'true';
+                        setFrozen(id, !frozen);
+                    });
+                });
             } catch (err) {
                 document.getElementById('user-list').innerHTML = '<div class="status error">' + (err.message || '加载失败') + '</div>';
             }
