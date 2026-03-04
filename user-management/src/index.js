@@ -51,9 +51,10 @@ app.use('/api/resume', resumeRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/voice', voiceRoutes);
 app.use('/api/sessions', sessionRoutes);
+// usage 需在 admin 之前挂载，否则 /api/admin/usage/* 会被 admin 吞掉
+app.use('/api/admin/usage', usageRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ai', aiProxyRoutes);
-app.use('/api/admin/usage', usageRoutes);
 
 const webRoot = path.resolve(__dirname, '../web');
 if (fs.existsSync(webRoot)) {
