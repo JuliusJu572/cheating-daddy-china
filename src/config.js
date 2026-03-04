@@ -16,7 +16,7 @@ const DEFAULT_CONFIG = {
     asrChunkDurationSec: 0,
     licenseKey: '',
     apiKey: '',
-    userApiBase: 'https://sfhxbdwmwvrp.sealoshzh.site',
+    userApiBase: 'https://muwadxphkifm.sealoshzh.site',
     userAuthToken: '',
 };
 
