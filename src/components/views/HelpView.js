@@ -416,8 +416,10 @@ export class HelpView extends LitElement {
                     <div class="usage-steps">
                         <div class="usage-step"><strong>输入 License Key：</strong> 在首页输入你的 License Key（格式：CD-xxxxx），点击"开始会话"进行验证并进入窗口。</div>
                         <div class="usage-step"><strong>模型配置：</strong> 应用默认使用 Qwen 模型（qwen3-max 文本对话、qwen3-vl-plus 截图识别、qwen3-asr-flash 语音转写）。</div>
+                        <div class="usage-step"><strong>简历与 JD 上下文：</strong> 在设置页上传简历并解析 JD 后，系统会把「候选人简历 + 目标岗位 JD」注入会话上下文，让回答更贴合你的背景与岗位要求。</div>
                         <div class="usage-step"><strong>截图与下一步：</strong> 使用 ${this.formatKeybind(this.keybinds.nextStep)} 截图并让 AI 给出下一步建议。</div>
-                        <div class="usage-step"><strong>实时转写：</strong> 按 ${this.formatKeybind(this.keybinds.audioCapture)} 开始实时语音转写，对方说话内容实时显示；再次按下则停止并自动提交给 AI 获得回答。</div>
+                        <div class="usage-step"><strong>实时转写：</strong> 按 ${this.formatKeybind(this.keybinds.audioCapture)} 开始实时语音转写，对方说话内容实时显示；再次按下则停止并自动提交给 AI 获得回答。该回答会使用当前会话已加载的简历/JD上下文。</div>
+                        <div class="usage-step"><strong>防呆提示（很重要）：</strong> 若你在会话进行中才修改了简历或 JD，建议重新开始会话后再用 Ctrl+L 提问，确保新上下文完整生效。</div>
                         <div class="usage-step"><strong>窗口移动：</strong> 使用 ${this.formatKeybind(this.keybinds.moveUp)} / ${this.formatKeybind(this.keybinds.moveDown)} / ${this.formatKeybind(this.keybinds.moveLeft)} / ${this.formatKeybind(this.keybinds.moveRight)} 移动窗口到合适位置。</div>
                         <div class="usage-step"><strong>切换显示/隐藏：</strong> 使用 ${this.formatKeybind(this.keybinds.toggleVisibility)} 显示或隐藏窗口。</div>
                         <div class="usage-step"><strong>穿透模式：</strong> 使用 ${this.formatKeybind(this.keybinds.toggleClickThrough)} 让窗口可被点击穿透。</div>
@@ -464,7 +466,8 @@ export class HelpView extends LitElement {
                     <div class="description">
                         <strong>系统音频：</strong> 按 ${this.formatKeybind(this.keybinds.audioCapture)} 开始实时捕获系统声音并转写。<br><br>
                         <strong>麦克风：</strong> 按 ${this.formatKeybind(this.keybinds.windowsAudioCapture)} 开始实时捕获麦克风声音并转写。<br><br>
-                        再次按下对应快捷键即可停止并自动提交全部转写内容给 AI 生成回答。按 Ctrl+Shift+L 可随时清空转写内容（不停止识别）。
+                        再次按下对应快捷键即可停止并自动提交全部转写内容给 AI 生成回答。按 Ctrl+Shift+L 可随时清空转写内容（不停止识别）。<br><br>
+                        <strong>防呆说明：</strong> ASR 会使用简历提取的术语热词提升识别准确率，但不会把整份 JD 文本直接发给 ASR；JD 主要用于 LLM 回答阶段。
                     </div>
                 </div>
 
@@ -505,6 +508,10 @@ export class HelpView extends LitElement {
                         A: 穿透模式下，鼠标点击会穿透窗口，可以直接操作下层窗口，同时保持悬浮显示。<br><br>
                         <strong>Q: 如何清除历史记录？</strong><br>
                         A: 使用 ${this.formatKeybind(this.keybinds.clearHistory)} 快捷键清除当前会话的历史记录。<br><br>
+                        <strong>Q: Ctrl+L 回答会用到简历和 JD 吗？</strong><br>
+                        A: 会。前提是会话初始化时已加载对应上下文。若你中途改了简历/JD，建议重新开始会话后再问。<br><br>
+                        <strong>Q: 未登录账号时，简历/JD 会保存吗？</strong><br>
+                        A: 不会持久化。未登录状态仅本次运行有效；关闭应用后需重新上传/填写。登录账号后才会缓存。<br><br>
                         <strong>Q: 支持哪些语音识别模型？</strong><br>
                         A: 支持 Whisper 系列模型，包括 Tiny、Base、Small、Medium、Large 等版本。推荐使用 Whisper-Large-v3 以获得最佳识别效果。
                     </div>
