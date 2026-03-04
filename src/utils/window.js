@@ -454,12 +454,38 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
 
     if (keybinds.audioCapture) {
         try {
-            globalShortcut.register(keybinds.audioCapture, async () => {
+            const registered = globalShortcut.register(keybinds.audioCapture, async () => {
                 try {
-                    await mainWindow.webContents.executeJavaScript(`(async () => { if (window.startQuickAudioCapture) { await window.startQuickAudioCapture(); } })()`);
-                } catch (e) {}
+                    const result = await mainWindow.webContents.executeJavaScript(`(async () => {
+                        try {
+                            if (typeof window.startQuickAudioCapture !== 'function') {
+                                return { ok: false, reason: 'startQuickAudioCapture-not-ready' };
+                            }
+                            await window.startQuickAudioCapture();
+                            return { ok: true };
+                        } catch (err) {
+                            return { ok: false, reason: err && err.message ? err.message : String(err) };
+                        }
+                    })()`);
+                    if (!result?.ok) {
+                        console.error(`audioCapture handler failed: ${result?.reason || 'unknown-error'}`);
+                    } else {
+                        console.log('audioCapture handler executed');
+                    }
+                } catch (e) {
+                    console.error('audioCapture executeJavaScript failed:', e);
+                }
             });
-        } catch (error) {}
+            if (registered) {
+                console.log(`Registered audioCapture: ${keybinds.audioCapture}`);
+            } else {
+                console.error(
+                    `Failed to register audioCapture (${keybinds.audioCapture}): shortcut may be in use by another app or the system`
+                );
+            }
+        } catch (error) {
+            console.error(`Failed to register audioCapture (${keybinds.audioCapture}):`, error);
+        }
     }
 
     if (keybinds.windowsAudioCapture && process.platform === 'win32') {
