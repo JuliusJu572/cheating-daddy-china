@@ -487,6 +487,11 @@ export class CustomizeView extends LitElement {
         editingResumeId: { type: Number },
         editingContent: { type: String },
         isSavingResume: { type: Boolean },
+        jdRawText: { type: String },
+        jdContext: { type: String },
+        isAnalyzingJd: { type: Boolean },
+        jdMessage: { type: String },
+        jdMessageType: { type: String },
     };
 
     constructor() {
@@ -540,6 +545,17 @@ export class CustomizeView extends LitElement {
         this.editingResumeId = null;
         this.editingContent = '';
         this.isSavingResume = false;
+        this.jdRawText = localStorage.getItem('jdRawText') || '';
+        this.jdContext = localStorage.getItem('jdContext') || '';
+        this.isAnalyzingJd = false;
+        this.jdMessage = '';
+        this.jdMessageType = '';
+        this.currentUserScope = '';
+        if (typeof window !== 'undefined') {
+            window.__runtimeLocalResumeContext = window.__runtimeLocalResumeContext || '';
+            window.__runtimeAsrHotwords = window.__runtimeAsrHotwords || [];
+            window.__runtimeJdContext = window.__runtimeJdContext || '';
+        }
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
@@ -555,6 +571,9 @@ export class CustomizeView extends LitElement {
         this.handleModelApiBaseInput = this.handleModelApiBaseInput.bind(this);
         this.handleMaxTokensChange = this.handleMaxTokensChange.bind(this);
         this.handleEnableContextChange = this.handleEnableContextChange.bind(this);
+        this.handleJdRawInput = this.handleJdRawInput.bind(this);
+        this.handleAnalyzeJd = this.handleAnalyzeJd.bind(this);
+        this.handleJdContextInput = this.handleJdContextInput.bind(this);
     }
 
   async connectedCallback() {
@@ -631,28 +650,128 @@ export class CustomizeView extends LitElement {
             const { ipcRenderer } = window.require('electron');
             const authRes = await ipcRenderer.invoke('get-user-auth');
             this.isUserLoggedIn = authRes?.hasUserAuthToken || false;
+            this.currentUserScope = '';
+            if (this.isUserLoggedIn) {
+                const profileRes = await ipcRenderer.invoke('user-get-profile');
+                const profile = profileRes?.profile || {};
+                const uid = Number(profile?.id);
+                const email = String(profile?.email || '').trim().toLowerCase();
+                if (Number.isFinite(uid)) {
+                    this.currentUserScope = `uid:${uid}`;
+                } else if (email) {
+                    this.currentUserScope = `email:${email}`;
+                }
+            } else {
+                // 未登录：不保留匿名缓存，重启后需重新上传
+                localStorage.removeItem('localResumeList');
+                localStorage.removeItem('localResumeContext');
+                localStorage.removeItem('asrHotwords');
+                localStorage.removeItem('jdRawText');
+                localStorage.removeItem('jdContext');
+                this.resumeList = [];
+                this.jdRawText = '';
+                this.jdContext = '';
+                if (typeof window !== 'undefined') {
+                    window.__runtimeLocalResumeContext = '';
+                    window.__runtimeAsrHotwords = [];
+                    window.__runtimeJdContext = '';
+                }
+            }
         } catch (_) {}
         this._loadLocalResumeList();
+        this._loadJdData();
         this.requestUpdate();
     }
 
+    _key(base) {
+        return this.currentUserScope ? `${base}::${this.currentUserScope}` : base;
+    }
+
+    _readScoped(base, fallback = '') {
+        const scoped = localStorage.getItem(this._key(base));
+        if (scoped !== null) return scoped;
+        return localStorage.getItem(base) || fallback;
+    }
+
+    _writeScoped(base, value) {
+        const v = String(value || '');
+        localStorage.setItem(this._key(base), v);
+        localStorage.setItem(base, v);
+    }
+
+    _removeScoped(base) {
+        localStorage.removeItem(this._key(base));
+        localStorage.removeItem(base);
+    }
+
     _loadLocalResumeList() {
+        if (!this.isUserLoggedIn) {
+            if (!Array.isArray(this.resumeList)) this.resumeList = [];
+            return;
+        }
         try {
-            const raw = localStorage.getItem('localResumeList');
+            const raw = this._readScoped('localResumeList', '[]');
             this.resumeList = raw ? JSON.parse(raw) : [];
         } catch (_) {
             this.resumeList = [];
         }
+        // 兼容旧数据：确保当前用户作用域有一份
+        try {
+            if (this.currentUserScope && this.resumeList.length > 0 && localStorage.getItem(this._key('localResumeList')) === null) {
+                localStorage.setItem(this._key('localResumeList'), JSON.stringify(this.resumeList));
+            }
+        } catch (_) {}
     }
 
     _saveLocalResumeList(list) {
-        localStorage.setItem('localResumeList', JSON.stringify(list));
         // 始终将第一条作为注入上下文
         const first = list[0];
         if (first) {
-            localStorage.setItem('localResumeContext', first.analyzedContent || '');
+            const hotwords = Array.isArray(first.asrHotwords) ? first.asrHotwords : [];
+            if (typeof window !== 'undefined') {
+                window.__runtimeLocalResumeContext = first.analyzedContent || '';
+                window.__runtimeAsrHotwords = hotwords;
+            }
+            if (this.isUserLoggedIn) {
+                localStorage.setItem(this._key('localResumeList'), JSON.stringify(list));
+                localStorage.setItem('localResumeList', JSON.stringify(list));
+                this._writeScoped('localResumeContext', first.analyzedContent || '');
+                if (hotwords.length > 0) {
+                    this._writeScoped('asrHotwords', hotwords.join(','));
+                } else {
+                    this._removeScoped('asrHotwords');
+                }
+            } else {
+                localStorage.removeItem('localResumeList');
+                localStorage.removeItem('localResumeContext');
+                localStorage.removeItem('asrHotwords');
+            }
         } else {
-            localStorage.removeItem('localResumeContext');
+            if (typeof window !== 'undefined') {
+                window.__runtimeLocalResumeContext = '';
+                window.__runtimeAsrHotwords = [];
+            }
+            if (this.isUserLoggedIn) {
+                this._removeScoped('localResumeContext');
+                this._removeScoped('asrHotwords');
+            } else {
+                localStorage.removeItem('localResumeList');
+                localStorage.removeItem('localResumeContext');
+                localStorage.removeItem('asrHotwords');
+            }
+        }
+    }
+
+    _loadJdData() {
+        if (this.isUserLoggedIn) {
+            this.jdRawText = this._readScoped('jdRawText', '');
+            this.jdContext = this._readScoped('jdContext', '');
+            return;
+        }
+        this.jdRawText = '';
+        this.jdContext = '';
+        if (typeof window !== 'undefined') {
+            window.__runtimeJdContext = '';
         }
     }
 
@@ -686,10 +805,15 @@ export class CustomizeView extends LitElement {
                 this.resumeMessageType = 'error';
             } else {
                 const list = this.resumeList.slice();
-                list.unshift({ filename, analyzedContent: res.analyzedContent, savedAt: new Date().toISOString() });
+                list.unshift({
+                    filename,
+                    analyzedContent: res.analyzedContent,
+                    asrHotwords: Array.isArray(res.asrHotwords) ? res.asrHotwords : [],
+                    savedAt: new Date().toISOString(),
+                });
                 this._saveLocalResumeList(list);
                 this.resumeList = list;
-                this.resumeMessage = '✅ 简历解析成功！下次会话将自动注入简历上下文。';
+                this.resumeMessage = `✅ 简历解析成功！已更新上下文${(res.asrHotwords || []).length ? '，并同步 ASR 热词' : ''}。`;
                 this.resumeMessageType = 'success';
                 // 已登录时额外上报元数据
                 if (this.isUserLoggedIn) {
@@ -749,6 +873,63 @@ export class CustomizeView extends LitElement {
         this.resumeMessage = '已删除';
         this.resumeMessageType = 'info';
         this.requestUpdate();
+    }
+
+    handleJdRawInput(e) {
+        this.jdRawText = e.target.value || '';
+        if (this.isUserLoggedIn) {
+            this._writeScoped('jdRawText', this.jdRawText);
+        }
+    }
+
+    handleJdContextInput(e) {
+        this.jdContext = e.target.value || '';
+        if (typeof window !== 'undefined') {
+            window.__runtimeJdContext = this.jdContext;
+        }
+        if (this.isUserLoggedIn) {
+            this._writeScoped('jdContext', this.jdContext);
+        }
+    }
+
+    async handleAnalyzeJd() {
+        if (!window.require || this.isAnalyzingJd) return;
+        const jdText = String(this.jdRawText || '').trim();
+        if (!jdText) {
+            this.jdMessage = '请先填写 JD 内容';
+            this.jdMessageType = 'error';
+            this.requestUpdate();
+            return;
+        }
+
+        this.isAnalyzingJd = true;
+        this.jdMessage = '正在解析 JD，请稍候...';
+        this.jdMessageType = 'info';
+        this.requestUpdate();
+        try {
+            const { ipcRenderer } = window.require('electron');
+            const res = await ipcRenderer.invoke('user-analyze-jd', { jdText });
+            if (!res?.success) {
+                this.jdMessage = 'JD 解析失败: ' + (res?.error || '未知错误');
+                this.jdMessageType = 'error';
+            } else {
+                this.jdContext = res.jdContext || '';
+                if (typeof window !== 'undefined') {
+                    window.__runtimeJdContext = this.jdContext;
+                }
+                if (this.isUserLoggedIn) {
+                    this._writeScoped('jdContext', this.jdContext);
+                }
+                this.jdMessage = '✅ JD 解析完成，后续会话将自动注入岗位信息。';
+                this.jdMessageType = 'success';
+            }
+        } catch (error) {
+            this.jdMessage = 'JD 解析失败: ' + (error?.message || '未知错误');
+            this.jdMessageType = 'error';
+        } finally {
+            this.isAnalyzingJd = false;
+            this.requestUpdate();
+        }
     }
 
     getProfiles() {
@@ -1371,13 +1552,10 @@ export class CustomizeView extends LitElement {
                             <div class="form-description">
                                 Personalize the AI's behavior with specific instructions that will be added to the
                                 ${profileNames[this.selectedProfile] || 'selected profile'} base prompts
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                </div>
-            </div>
-        </div>
-
-
-
 
                 <!-- Language & Audio Section -->
                 <div class="settings-section">
@@ -1757,6 +1935,9 @@ export class CustomizeView extends LitElement {
                     <div class="section-title">
                         <span>📄 简历管理</span>
                     </div>
+                    <div class="form-description" style="color: var(--warning-color, #f59e0b); margin-bottom: 6px;">
+                        ⚠️ 未登录状态下，简历/JD 仅本次运行有效；关闭应用后需重新上传或填写。登录账号后才会缓存。
+                    </div>
                     <div class="form-description">
                         上传简历后，AI 将在每次新会话中自动将简历摘要作为上下文，提升回答精准度。支持 .pdf、.docx、.txt 格式。解析在本地完成，内容仅保存在本机。
                     </div>
@@ -1822,6 +2003,58 @@ export class CustomizeView extends LitElement {
                     </div>
                 </div>
 
+                <!-- JD 管理 Section -->
+                <div class="settings-section">
+                    <div class="section-title">
+                        <span>🎯 岗位 JD 管理</span>
+                    </div>
+                    <div class="form-description" style="color: var(--warning-color, #f59e0b); margin-bottom: 6px;">
+                        ⚠️ 未登录状态下，简历/JD 仅本次运行有效；关闭应用后需重新上传或填写。登录账号后才会缓存。
+                    </div>
+                    <div class="form-description">
+                        填写或粘贴目标岗位 JD 后，可提炼出精简岗位上下文并注入到 AI，提升回答与岗位要求的匹配度。建议保持关键信息完整，避免过长文本。
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label class="form-label">JD 原文</label>
+                            <textarea
+                                class="form-control"
+                                rows="6"
+                                placeholder="粘贴岗位描述（职责、要求、技术栈、业务方向等）..."
+                                .value=${this.jdRawText}
+                                @input=${this.handleJdRawInput}
+                            ></textarea>
+                        </div>
+                        <div class="button-group">
+                            <button
+                                class="action-button"
+                                @click=${this.handleAnalyzeJd}
+                                ?disabled=${this.isAnalyzingJd}
+                            >
+                                ${this.isAnalyzingJd ? '解析中...' : '🧠 解析 JD'}
+                            </button>
+                        </div>
+                        ${this.jdMessage ? html`
+                            <div class="status-message ${this.jdMessageType === 'error' ? 'status-error' : this.jdMessageType === 'success' ? 'status-success' : ''}">
+                                ${this.jdMessage}
+                            </div>
+                        ` : ''}
+                        <div class="form-group full-width">
+                            <label class="form-label">JD 精炼上下文（可编辑）</label>
+                            <textarea
+                                class="form-control"
+                                rows="6"
+                                placeholder="解析后会生成【岗位要求核心】【重点技能匹配】【岗位与公司背景】"
+                                .value=${this.jdContext}
+                                @input=${this.handleJdContextInput}
+                            ></textarea>
+                            <div class="form-description">
+                                此内容会在每次新会话时注入到系统提示中，与简历上下文一起使用。
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="settings-note">💡 ${t('settings_saved_note')}</div>
             </div>
 
@@ -1840,7 +2073,7 @@ export class CustomizeView extends LitElement {
                                 class="form-control"
                                 .value=${this.editingContent}
                                 @input=${(e) => { this.editingContent = e.target.value; this.requestUpdate(); }}
-                                placeholder="建议按【候选人定位】【核心技能】等小节组织..."
+                                placeholder="建议按【候选人定位】【核心技术栈】【工作经历与量化成就】等小节组织..."
                             ></textarea>
                         </div>
                         <div class="modal-footer">

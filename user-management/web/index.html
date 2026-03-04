@@ -72,8 +72,12 @@
                 setStatus('邮箱格式无效', 'error');
                 return;
             }
-            if (password.length < 8) {
+            if (mode === 'register' && password.length < 8) {
                 setStatus('密码至少 8 位', 'error');
+                return;
+            }
+            if (password.length < 1) {
+                setStatus('请输入密码', 'error');
                 return;
             }
             setStatus(mode === 'login' ? '登录中...' : '注册中...', 'success');

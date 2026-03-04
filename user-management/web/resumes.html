@@ -85,13 +85,15 @@
     <div id="nav-container"></div>
     <div class="card">
         <h1>简历管理</h1>
-        <div class="muted">支持 PDF / DOCX，上传后会自动进行解析。</div>
-        <input id="resume-file" type="file" accept=".pdf,.docx" />
-        <button id="upload-btn" class="primary">上传简历</button>
-        <div id="status"></div>
+        <div class="usage-info" style="margin-bottom:0;">
+            <strong>简历已迁移至本地</strong><br>
+            简历上传功能已迁移至「作弊老铁」<strong>桌面应用</strong>。请在桌面应用中打开 <strong>设置 → 简历管理</strong> 上传和解析简历。解析在本地完成，内容仅保存在本机，不会上传到服务器。
+        </div>
     </div>
     <div class="card">
-        <h2>已上传简历</h2>
+        <h2>历史简历（仅供参考）</h2>
+        <div class="muted" style="margin-bottom:12px;">以下为迁移前上传的简历，已不再用于 AI 上下文注入。请使用桌面应用管理简历。</div>
+        <div id="status"></div>
         <div id="resume-list"></div>
     </div>
 </div>
@@ -130,7 +132,6 @@
     (function () {
         const statusEl = document.getElementById('status');
         const listEl = document.getElementById('resume-list');
-        const fileEl = document.getElementById('resume-file');
         const modalEl = document.getElementById('edit-modal');
         const editContentEl = document.getElementById('edit-content');
         let currentEditingId = null;
@@ -209,25 +210,6 @@
                 setStatus('解析内容已更新', 'success');
             } catch (err) {
                 alert('保存失败: ' + err.message);
-            }
-        });
-
-        document.getElementById('upload-btn').addEventListener('click', async () => {
-            const file = fileEl.files?.[0];
-            if (!file) {
-                setStatus('请选择简历文件', 'error');
-                return;
-            }
-            const form = new FormData();
-            form.append('resume', file);
-            setStatus('上传中...');
-            try {
-                await WebApi.apiRequest('/api/resume/upload', { method: 'POST', body: form });
-                fileEl.value = '';
-                setStatus('上传成功', 'success');
-                await loadResumes();
-            } catch (err) {
-                setStatus(err.message || '上传失败', 'error');
             }
         });
 

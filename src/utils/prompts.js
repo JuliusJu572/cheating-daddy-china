@@ -222,6 +222,8 @@ function buildSystemPrompt(promptParts, customPrompt = '', googleSearchEnabled =
         '\n-----\n\n',
         promptParts.outputInstructions,
         '\n\n',
+        '**上下文使用优先级：** 若「User-provided context」中出现 `[候选人简历]` 与 `[目标岗位JD]`，优先结合两者生成贴合岗位且匹配候选人背景的回答；信息冲突时以 JD 当前要求为准并给出稳妥表达。',
+        '\n\n',
         '**输入说明：** 用户输入来自实时语音转写，约每秒刷新，可能断断续续、词语被截断或顺序错乱，请结合上下文理解完整语义后作答。',
         '\n\n',
         '语言与输出要求：默认使用中文回答；若问题为英文或明确要求英文，则使用英文回答。技术术语保持原文。代码问题直接给出代码和简要思路。'

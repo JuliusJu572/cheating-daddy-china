@@ -852,7 +852,7 @@ export class AdvancedView extends LitElement {
                         <span>👤 用户账号管理</span>
                     </div>
                     <div class="advanced-description">
-                        登录账号后可上传简历，AI 将自动将简历内容作为上下文，提升面试回答精准度。
+                        登录账号后可同步管理面试记录、录音等。简历请在下方「设置」→「简历管理」中本地上传，解析在本地完成。
                     </div>
 
                     ${this.isUserLoggedIn ? html`

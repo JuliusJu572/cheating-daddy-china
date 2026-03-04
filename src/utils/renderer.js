@@ -147,6 +147,38 @@ const COMMIT_MIN_CHARS = 4;
 const isLinux = platform === 'linux';
 const isMacOS = platform === 'darwin';
 
+async function getCurrentUserScope() {
+    if (!isElectron) return '';
+    try {
+        const authRes = await ipcRenderer.invoke('get-user-auth');
+        if (!authRes?.hasUserAuthToken) return '';
+        const profileRes = await ipcRenderer.invoke('user-get-profile');
+        const profile = profileRes?.profile || {};
+        const uid = Number(profile?.id);
+        const email = String(profile?.email || '').trim().toLowerCase();
+        if (Number.isFinite(uid)) return `uid:${uid}`;
+        if (email) return `email:${email}`;
+    } catch (_) {}
+    return '';
+}
+
+function readScopedLocal(baseKey, scope) {
+    const scopedKey = scope ? `${baseKey}::${scope}` : baseKey;
+    const scopedVal = localStorage.getItem(scopedKey);
+    if (scopedVal !== null) return scopedVal;
+    return localStorage.getItem(baseKey) || '';
+}
+
+function readRuntimeFallback(baseKey) {
+    if (baseKey === 'localResumeContext') return String(window.__runtimeLocalResumeContext || '');
+    if (baseKey === 'jdContext') return String(window.__runtimeJdContext || '');
+    if (baseKey === 'asrHotwords') {
+        const arr = Array.isArray(window.__runtimeAsrHotwords) ? window.__runtimeAsrHotwords : [];
+        return arr.join(',');
+    }
+    return '';
+}
+
 // Token tracking system for rate limiting
 let tokenTracker = {
     tokens: [], // Array of {timestamp, count, type} objects
@@ -270,13 +302,22 @@ async function initializeGemini(profile = 'interview', language = 'zh-CN') {
     console.log('🚀 [renderer] Language:', language);
 
     if (apiKey) {
+        const userScope = await getCurrentUserScope();
+        let scopedResumeContext = readScopedLocal('localResumeContext', userScope);
+        let scopedJdContext = readScopedLocal('jdContext', userScope);
+        // 未登录用户不缓存：使用运行期内存上下文
+        if (!userScope) {
+            if (!scopedResumeContext) scopedResumeContext = readRuntimeFallback('localResumeContext');
+            if (!scopedJdContext) scopedJdContext = readRuntimeFallback('jdContext');
+        }
         console.log('🚀 [renderer] 调用 initialize-model...');
         const success = await ipcRenderer.invoke('initialize-model', {
             model: selectedModel,
             apiKey,
             apiBase,
             customPrompt: localStorage.getItem('customPrompt') || '',
-            localResumeContext: localStorage.getItem('localResumeContext') || '',
+            localResumeContext: scopedResumeContext,
+            jdContext: scopedJdContext,
             maxTokens: parseInt(localStorage.getItem('maxTokens') || '4096', 10),
             profile,
             language,
@@ -990,9 +1031,20 @@ async function startQuickAudioCapture(options = {}) {
         }
 
         resetLiveTranscriptState();
+        const userScope = await getCurrentUserScope();
+        let rawHotwords = String(readScopedLocal('asrHotwords', userScope));
+        if (!userScope && !rawHotwords) {
+            rawHotwords = readRuntimeFallback('asrHotwords');
+        }
+        const hotwords = rawHotwords
+            .split(',')
+            .map(x => x.trim())
+            .filter(Boolean)
+            .slice(0, 15);
         const startLiveRes = await ipcRenderer.invoke('start-live-asr', {
             apiKey,
             sampleRate: liveAsrSampleRate,
+            hotwords,
         });
         if (!startLiveRes?.success) {
             cheddar.setStatus('Error: ' + (startLiveRes?.error || 'Live ASR start failed'));

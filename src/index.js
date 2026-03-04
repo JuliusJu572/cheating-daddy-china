@@ -87,12 +87,27 @@ async function fetchResumeContext({ userApiBase, userAuthToken }) {
     }
 }
 
-function mergeCustomPrompt(resumeContext, customPrompt) {
-    const left = String(resumeContext || '').trim();
-    const right = String(customPrompt || '').trim();
-    if (!left) return right;
-    if (!right) return left;
-    return `${left}\n\n${right}`;
+function buildStructuredContext({ backendContext, localResumeContext, jdContext, customPrompt }) {
+    const parts = [];
+    const backend = String(backendContext || '').trim();
+    const resume = String(localResumeContext || '').trim();
+    const jd = String(jdContext || '').trim();
+    const custom = String(customPrompt || '').trim();
+
+    if (backend) {
+        parts.push('[后端历史上下文]', backend);
+    }
+    if (resume) {
+        parts.push('[候选人简历]', resume);
+    }
+    if (jd) {
+        parts.push('[目标岗位JD]', jd);
+    }
+    if (custom) {
+        parts.push('[用户自定义指令]', custom);
+    }
+
+    return parts.join('\n\n').trim();
 }
 
 async function extractTextFromFile(filePath) {
@@ -119,18 +134,22 @@ async function analyzeResumeLocally(rawText, apiKey, modelApiBase) {
     const base = String(modelApiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '');
     const endpoint = `${base}/chat/completions`;
     const analysisPrompt = [
-        '你是简历结构化分析助手。请将用户简历提炼成可直接注入面试 AI 的上下文。',
+        '你是面试答题辅助型的简历结构化分析助手。',
+        '目标是让 AI 更了解被试，能给出更贴合简历和岗位的回答，同时提取少量 ASR 热词以提升转写准确率。',
         '',
         '输出要求：',
         '1) 使用以下固定小节标题，每节单独成段：',
         '【候选人定位】',
-        '【核心技能】',
-        '【工作经历亮点】',
-        '【项目亮点】',
-        '【教育背景】',
-        '【可展开提问点】',
+        '【核心技术栈】',
+        '【工作经历与量化成就】',
+        '【代表项目与技术价值】',
+        '【教育与证书】',
+        '【个人核心卖点】',
+        '【专业术语表】',
         '2) 每节标题后换行，再写该节内容。',
-        '3) 只输出纯文本，不要 Markdown 或代码块。总长度控制在 1200 字以内。',
+        '3) 【专业术语表】只保留 10-15 个术语，用逗号分隔，不写句子。',
+        '4) 只输出纯文本，不要 Markdown 或代码块。',
+        '5) 【候选人定位】到【个人核心卖点】总长度控制在 700 字以内。',
         '',
         '以下是简历原文：',
         rawText || '',
@@ -156,6 +175,109 @@ async function analyzeResumeLocally(rawText, apiKey, modelApiBase) {
     if (!res.ok) {
         const text = await res.text();
         throw new Error(`简历分析失败：HTTP ${res.status} ${text}`);
+    }
+
+    const data = await res.json();
+    const content = data?.choices?.[0]?.message?.content ?? '';
+    if (typeof content === 'string') return splitResumeAnalysisContent(content);
+    if (Array.isArray(content)) {
+        const textPart = content.find(x => typeof x?.text === 'string');
+        return splitResumeAnalysisContent(String(textPart?.text || ''));
+    }
+    return { analyzedContent: '', asrHotwords: [] };
+}
+
+function splitResumeAnalysisContent(raw) {
+    const text = String(raw || '').trim();
+    if (!text) return { analyzedContent: '', asrHotwords: [] };
+
+    const titleRegex = /(^|\n)【[^】]+】/g;
+    const matches = [...text.matchAll(titleRegex)];
+    if (matches.length === 0) return { analyzedContent: text, asrHotwords: [] };
+
+    const blocks = [];
+    for (let i = 0; i < matches.length; i++) {
+        const start = (matches[i].index || 0) + (matches[i][1] ? matches[i][1].length : 0);
+        const end = i + 1 < matches.length ? (matches[i + 1].index || text.length) : text.length;
+        blocks.push(text.slice(start, end).trim());
+    }
+
+    let analyzedBlocks = [];
+    let hotwordLine = '';
+    for (const block of blocks) {
+        if (block.startsWith('【专业术语表】')) {
+            hotwordLine = block.replace(/^【专业术语表】\s*/, '').trim();
+            continue;
+        }
+        analyzedBlocks.push(block);
+    }
+
+    const analyzedContent = analyzedBlocks.join('\n\n').trim() || text;
+    const asrHotwords = normalizeHotwords(hotwordLine);
+    return { analyzedContent, asrHotwords };
+}
+
+function normalizeHotwords(raw) {
+    const source = String(raw || '')
+        .replace(/[：:]/g, ',')
+        .replace(/[、，；;\n\r\t]/g, ',')
+        .trim();
+    if (!source) return [];
+    const seen = new Set();
+    const words = [];
+    for (const part of source.split(',')) {
+        const w = part.trim();
+        if (!w || w.length > 24) continue;
+        const key = w.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        words.push(w);
+        if (words.length >= 15) break;
+    }
+    return words;
+}
+
+async function analyzeJdLocally(rawText, apiKey, modelApiBase) {
+    const key = String(apiKey || '').trim();
+    if (!key) throw new Error('缺少 API Key，请先配置 API Key 或 License Key');
+
+    const base = String(modelApiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '');
+    const endpoint = `${base}/chat/completions`;
+    const analysisPrompt = [
+        '你是岗位 JD 提炼助手，目标是帮助被试在面试回答中更贴合岗位需求。',
+        '',
+        '输出要求：',
+        '1) 使用以下固定小节标题，每节单独成段：',
+        '【岗位要求核心】',
+        '【重点技能匹配】',
+        '【岗位与公司背景】',
+        '2) 只输出纯文本，不要 Markdown 或代码块。',
+        '3) 总长度控制在 300 字以内，保留关键要求与关键信号。',
+        '',
+        '以下是 JD 原文：',
+        rawText || '',
+    ].join('\n');
+
+    const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+            model: 'qwen-plus',
+            messages: [
+                { role: 'system', content: '你是资深技术招聘顾问。' },
+                { role: 'user', content: analysisPrompt },
+            ],
+            temperature: 0.2,
+            stream: false,
+        }),
+    });
+
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`JD 分析失败：HTTP ${res.status} ${text}`);
     }
 
     const data = await res.json();
@@ -189,7 +311,7 @@ app.whenReady().then(async () => {
     setupGeneralIpcHandlers();
 });
 
-async function transcribeAudio(filePath, apiKey, apiBase = DEFAULT_ASR_API_BASE) {
+async function transcribeAudio(filePath, apiKey, apiBase = DEFAULT_ASR_API_BASE, hotwords = []) {
     const asrBase = String(apiBase || DEFAULT_ASR_API_BASE).replace(/\/$/, '');
     const ext = path.extname(filePath || '').toLowerCase().replace(/^\./, '');
     const format = ext === 'wav' || ext === 'mp3' || ext === 'm4a' ? ext : 'mp3';
@@ -205,6 +327,7 @@ async function transcribeAudio(filePath, apiKey, apiBase = DEFAULT_ASR_API_BASE)
 
     async function callDashScopeProtocol() {
         const endpoint = `${asrBase}/services/aigc/multimodal-generation/generation`;
+        const vocabulary = normalizeHotwords(Array.isArray(hotwords) ? hotwords.join(',') : hotwords);
         const res = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -221,6 +344,7 @@ async function transcribeAudio(filePath, apiKey, apiBase = DEFAULT_ASR_API_BASE)
                 },
                 parameters: {
                     asr_options: { language: 'zh', enable_itn: false },
+                    ...(vocabulary.length > 0 ? { vocabulary } : {}),
                 },
             }),
         });
@@ -243,6 +367,7 @@ async function transcribeAudio(filePath, apiKey, apiBase = DEFAULT_ASR_API_BASE)
 
     async function callOpenAICompatible() {
         const endpoint = `${DEFAULT_MODEL_API_BASE.replace(/\/$/, '')}/chat/completions`;
+        const vocabulary = normalizeHotwords(Array.isArray(hotwords) ? hotwords.join(',') : hotwords);
         const res = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -264,7 +389,10 @@ async function transcribeAudio(filePath, apiKey, apiBase = DEFAULT_ASR_API_BASE)
                     },
                 ],
                 stream: false,
-                extra_body: { asr_options: { language: 'zh', enable_itn: false } },
+                extra_body: {
+                    asr_options: { language: 'zh', enable_itn: false },
+                    ...(vocabulary.length > 0 ? { vocabulary } : {}),
+                },
             }),
         });
 
@@ -322,7 +450,7 @@ function mergeTranscriptText(existing, incoming) {
     return normalizeTranscriptText(merged);
 }
 
-async function transcribePcmChunk({ pcmBase64, sampleRate, apiKey }) {
+async function transcribePcmChunk({ pcmBase64, sampleRate, apiKey, hotwords = [] }) {
     const pcmBuffer = Buffer.from(String(pcmBase64 || ''), 'base64');
     if (!pcmBuffer.length) return { text: '' };
 
@@ -333,7 +461,7 @@ async function transcribePcmChunk({ pcmBase64, sampleRate, apiKey }) {
 
     try {
         pcmToWav(pcmBuffer, tempWavPath, sampleRate || 16000, 1, 16);
-        const result = await transcribeAudio(tempWavPath, apiKey, DEFAULT_ASR_API_BASE);
+        const result = await transcribeAudio(tempWavPath, apiKey, DEFAULT_ASR_API_BASE, hotwords);
         return { text: normalizeTranscriptText(result?.data?.text || '') };
     } finally {
         try {
@@ -356,6 +484,7 @@ async function processLiveAsrQueue(webContentsId) {
                 pcmBase64: chunk.pcmBase64,
                 sampleRate: chunk.sampleRate || session.sampleRate || 16000,
                 apiKey: session.apiKey,
+                hotwords: session.hotwords || [],
             });
 
             if (!text) continue;
@@ -778,10 +907,27 @@ function setupGeneralIpcHandlers() {
             const apiKey = String(cfg.apiKey || '').trim();
             if (!apiKey) return { success: false, error: '请先配置 API Key 或用 License Key 登录' };
 
-            const analyzedContent = await analyzeResumeLocally(rawText, apiKey, cfg.modelApiBase);
-            return { success: true, analyzedContent, rawText };
+            const { analyzedContent, asrHotwords } = await analyzeResumeLocally(rawText, apiKey, cfg.modelApiBase);
+            return { success: true, analyzedContent, asrHotwords, rawText };
         } catch (error) {
             console.error('user-parse-resume-local error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('user-analyze-jd', async (_event, { jdText } = {}) => {
+        try {
+            const rawText = String(jdText || '').trim();
+            if (!rawText) return { success: false, error: 'JD 内容不能为空' };
+
+            const cfg = getLocalConfig();
+            const apiKey = String(cfg.apiKey || '').trim();
+            if (!apiKey) return { success: false, error: '请先配置 API Key 或用 License Key 登录' };
+
+            const jdContext = await analyzeJdLocally(rawText, apiKey, cfg.modelApiBase);
+            return { success: true, jdContext };
+        } catch (error) {
+            console.error('user-analyze-jd error:', error);
             return { success: false, error: error.message };
         }
     });
@@ -871,6 +1017,7 @@ function setupGeneralIpcHandlers() {
         try {
             const apiKey = String(payload?.apiKey || '').trim();
             const sampleRate = Number(payload?.sampleRate) || 16000;
+            const hotwords = normalizeHotwords(Array.isArray(payload?.hotwords) ? payload.hotwords.join(',') : payload?.hotwords);
             if (!apiKey) {
                 return { success: false, error: 'Missing API key' };
             }
@@ -878,6 +1025,7 @@ function setupGeneralIpcHandlers() {
             liveAsrSessions.set(event.sender.id, {
                 apiKey,
                 sampleRate,
+                hotwords,
                 queue: [],
                 processing: false,
                 stopped: false,
@@ -1213,7 +1361,7 @@ function setupGeneralIpcHandlers() {
 
     ipcMain.handle('initialize-model', async (event, payload) => {
         try {
-            const { model, apiKey, apiBase, customPrompt, localResumeContext, profile, language, maxTokens } = payload || {};
+            const { model, apiKey, apiBase, customPrompt, localResumeContext, jdContext, profile, language, maxTokens } = payload || {};
             console.log('🚀 [initialize-model] 初始化模型...');
             console.log('🚀 [initialize-model] Model:', model);
             console.log('🚀 [initialize-model] Profile:', profile);
@@ -1229,15 +1377,19 @@ function setupGeneralIpcHandlers() {
                 userApiBase: localCfg?.userApiBase,
                 userAuthToken: localCfg?.userAuthToken,
             });
-            const mergedCustomPrompt = mergeCustomPrompt(
-                mergeCustomPrompt(backendContext, localResumeContext || ''),
-                customPrompt || ''
-            );
+            const mergedCustomPrompt = buildStructuredContext({
+                backendContext,
+                localResumeContext,
+                jdContext,
+                customPrompt,
+            });
             console.log(
                 '🚀 [initialize-model] Backend context length:',
                 backendContext.length,
                 'Local resume context length:',
                 (localResumeContext || '').length,
+                'JD context length:',
+                (jdContext || '').length,
                 'Merged prompt length:',
                 mergedCustomPrompt.length
             );
