@@ -310,6 +310,12 @@ export class CheatingDaddyApp extends LitElement {
         this.requestUpdate();
     }
 
+    handleLogout() {
+        this.isUserLoggedIn = false;
+        this.userEmail = '';
+        this.requestUpdate();
+    }
+
     // 在 handleClose 函数中，添加 macOS 特定清理：
     async handleClose() {
         if (this.currentView === 'customize' || this.currentView === 'help' || this.currentView === 'history' || this.currentView === 'advanced') {
@@ -614,6 +620,7 @@ export class CheatingDaddyApp extends LitElement {
                         .onHistoryClick=${() => this.handleHistoryClick()}
                         .onAdvancedClick=${() => this.handleAdvancedClick()}
                         .onAuthClick=${() => this.handleAuthClick()}
+                        .onLogout=${() => this.handleLogout()}
                         .onCloseClick=${() => this.handleClose()}
                         .onBackClick=${() => this.handleBackClick()}
                         .onHideToggleClick=${() => this.handleHideToggle()}

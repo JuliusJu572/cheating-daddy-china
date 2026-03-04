@@ -170,11 +170,21 @@ function readScopedLocal(baseKey, scope) {
 }
 
 function readRuntimeFallback(baseKey) {
-    if (baseKey === 'localResumeContext') return String(window.__runtimeLocalResumeContext || '');
+    if (baseKey === 'localResumeContext') {
+        const runtime = String(window.__runtimeLocalResumeContext || '');
+        if (runtime) return runtime;
+        // 未登录时从 sessionStorage 临时缓存读取（关闭窗口后自动清除）
+        try {
+            return String(sessionStorage?.getItem?.('localResumeContext') || '');
+        } catch (_) { return ''; }
+    }
     if (baseKey === 'jdContext') return String(window.__runtimeJdContext || '');
     if (baseKey === 'asrHotwords') {
         const arr = Array.isArray(window.__runtimeAsrHotwords) ? window.__runtimeAsrHotwords : [];
-        return arr.join(',');
+        if (arr.length) return arr.join(',');
+        try {
+            return String(sessionStorage?.getItem?.('asrHotwords') || '');
+        } catch (_) { return ''; }
     }
     return '';
 }

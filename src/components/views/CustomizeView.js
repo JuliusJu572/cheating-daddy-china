@@ -16,8 +16,55 @@ export class CustomizeView extends LitElement {
 
         :host {
             display: block;
+            padding: 0;
+            margin: 0;
+            max-width: none;
+        }
+
+        .settings-layout {
+            display: flex;
+            min-height: 100%;
+        }
+
+        .settings-nav {
+            width: 140px;
+            flex-shrink: 0;
+            padding: 12px 8px;
+            border-right: 1px solid var(--card-border, rgba(255, 255, 255, 0.1));
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            position: sticky;
+            top: 0;
+            align-self: flex-start;
+        }
+
+        .settings-nav-btn {
+            padding: 10px 12px;
+            text-align: left;
+            font-size: 12px;
+            background: transparent;
+            color: var(--text-color);
+            border: 1px solid transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .settings-nav-btn:hover {
+            background: var(--button-hover-background, rgba(255, 255, 255, 0.08));
+            border-color: var(--button-border, rgba(255, 255, 255, 0.15));
+        }
+
+        .settings-nav-btn.active {
+            background: var(--button-hover-background, rgba(255, 255, 255, 0.12));
+            border-color: var(--button-hover-border, rgba(255, 255, 255, 0.25));
+        }
+
+        .settings-content {
+            flex: 1;
             padding: 12px;
-            margin: 0 auto;
+            overflow-y: auto;
             max-width: 700px;
         }
 
@@ -205,6 +252,38 @@ export class CustomizeView extends LitElement {
 
         .reset-keybinds-button:active {
             transform: translateY(1px);
+        }
+
+        .action-button {
+            background: transparent;
+            color: var(--text-color);
+            border: 1px solid var(--button-border, rgba(255, 255, 255, 0.15));
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .action-button:hover {
+            background: var(--button-hover-background, rgba(255, 255, 255, 0.08));
+            border-color: var(--button-hover-border, rgba(255, 255, 255, 0.25));
+        }
+
+        .action-button:active {
+            transform: translateY(1px);
+        }
+
+        .action-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
         }
 
         .keybinds-table {
@@ -492,6 +571,7 @@ export class CustomizeView extends LitElement {
         isAnalyzingJd: { type: Boolean },
         jdMessage: { type: String },
         jdMessageType: { type: String },
+        settingsSubView: { type: String },
     };
 
     constructor() {
@@ -550,6 +630,7 @@ export class CustomizeView extends LitElement {
         this.isAnalyzingJd = false;
         this.jdMessage = '';
         this.jdMessageType = '';
+        this.settingsSubView = 'general';
         this.currentUserScope = '';
         if (typeof window !== 'undefined') {
             window.__runtimeLocalResumeContext = window.__runtimeLocalResumeContext || '';
@@ -662,13 +743,10 @@ export class CustomizeView extends LitElement {
                     this.currentUserScope = `email:${email}`;
                 }
             } else {
-                // 未登录：不保留匿名缓存，重启后需重新上传
+                // 未登录：使用 sessionStorage 临时缓存，关闭窗口后自动清除
                 localStorage.removeItem('localResumeList');
                 localStorage.removeItem('localResumeContext');
                 localStorage.removeItem('asrHotwords');
-                localStorage.removeItem('jdRawText');
-                localStorage.removeItem('jdContext');
-                this.resumeList = [];
                 this.jdRawText = '';
                 this.jdContext = '';
                 if (typeof window !== 'undefined') {
@@ -706,7 +784,13 @@ export class CustomizeView extends LitElement {
 
     _loadLocalResumeList() {
         if (!this.isUserLoggedIn) {
-            if (!Array.isArray(this.resumeList)) this.resumeList = [];
+            // 未登录：从 sessionStorage 读取临时缓存（关闭窗口后自动清除）
+            try {
+                const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('localResumeList') : null;
+                this.resumeList = raw ? JSON.parse(raw) : [];
+            } catch (_) {
+                this.resumeList = [];
+            }
             return;
         }
         try {
@@ -742,6 +826,13 @@ export class CustomizeView extends LitElement {
                     this._removeScoped('asrHotwords');
                 }
             } else {
+                // 未登录：写入 sessionStorage 临时缓存（关闭窗口后自动清除）
+                if (typeof sessionStorage !== 'undefined') {
+                    sessionStorage.setItem('localResumeList', JSON.stringify(list));
+                    sessionStorage.setItem('localResumeContext', first.analyzedContent || '');
+                    if (hotwords.length > 0) sessionStorage.setItem('asrHotwords', hotwords.join(','));
+                    else sessionStorage.removeItem('asrHotwords');
+                }
                 localStorage.removeItem('localResumeList');
                 localStorage.removeItem('localResumeContext');
                 localStorage.removeItem('asrHotwords');
@@ -755,6 +846,11 @@ export class CustomizeView extends LitElement {
                 this._removeScoped('localResumeContext');
                 this._removeScoped('asrHotwords');
             } else {
+                if (typeof sessionStorage !== 'undefined') {
+                    sessionStorage.removeItem('localResumeList');
+                    sessionStorage.removeItem('localResumeContext');
+                    sessionStorage.removeItem('asrHotwords');
+                }
                 localStorage.removeItem('localResumeList');
                 localStorage.removeItem('localResumeContext');
                 localStorage.removeItem('asrHotwords');
@@ -863,6 +959,16 @@ export class CustomizeView extends LitElement {
             this.isSavingResume = false;
             this.requestUpdate();
         }
+    }
+
+    handleResumeContextInput(e) {
+        const val = e.target.value || '';
+        if (this.resumeList.length === 0) return;
+        const list = this.resumeList.slice();
+        list[0] = { ...list[0], analyzedContent: val };
+        this._saveLocalResumeList(list);
+        this.resumeList = list;
+        this.requestUpdate();
     }
 
     handleResumeDelete(index) {
@@ -1512,6 +1618,20 @@ export class CustomizeView extends LitElement {
         const currentLanguage = languages.find(l => l.value === this.selectedLanguage);
 
         return html`
+            <div class="settings-layout">
+                <nav class="settings-nav">
+                    <button class="settings-nav-btn ${this.settingsSubView === 'general' ? 'active' : ''}" @click=${() => { this.settingsSubView = 'general'; this.requestUpdate(); }}>
+                        常规设置
+                    </button>
+                    <button class="settings-nav-btn ${this.settingsSubView === 'resume' ? 'active' : ''}" @click=${() => { this.settingsSubView = 'resume'; this.requestUpdate(); }}>
+                        简历管理
+                    </button>
+                    <button class="settings-nav-btn ${this.settingsSubView === 'jd' ? 'active' : ''}" @click=${() => { this.settingsSubView = 'jd'; this.requestUpdate(); }}>
+                        JD 管理
+                    </button>
+                </nav>
+                <div class="settings-content">
+            ${this.settingsSubView === 'general' ? html`
             <div class="settings-container">
                 <!-- Profile & Behavior Section -->
                 <div class="settings-section">
@@ -1930,14 +2050,19 @@ export class CustomizeView extends LitElement {
                     </div>
                 </div>
 
-                <!-- 简历管理 Section -->
+                <div class="settings-note">💡 ${t('settings_saved_note')}</div>
+            </div>
+            ` : this.settingsSubView === 'resume' ? html`
+            <div class="settings-container">
                 <div class="settings-section">
                     <div class="section-title">
-                        <span>📄 简历管理</span>
+                        <span>简历管理</span>
                     </div>
-                    <div class="form-description" style="color: var(--warning-color, #f59e0b); margin-bottom: 6px;">
-                        ⚠️ 未登录状态下，简历/JD 仅本次运行有效；关闭应用后需重新上传或填写。登录账号后才会缓存。
-                    </div>
+                    ${!this.isUserLoggedIn ? html`
+                        <div class="form-description" style="color: var(--warning-color, #f59e0b); margin-bottom: 6px;">
+                            ⚠️ 未登录时简历以临时缓存保存，关闭窗口后自动清除，下次需重新上传。登录后才会持久保存。
+                        </div>
+                    ` : ''}
                     <div class="form-description">
                         上传简历后，AI 将在每次新会话中自动将简历摘要作为上下文，提升回答精准度。支持 .pdf、.docx、.txt 格式。解析在本地完成，内容仅保存在本机。
                     </div>
@@ -1948,7 +2073,7 @@ export class CustomizeView extends LitElement {
                                 @click=${this.handleResumeUpload}
                                 ?disabled=${this.isUploadingResume}
                             >
-                                ${this.isUploadingResume ? '解析中...' : '📤 上传并解析简历'}
+                                ${this.isUploadingResume ? '解析中...' : '上传并解析简历'}
                             </button>
                         </div>
 
@@ -2000,17 +2125,34 @@ export class CustomizeView extends LitElement {
                         ` : html`
                             <div class="form-description" style="margin-top:4px;">暂无本地简历，请上传。</div>
                         `}
+                        <div class="form-group full-width" style="margin-top:12px;">
+                            <label class="form-label">简历精炼上下文（可编辑）</label>
+                            <textarea
+                                class="form-control"
+                                rows="8"
+                                placeholder="上传并解析简历后，此处显示 AI 提炼的【候选人定位】【核心技能】【工作经历亮点】等。可直接编辑，修改后自动保存。"
+                                .value=${this.resumeList.length > 0 ? (this.resumeList[0].analyzedContent || '') : ''}
+                                @input=${this.handleResumeContextInput}
+                            ></textarea>
+                            <div class="form-description">
+                                此内容会在每次新会话时注入到系统提示中，与 JD 上下文一起使用。第一条简历的解析结果会显示在此，可随时修改。
+                            </div>
+                        </div>
                     </div>
                 </div>
-
-                <!-- JD 管理 Section -->
+                <div class="settings-note">💡 ${t('settings_saved_note')}</div>
+            </div>
+            ` : html`
+            <div class="settings-container">
                 <div class="settings-section">
                     <div class="section-title">
-                        <span>🎯 岗位 JD 管理</span>
+                        <span>岗位 JD 管理</span>
                     </div>
-                    <div class="form-description" style="color: var(--warning-color, #f59e0b); margin-bottom: 6px;">
-                        ⚠️ 未登录状态下，简历/JD 仅本次运行有效；关闭应用后需重新上传或填写。登录账号后才会缓存。
-                    </div>
+                    ${!this.isUserLoggedIn ? html`
+                        <div class="form-description" style="color: var(--warning-color, #f59e0b); margin-bottom: 6px;">
+                            ⚠️ 未登录时 JD 以临时缓存保存，关闭窗口后自动清除。登录后才会持久保存。
+                        </div>
+                    ` : ''}
                     <div class="form-description">
                         填写或粘贴目标岗位 JD 后，可提炼出精简岗位上下文并注入到 AI，提升回答与岗位要求的匹配度。建议保持关键信息完整，避免过长文本。
                     </div>
@@ -2031,7 +2173,7 @@ export class CustomizeView extends LitElement {
                                 @click=${this.handleAnalyzeJd}
                                 ?disabled=${this.isAnalyzingJd}
                             >
-                                ${this.isAnalyzingJd ? '解析中...' : '🧠 解析 JD'}
+                                ${this.isAnalyzingJd ? '解析中...' : '解析 JD'}
                             </button>
                         </div>
                         ${this.jdMessage ? html`
@@ -2054,8 +2196,10 @@ export class CustomizeView extends LitElement {
                         </div>
                     </div>
                 </div>
-
                 <div class="settings-note">💡 ${t('settings_saved_note')}</div>
+            </div>
+            `}
+                </div>
             </div>
 
             ${this.editingResumeId !== null ? html`

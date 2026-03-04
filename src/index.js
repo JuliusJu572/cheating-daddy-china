@@ -19,6 +19,8 @@ const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const https = require('node:https');
+const { URL } = require('node:url');
 
 function configureWindowsPaths() {
     if (process.platform !== 'win32') return;
@@ -113,10 +115,12 @@ function buildStructuredContext({ backendContext, localResumeContext, jdContext,
 async function extractTextFromFile(filePath) {
     const ext = path.extname(filePath).toLowerCase();
     if (ext === '.pdf') {
-        const pdfParse = require('pdf-parse');
+        const { PDFParse } = require('pdf-parse');
         const buffer = fs.readFileSync(filePath);
-        const result = await pdfParse(buffer);
-        return result.text || '';
+        const parser = new PDFParse({ data: buffer });
+        const result = await parser.getText();
+        await parser.destroy();
+        return result?.text || '';
     } else if (ext === '.docx' || ext === '.doc') {
         const mammoth = require('mammoth');
         const result = await mammoth.extractRawText({ path: filePath });
@@ -754,10 +758,23 @@ function setupGeneralIpcHandlers() {
         sendToRenderer('user-auth-expired', { message });
     }
 
-    async function userApiRequest(path, options = {}) {
+    const USER_API_TIMEOUT_MS = 30000;
+
+    const userApiHttpsAgent = new https.Agent({
+        keepAlive: false,
+        maxSockets: 1,
+        rejectUnauthorized: true,
+    });
+
+    async function userApiRequest(path, options = {}, retryCount = 0) {
         const { method = 'GET', body = null, headers = {}, requireAuth = false } = options;
         const { userApiBase, userAuthToken } = getUserApiConfig();
         if (!userApiBase) throw new Error('未配置用户服务地址 (userApiBase)');
+
+        const urlStr = `${userApiBase}${path}`;
+        if (retryCount === 0) {
+            console.log(`[userApi] ${method} ${urlStr}`);
+        }
 
         const finalHeaders = { ...headers };
         if (requireAuth) {
@@ -768,21 +785,74 @@ function setupGeneralIpcHandlers() {
         }
 
         let payloadBody = body;
-        if (body && typeof body === 'object' && !(body instanceof FormData) && !finalHeaders['Content-Type']) {
+        const isFormData = body && body instanceof FormData;
+        if (body && typeof body === 'object' && !isFormData && !finalHeaders['Content-Type']) {
             finalHeaders['Content-Type'] = 'application/json; charset=utf-8';
             payloadBody = JSON.stringify(body);
         }
-
-        const res = await fetch(`${userApiBase}${path}`, {
-            method,
-            headers: finalHeaders,
-            body: payloadBody,
-        });
-        const data = await res.json().catch(() => ({}));
-        if (requireAuth && res.status === 401) {
-            notifyUserAuthExpired(data?.error || '登录已过期，请重新登录');
+        if (isFormData) {
+            Object.assign(finalHeaders, body.getHeaders());
         }
-        return { status: res.status, ok: res.ok, data };
+
+        const parsed = new URL(urlStr);
+        const isHttps = parsed.protocol === 'https:';
+        if (!isHttps) {
+            throw new Error('userApiBase 必须使用 https');
+        }
+
+        try {
+            const res = await new Promise((resolve, reject) => {
+                const reqOpts = {
+                    hostname: parsed.hostname,
+                    port: parsed.port || 443,
+                    path: parsed.pathname + parsed.search,
+                    method,
+                    headers: finalHeaders,
+                    agent: userApiHttpsAgent,
+                };
+                const req = https.request(reqOpts, (res) => {
+                    let data = '';
+                    res.on('data', (chunk) => { data += chunk; });
+                    res.on('end', () => {
+                        let json = {};
+                        try {
+                            json = data ? JSON.parse(data) : {};
+                        } catch (_) {}
+                        resolve({ status: res.statusCode, ok: res.statusCode >= 200 && res.statusCode < 300, data: json });
+                    });
+                });
+                req.on('error', reject);
+                req.setTimeout(USER_API_TIMEOUT_MS, () => {
+                    req.destroy();
+                    reject(new Error('ETIMEDOUT'));
+                });
+                if (isFormData) {
+                    payloadBody.pipe(req);
+                } else {
+                    if (payloadBody) req.write(payloadBody);
+                    req.end();
+                }
+            });
+
+            if (requireAuth && res.status === 401) {
+                notifyUserAuthExpired(res.data?.error || '登录已过期，请重新登录');
+            }
+            return { status: res.status, ok: res.ok, data: res.data };
+        } catch (err) {
+            const errCode = err?.code || err?.cause?.code;
+            const errDetail = errCode ? ` (cause: ${errCode})` : '';
+            console.error(`[userApi] ${method} ${urlStr} failed: ${err?.message || err}${errDetail}`);
+            const isRetryable = (errCode === 'ECONNRESET' || errCode === 'ETIMEDOUT' || errCode === 'ECONNREFUSED' || err?.message === 'ETIMEDOUT') && retryCount < 2;
+            if (isRetryable) {
+                console.log(`[userApi] retry ${retryCount + 1}/2 in 800ms`);
+                await new Promise(r => setTimeout(r, 800));
+                return userApiRequest(path, options, retryCount + 1);
+            }
+            const friendlyMsg = errCode === 'ECONNRESET'
+                ? `无法连接至 ${userApiBase}，请检查：1) 地址是否正确 2) 服务是否运行 3) 网络/防火墙`
+                : (err?.message || String(err));
+            throw new Error(friendlyMsg);
+        }
     }
 
     ipcMain.handle('user-register', async (_event, payload) => {
@@ -841,6 +911,24 @@ function setupGeneralIpcHandlers() {
             return { success: true };
         } catch (error) {
             console.error('user-logout error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('user-change-password', async (_event, { currentPassword, newPassword } = {}) => {
+        try {
+            const { ok, status, data } = await userApiRequest('/auth/change-password', {
+                method: 'POST',
+                body: { currentPassword: String(currentPassword || ''), newPassword: String(newPassword || '') },
+                requireAuth: true,
+            });
+            if (!ok) {
+                if (status === 401) return { success: false, error: data?.error || '登录已过期', authExpired: true };
+                return { success: false, error: data?.error || '修改失败' };
+            }
+            return { success: true };
+        } catch (error) {
+            console.error('user-change-password error:', error);
             return { success: false, error: error.message };
         }
     });

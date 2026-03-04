@@ -94,6 +94,114 @@ export class AppHeader extends LitElement {
             border-radius: 999px;
             padding: 4px 8px;
             color: var(--header-actions-color);
+            cursor: pointer;
+            background: transparent;
+        }
+
+        .auth-chip:hover {
+            background: var(--hover-background);
+        }
+
+        .auth-dropdown-wrap {
+            position: relative;
+        }
+
+        .auth-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 4px;
+            min-width: 180px;
+            background: var(--header-background);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px 0;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .auth-dropdown-item {
+            display: block;
+            width: 100%;
+            padding: 8px 12px;
+            text-align: left;
+            font-size: 12px;
+            background: none;
+            border: none;
+            color: var(--text-color);
+            cursor: pointer;
+        }
+
+        .auth-dropdown-item:hover {
+            background: var(--hover-background);
+        }
+
+        .auth-dropdown-email {
+            padding: 6px 12px;
+            font-size: 11px;
+            color: var(--header-actions-color);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .auth-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 999;
+        }
+
+        .auth-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            min-width: 280px;
+            background: var(--header-background);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            z-index: 1001;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        .auth-modal-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .auth-modal-field {
+            margin-bottom: 10px;
+        }
+
+        .auth-modal-field label {
+            display: block;
+            font-size: 11px;
+            margin-bottom: 4px;
+            color: var(--header-actions-color);
+        }
+
+        .auth-modal-field input {
+            width: 100%;
+            padding: 8px 10px;
+            font-size: 12px;
+            background: var(--input-background);
+            border: 1px solid var(--button-border);
+            border-radius: 4px;
+            color: var(--text-color);
+            box-sizing: border-box;
+        }
+
+        .auth-modal-error {
+            font-size: 11px;
+            color: #ef4444;
+            margin-bottom: 8px;
+        }
+
+        .auth-modal-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 14px;
         }
     `;
 
@@ -113,6 +221,7 @@ export class AppHeader extends LitElement {
         isUserLoggedIn: { type: Boolean },
         userEmail: { type: String },
         onAuthClick: { type: Function },
+        onLogout: { type: Function },
     };
 
     constructor() {
@@ -132,7 +241,15 @@ export class AppHeader extends LitElement {
         this.isUserLoggedIn = false;
         this.userEmail = '';
         this.onAuthClick = () => {};
+        this.onLogout = () => {};
         this._timerInterval = null;
+        this._authDropdownOpen = false;
+        this._changePwOpen = false;
+        this._changePwCurrent = '';
+        this._changePwNew = '';
+        this._changePwConfirm = '';
+        this._changePwError = '';
+        this._changePwLoading = false;
     }
 
     connectedCallback() {
@@ -230,7 +347,21 @@ export class AppHeader extends LitElement {
                     ${this.currentView === 'main'
                         ? html`
                               ${this.isUserLoggedIn
-                                  ? html`<span class="auth-chip" title=${this.userEmail || '已登录'}>${this.userEmail || '已登录'}</span>`
+                                  ? html`
+                                        <div class="auth-dropdown-wrap">
+                                            <button class="auth-chip" @click=${() => { this._authDropdownOpen = !this._authDropdownOpen; this.requestUpdate(); }} title=${this.userEmail || '已登录'}>
+                                                ${this.userEmail || '已登录'}
+                                            </button>
+                                            ${this._authDropdownOpen ? html`
+                                                <div class="auth-overlay" @click=${() => { this._authDropdownOpen = false; this.requestUpdate(); }}></div>
+                                                <div class="auth-dropdown">
+                                                    <div class="auth-dropdown-email">${this.userEmail || '已登录'}</div>
+                                                    <button class="auth-dropdown-item" @click=${() => this._openChangePassword()}>修改密码</button>
+                                                    <button class="auth-dropdown-item" @click=${() => this._handleLogout()}>退出登录</button>
+                                                </div>
+                                            ` : ''}
+                                        </div>
+                                    `
                                   : html`<button class="button" @click=${this.onAuthClick}>登录</button>`}
                               <button class="icon-button" @click=${this.onHistoryClick}>
                                   <?xml version="1.0" encoding="UTF-8"?><svg
@@ -427,7 +558,105 @@ export class AppHeader extends LitElement {
                           `}
                 </div>
             </div>
+
+            ${this._changePwOpen ? html`
+                <div class="auth-overlay" @click=${() => this._closeChangePassword()}></div>
+                <div class="auth-modal" @click=${e => e.stopPropagation()}>
+                    <div class="auth-modal-title">修改密码</div>
+                    ${this._changePwError ? html`<div class="auth-modal-error">${this._changePwError}</div>` : ''}
+                    <div class="auth-modal-field">
+                        <label>当前密码</label>
+                        <input type="password" .value=${this._changePwCurrent} @input=${e => { this._changePwCurrent = e.target.value; this._changePwError = ''; this.requestUpdate(); }} placeholder="请输入当前密码" />
+                    </div>
+                    <div class="auth-modal-field">
+                        <label>新密码</label>
+                        <input type="password" .value=${this._changePwNew} @input=${e => { this._changePwNew = e.target.value; this._changePwError = ''; this.requestUpdate(); }} placeholder="至少 8 位" />
+                    </div>
+                    <div class="auth-modal-field">
+                        <label>确认新密码</label>
+                        <input type="password" .value=${this._changePwConfirm} @input=${e => { this._changePwConfirm = e.target.value; this._changePwError = ''; this.requestUpdate(); }} placeholder="再次输入新密码" />
+                    </div>
+                    <div class="auth-modal-actions">
+                        <button class="button" @click=${() => this._closeChangePassword()}>取消</button>
+                        <button class="button" @click=${() => this._submitChangePassword()} ?disabled=${this._changePwLoading}>
+                            ${this._changePwLoading ? '提交中...' : '确定'}
+                        </button>
+                    </div>
+                </div>
+            ` : ''}
         `;
+    }
+
+    _openChangePassword() {
+        this._authDropdownOpen = false;
+        this._changePwOpen = true;
+        this._changePwCurrent = '';
+        this._changePwNew = '';
+        this._changePwConfirm = '';
+        this._changePwError = '';
+        this.requestUpdate();
+    }
+
+    _closeChangePassword() {
+        this._changePwOpen = false;
+        this._changePwCurrent = '';
+        this._changePwNew = '';
+        this._changePwConfirm = '';
+        this._changePwError = '';
+        this.requestUpdate();
+    }
+
+    async _submitChangePassword() {
+        if (!this._changePwCurrent.trim()) {
+            this._changePwError = '请输入当前密码';
+            this.requestUpdate();
+            return;
+        }
+        if (!this._changePwNew.trim()) {
+            this._changePwError = '请输入新密码';
+            this.requestUpdate();
+            return;
+        }
+        if (this._changePwNew.length < 8) {
+            this._changePwError = '新密码至少 8 位';
+            this.requestUpdate();
+            return;
+        }
+        if (this._changePwNew !== this._changePwConfirm) {
+            this._changePwError = '两次输入的新密码不一致';
+            this.requestUpdate();
+            return;
+        }
+        this._changePwLoading = true;
+        this._changePwError = '';
+        this.requestUpdate();
+        try {
+            const { ipcRenderer } = window.require('electron');
+            const res = await ipcRenderer.invoke('user-change-password', {
+                currentPassword: this._changePwCurrent,
+                newPassword: this._changePwNew,
+            });
+            if (res?.success) {
+                this._closeChangePassword();
+            } else {
+                this._changePwError = res?.error || '修改失败';
+            }
+        } catch (e) {
+            this._changePwError = e?.message || '修改失败';
+        } finally {
+            this._changePwLoading = false;
+            this.requestUpdate();
+        }
+    }
+
+    async _handleLogout() {
+        this._authDropdownOpen = false;
+        this.requestUpdate();
+        try {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('user-logout');
+        } catch (_) {}
+        if (typeof this.onLogout === 'function') this.onLogout();
     }
 }
 

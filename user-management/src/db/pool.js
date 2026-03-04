@@ -8,6 +8,8 @@ if (!config.databaseUrl) {
 
 const pool = new Pool({
     connectionString: config.databaseUrl,
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 30000,
 });
 
 module.exports = pool;

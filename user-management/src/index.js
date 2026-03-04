@@ -17,6 +17,10 @@ if (!config.jwtSecret) {
     throw new Error('JWT_SECRET is required');
 }
 
+process.on('unhandledRejection', (reason, p) => {
+    console.error('[unhandledRejection]', reason, p);
+});
+
 if (!fs.existsSync(config.uploadDirAbs)) {
     fs.mkdirSync(config.uploadDirAbs, { recursive: true });
 }
@@ -36,6 +40,10 @@ app.get('/healthz', async (_req, res) => {
 });
 
 app.use('/auth', authRoutes);
+// Compatibility mounts for different client/reverse-proxy path conventions.
+app.use('/api/auth', authRoutes);
+app.use('/v1/auth', authRoutes);
+app.use('/', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/resume', resumeRoutes);
 app.use('/api/profile', profileRoutes);
@@ -50,4 +58,5 @@ if (fs.existsSync(webRoot)) {
 
 app.listen(config.port, () => {
     console.log(`user-management listening on :${config.port}`);
+    console.log('[auth] enabled endpoints: /auth/*, /api/auth/*, /v1/auth/*, /* (compat)');
 });
