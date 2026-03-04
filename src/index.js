@@ -913,6 +913,8 @@ function setupGeneralIpcHandlers() {
     }
 
     const USER_API_TIMEOUT_MS = 30000;
+    const USER_PROFILE_CACHE_TTL_MS = 5000;
+    let userProfileCache = { ts: 0, token: '', result: null };
 
     const userApiHttpsAgent = new https.Agent({
         keepAlive: false,
@@ -1089,6 +1091,17 @@ function setupGeneralIpcHandlers() {
 
     ipcMain.handle('user-get-profile', async () => {
         try {
+            const { userAuthToken } = getUserApiConfig();
+            if (!userAuthToken) {
+                return { success: false, error: 'not logged in', authExpired: true };
+            }
+            if (
+                userProfileCache.result &&
+                userProfileCache.token === userAuthToken &&
+                (Date.now() - userProfileCache.ts) < USER_PROFILE_CACHE_TTL_MS
+            ) {
+                return userProfileCache.result;
+            }
             const { ok, status, data } = await userApiRequest('/auth/me', {
                 method: 'GET',
                 requireAuth: true,
@@ -1097,7 +1110,9 @@ function setupGeneralIpcHandlers() {
                 if (status === 401) return { success: false, error: data?.error || 'login expired', authExpired: true };
                 return { success: false, error: data?.error || 'get profile failed' };
             }
-            return { success: true, profile: data?.user || {} };
+            const result = { success: true, profile: data?.user || {} };
+            userProfileCache = { ts: Date.now(), token: userAuthToken, result };
+            return result;
         } catch (error) {
             console.error('user-get-profile error:', error);
             return { success: false, error: error.message };

@@ -161,7 +161,10 @@ async function getCurrentUserScope() {
     try {
         const authRes = await ipcRenderer.invoke('get-user-auth');
         if (!authRes?.hasUserAuthToken) return '';
-        const profileRes = await ipcRenderer.invoke('user-get-profile');
+        const profileRes = await Promise.race([
+            ipcRenderer.invoke('user-get-profile'),
+            new Promise(resolve => setTimeout(() => resolve({ success: false, timeout: true }), 1200)),
+        ]);
         const profile = profileRes?.profile || {};
         const uid = Number(profile?.id);
         const email = String(profile?.email || '').trim().toLowerCase();
