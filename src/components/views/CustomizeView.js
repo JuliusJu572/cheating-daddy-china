@@ -397,6 +397,55 @@ export class CustomizeView extends LitElement {
             font-size: 10px;
             color: var(--description-color, rgba(255, 255, 255, 0.5));
         }
+
+        .resume-edit-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .resume-edit-modal {
+            background: var(--card-background, rgba(255, 255, 255, 0.06));
+            border: 1px solid var(--card-border, rgba(255, 255, 255, 0.1));
+            border-radius: 8px;
+            padding: 20px;
+            width: 90%;
+            max-width: 640px;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .resume-edit-modal .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .resume-edit-modal .modal-body {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 16px;
+        }
+        .resume-edit-modal .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .resume-edit-modal textarea {
+            min-height: 280px;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+        .resume-edit-usage {
+            font-size: 12px;
+            color: var(--description-color, rgba(255, 255, 255, 0.5));
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
     `;
 
     static properties = {
@@ -435,6 +484,9 @@ export class CustomizeView extends LitElement {
         resumeMessageType: { type: String },
         isUserLoggedIn: { type: Boolean },
         onOpenAuth: { type: Function },
+        editingResumeId: { type: Number },
+        editingContent: { type: String },
+        isSavingResume: { type: Boolean },
     };
 
     constructor() {
@@ -485,6 +537,9 @@ export class CustomizeView extends LitElement {
         this.resumeMessageType = '';
         this.isUserLoggedIn = false;
         this.onOpenAuth = () => {};
+        this.editingResumeId = null;
+        this.editingContent = '';
+        this.isSavingResume = false;
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
@@ -623,6 +678,61 @@ export class CustomizeView extends LitElement {
             this.resumeMessageType = 'error';
         } finally {
             this.isUploadingResume = false;
+            this.requestUpdate();
+        }
+    }
+
+    async handleResumeEditClick(id) {
+        if (!window.require) return;
+        const { ipcRenderer } = window.require('electron');
+        try {
+            const res = await ipcRenderer.invoke('user-get-resume', { id });
+            if (!res?.success) {
+                this.resumeMessage = res?.error || '加载失败';
+                this.resumeMessageType = 'error';
+            } else {
+                this.editingResumeId = id;
+                this.editingContent = res.resume?.analyzed_content || '';
+            }
+        } catch (e) {
+            this.resumeMessage = e?.message || '加载失败';
+            this.resumeMessageType = 'error';
+        }
+        this.requestUpdate();
+    }
+
+    handleResumeEditCancel() {
+        this.editingResumeId = null;
+        this.editingContent = '';
+        this.requestUpdate();
+    }
+
+    async handleResumeEditSave() {
+        if (!window.require || this.isSavingResume || !this.editingResumeId) return;
+        const { ipcRenderer } = window.require('electron');
+        this.isSavingResume = true;
+        this.requestUpdate();
+        try {
+            const res = await ipcRenderer.invoke('user-update-resume', {
+                id: this.editingResumeId,
+                analyzedContent: this.editingContent,
+            });
+            if (!res?.success) {
+                this.resumeMessage = res?.error || '保存失败';
+                this.resumeMessageType = 'error';
+            } else {
+                this.resumeMessage = '✅ 解析内容已更新';
+                this.resumeMessageType = 'success';
+                this.editingResumeId = null;
+                this.editingContent = '';
+                const listRes = await ipcRenderer.invoke('user-list-resumes');
+                this.resumeList = listRes?.resumes || [];
+            }
+        } catch (e) {
+            this.resumeMessage = e?.message || '保存失败';
+            this.resumeMessageType = 'error';
+        } finally {
+            this.isSavingResume = false;
             this.requestUpdate();
         }
     }
@@ -1669,23 +1779,32 @@ export class CustomizeView extends LitElement {
                                     <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
                                         ${this.resumeList.map((r, i) => html`
                                             <div style="
-                                                display:flex;align-items:center;justify-content:space-between;
+                                                display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;
                                                 padding:8px 12px;
                                                 background:var(--card-background,rgba(255,255,255,0.04));
                                                 border:1px solid var(--card-border,rgba(255,255,255,0.1));
                                                 border-radius:6px;font-size:12px;
                                                 ${i === 0 ? 'border-color:rgba(34,197,94,0.4);' : ''}
                                             ">
-                                                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                                                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                                                     ${i === 0 ? '✅ ' : ''}${r.original_filename}
                                                 </span>
-                                                <span style="color:var(--description-color,rgba(255,255,255,0.5));margin-left:8px;white-space:nowrap;">
-                                                    ${new Date(r.created_at).toLocaleDateString('zh-CN')}
+                                                <span style="display:flex;align-items:center;gap:8px;">
+                                                    <span style="color:var(--description-color,rgba(255,255,255,0.5));white-space:nowrap;">
+                                                        ${new Date(r.created_at).toLocaleDateString('zh-CN')}
+                                                    </span>
+                                                    <button
+                                                        class="form-control"
+                                                        style="padding:4px 10px;cursor:pointer;font-size:11px;"
+                                                        @click=${() => this.handleResumeEditClick(r.id)}
+                                                    >
+                                                        编辑解析内容
+                                                    </button>
                                                 </span>
                                             </div>
                                         `)}
                                     </div>
-                                    <div class="form-description">✅ 最新简历（第一条）将自动注入每次会话上下文。</div>
+                                    <div class="form-description">✅ 最新简历（第一条）将自动注入每次会话上下文。可点击「编辑解析内容」查看或修改 AI 提取的信息。</div>
                                 </div>
                             ` : html`
                                 <div class="form-description" style="margin-top:4px;">暂无简历，请上传。</div>
@@ -1696,6 +1815,34 @@ export class CustomizeView extends LitElement {
 
                 <div class="settings-note">💡 ${t('settings_saved_note')}</div>
             </div>
+
+            ${this.editingResumeId ? html`
+                <div class="resume-edit-overlay" @click=${(e) => e.target === e.currentTarget && this.handleResumeEditCancel()}>
+                    <div class="resume-edit-modal" @click=${(e) => e.stopPropagation()}>
+                        <div class="modal-header">
+                            <span class="section-title">编辑解析内容</span>
+                            <button class="form-control" style="padding:4px 10px;cursor:pointer;font-size:11px;" @click=${this.handleResumeEditCancel}>关闭</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="resume-edit-usage">
+                                以下内容会作为「用户提供的上下文」注入到面试 AI 的系统提示中，用于面试辅导、模拟面试等场景。
+                            </div>
+                            <textarea
+                                class="form-control"
+                                .value=${this.editingContent}
+                                @input=${(e) => { this.editingContent = e.target.value; this.requestUpdate(); }}
+                                placeholder="建议按【候选人定位】【核心技能】等小节组织..."
+                            ></textarea>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="form-control" style="padding:6px 14px;cursor:pointer;" @click=${this.handleResumeEditCancel}>取消</button>
+                            <button class="form-control" style="padding:6px 14px;cursor:pointer;background:var(--accent-color,#007aff);color:#fff;border-color:var(--accent-color,#007aff);" @click=${this.handleResumeEditSave} ?disabled=${this.isSavingResume}>
+                                ${this.isSavingResume ? '保存中...' : '保存'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ` : ''}
         `;
     }
 }

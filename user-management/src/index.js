@@ -11,6 +11,7 @@ const resumeRoutes = require('./routes/resume');
 const profileRoutes = require('./routes/profile');
 const voiceRoutes = require('./routes/voice');
 const sessionRoutes = require('./routes/sessions');
+const adminRoutes = require('./routes/admin');
 
 if (!config.jwtSecret) {
     throw new Error('JWT_SECRET is required');
@@ -40,6 +41,7 @@ app.use('/api/resume', resumeRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/voice', voiceRoutes);
 app.use('/api/sessions', sessionRoutes);
+app.use('/api/admin', adminRoutes);
 
 const webRoot = path.resolve(__dirname, '../web');
 if (fs.existsSync(webRoot)) {

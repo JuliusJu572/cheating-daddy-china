@@ -3,23 +3,27 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>用户登录</title>
+    <title>管理员登录</title>
     <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
 <div class="container">
-    <div class="card" style="max-width:520px;margin:40px auto;">
-        <h1>账号登录 / 注册</h1>
-        <div class="muted">登录后可管理简历、录音和面试记录。</div>
-        <div class="row">
-            <button id="tab-login" class="primary">登录</button>
-            <button id="tab-register" class="primary" style="background:#334155;border-color:#334155;">注册</button>
+    <div class="card" style="max-width:400px;margin:40px auto;">
+        <h1>管理员登录</h1>
+        <div class="muted">仅管理员可登录管理后台。首次使用请先注册。</div>
+
+        <div class="tab-group" style="margin-bottom:16px;">
+            <button id="tab-login" class="tab-btn active">登录</button>
+            <button id="tab-register" class="tab-btn">注册</button>
         </div>
+
         <label for="email">邮箱</label>
-        <input id="email" type="email" placeholder="your@email.com" />
+        <input id="email" type="email" placeholder="admin@example.com" autocomplete="email" />
+
         <label for="password">密码</label>
-        <input id="password" type="password" placeholder="至少 8 位" />
-        <button id="submit" class="primary">登录</button>
+        <input id="password" type="password" placeholder="至少 8 位" autocomplete="current-password" />
+
+        <button id="submit" class="primary" style="width:100%;margin-top:8px;">登录</button>
         <div id="status"></div>
     </div>
 </div>
@@ -35,22 +39,27 @@
         let mode = 'login';
 
         function setStatus(msg, type) {
-            statusEl.className = type ? `status ${type}` : '';
+            statusEl.className = msg ? `status ${type}` : '';
             statusEl.textContent = msg || '';
         }
 
-        function setMode(nextMode) {
-            mode = nextMode;
+        function setMode(m) {
+            mode = m;
             submitEl.textContent = mode === 'login' ? '登录' : '注册';
-            loginTab.style.background = mode === 'login' ? '#3b82f6' : '#334155';
-            loginTab.style.borderColor = mode === 'login' ? '#3b82f6' : '#334155';
-            registerTab.style.background = mode === 'register' ? '#3b82f6' : '#334155';
-            registerTab.style.borderColor = mode === 'register' ? '#3b82f6' : '#334155';
+            loginTab.classList.toggle('active', mode === 'login');
+            registerTab.classList.toggle('active', mode === 'register');
             setStatus('');
         }
 
         loginTab.addEventListener('click', () => setMode('login'));
         registerTab.addEventListener('click', () => setMode('register'));
+
+        const token = WebApi.getToken();
+        if (token) {
+            WebApi.apiRequest('/auth/me', { requireAuth: true }).then(data => {
+                if (data?.user?.role === 'admin') window.location.href = '/dashboard.html';
+            }).catch(() => {});
+        }
 
         submitEl.addEventListener('click', async () => {
             const email = (emailEl.value || '').trim();
@@ -59,12 +68,20 @@
                 setStatus('请填写邮箱和密码', 'error');
                 return;
             }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                setStatus('邮箱格式无效', 'error');
+                return;
+            }
+            if (password.length < 8) {
+                setStatus('密码至少 8 位', 'error');
+                return;
+            }
             setStatus(mode === 'login' ? '登录中...' : '注册中...', 'success');
             try {
-                const path = mode === 'login' ? '/auth/login' : '/auth/register';
+                const path = mode === 'login' ? '/auth/admin-login' : '/auth/admin-register';
                 const data = await WebApi.apiRequest(path, {
                     method: 'POST',
-                    body: { email, password },
+                    body: { email: email.toLowerCase(), password },
                     requireAuth: false,
                 });
                 WebApi.setToken(data.token || '');
@@ -74,12 +91,12 @@
             }
         });
 
-        const token = WebApi.getToken();
-        if (token) {
-            WebApi.ensureLoggedIn().then(user => {
-                if (user) window.location.href = '/dashboard.html';
-            });
-        }
+        emailEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') submitEl.click();
+        });
+        passwordEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') submitEl.click();
+        });
     })();
 </script>
 </body>

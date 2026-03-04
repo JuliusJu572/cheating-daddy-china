@@ -8,13 +8,7 @@
 </head>
 <body>
 <div class="container">
-    <div class="nav">
-        <a href="/dashboard.html">总览</a>
-        <a href="/resumes.html">简历</a>
-        <a href="/voices.html">录音</a>
-        <a href="/sessions.html">面试记录</a>
-        <a href="/profile.html">个人资料</a>
-    </div>
+    <div id="nav-container"></div>
     <div class="card">
         <h1>录音管理</h1>
         <input id="voice-file" type="file" accept=".wav,.mp3,.webm,.m4a" />
@@ -94,6 +88,7 @@
 
         WebApi.ensureLoggedIn().then(user => {
             if (!user) return;
+            WebApi.renderNav(user);
             loadVoices().catch(err => setStatus(err.message, 'error'));
         });
     })();

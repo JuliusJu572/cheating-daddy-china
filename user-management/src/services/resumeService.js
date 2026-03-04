@@ -25,11 +25,11 @@ async function extractTextFromFile(filePath, mimetype) {
     throw new Error('Only pdf/docx files are supported');
 }
 
-async function createResume({ userId, filePath, originalFilename, mimetype }) {
+async function createResume({ userId, filePath, originalFilename, mimetype, modelApiKey }) {
     const rawText = await extractTextFromFile(filePath, mimetype);
     if (!rawText) throw new Error('Resume text extraction returned empty content');
 
-    const analyzedContent = await analyzeResume(rawText);
+    const analyzedContent = await analyzeResume(rawText, modelApiKey);
     const inserted = await pool.query(
         `
         INSERT INTO resumes (user_id, file_path, original_filename, raw_text, analyzed_content)

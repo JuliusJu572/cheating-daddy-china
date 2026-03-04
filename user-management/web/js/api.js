@@ -66,4 +66,41 @@ window.WebApi = {
     setToken,
     apiRequest,
     ensureLoggedIn,
+    renderNav,
 };
+
+function renderNav(user) {
+    const navContainer = document.getElementById('nav-container');
+    if (!navContainer) return;
+
+    const path = window.location.pathname;
+    const links = [
+        { href: '/dashboard.html', text: '总览' },
+        { href: '/resumes.html', text: '简历' },
+        { href: '/voices.html', text: '录音' },
+        { href: '/sessions.html', text: '面试记录' },
+    ];
+
+    if (user && user.role === 'admin') {
+        links.push({ href: '/admin.html', text: '管理员' });
+    }
+
+    let html = '';
+    links.forEach(link => {
+        const activeClass = link.href === path ? 'active' : '';
+        html += `<a href="${link.href}" class="${activeClass}">${link.text}</a>`;
+    });
+
+    html += `<button id="logout-btn">退出登录</button>`;
+    navContainer.innerHTML = html;
+    navContainer.className = 'nav';
+
+    document.getElementById('logout-btn').addEventListener('click', () => {
+        setToken('');
+        window.location.href = '/index.html';
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Nav rendering is now handled by individual pages after ensuring login
+});

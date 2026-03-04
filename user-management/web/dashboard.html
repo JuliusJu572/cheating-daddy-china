@@ -8,14 +8,7 @@
 </head>
 <body>
 <div class="container">
-    <div class="nav">
-        <a href="/dashboard.html">总览</a>
-        <a href="/resumes.html">简历</a>
-        <a href="/voices.html">录音</a>
-        <a href="/sessions.html">面试记录</a>
-        <a href="/profile.html">个人资料</a>
-        <button id="logout-btn">退出登录</button>
-    </div>
+    <div id="nav-container"></div>
     <div class="card">
         <h1>管理后台总览</h1>
         <div id="user-line" class="muted"></div>
@@ -31,7 +24,8 @@
     (async function () {
         const user = await WebApi.ensureLoggedIn();
         if (!user) return;
-        document.getElementById('user-line').textContent = `当前账号：${user.email || '未绑定邮箱'}`;
+        WebApi.renderNav(user);
+        document.getElementById('user-line').textContent = user.licenseKey ? `License Key 已绑定` : '当前账号';
 
         const [resumes, voices, sessions] = await Promise.all([
             WebApi.apiRequest('/api/resume/list').catch(() => ({ resumes: [] })),
@@ -41,11 +35,6 @@
         document.getElementById('resume-count').textContent = (resumes.resumes || []).length;
         document.getElementById('voice-count').textContent = (voices.voices || []).length;
         document.getElementById('session-count').textContent = (sessions.sessions || []).length;
-
-        document.getElementById('logout-btn').addEventListener('click', () => {
-            WebApi.setToken('');
-            window.location.href = '/index.html';
-        });
     })();
 </script>
 </body>

@@ -672,7 +672,8 @@ function setupGeneralIpcHandlers() {
 
             const FormData = require('form-data');
             const form = new FormData();
-            form.append('resume', fs.createReadStream(filePath));
+            const basename = path.basename(filePath);
+            form.append('resume', fs.createReadStream(filePath), { filename: basename });
 
             const { ok, status, data } = await userApiRequest('/api/resume/upload', {
                 method: 'POST',
@@ -708,6 +709,47 @@ function setupGeneralIpcHandlers() {
             return { success: true, resumes: data.resumes || [] };
         } catch (error) {
             console.error('user-list-resumes error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('user-get-resume', async (_event, { id }) => {
+        try {
+            const { userApiBase, userAuthToken } = getUserApiConfig();
+            if (!userApiBase || !userAuthToken) return { success: false, error: '未登录' };
+            const resumeId = Number(id);
+            if (!Number.isFinite(resumeId)) return { success: false, error: 'invalid id' };
+            const { ok, status, data } = await userApiRequest(`/api/resume/item/${resumeId}`, { method: 'GET', requireAuth: true });
+            if (!ok) {
+                if (status === 401) return { success: false, error: '登录已过期', authExpired: true };
+                return { success: false, error: data?.error || '加载失败' };
+            }
+            return { success: true, resume: data.resume };
+        } catch (error) {
+            console.error('user-get-resume error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('user-update-resume', async (_event, { id, analyzedContent }) => {
+        try {
+            const { userApiBase, userAuthToken } = getUserApiConfig();
+            if (!userApiBase || !userAuthToken) return { success: false, error: '未登录' };
+            const resumeId = Number(id);
+            if (!Number.isFinite(resumeId)) return { success: false, error: 'invalid id' };
+            if (typeof analyzedContent !== 'string') return { success: false, error: 'analyzedContent required' };
+            const { ok, status, data } = await userApiRequest(`/api/resume/item/${resumeId}`, {
+                method: 'PUT',
+                body: { analyzedContent },
+                requireAuth: true,
+            });
+            if (!ok) {
+                if (status === 401) return { success: false, error: '登录已过期', authExpired: true };
+                return { success: false, error: data?.error || '保存失败' };
+            }
+            return { success: true, resume: data.resume };
+        } catch (error) {
+            console.error('user-update-resume error:', error);
             return { success: false, error: error.message };
         }
     });

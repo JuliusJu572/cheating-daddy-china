@@ -6,6 +6,7 @@ const config = require('../config');
 const pool = require('../db/pool');
 const { authRequired } = require('../middleware/auth');
 const { createResume, listResumesByUser } = require('../services/resumeService');
+const { decryptLicenseKey } = require('../utils/decryptLicense');
 
 const router = express.Router();
 
@@ -22,10 +23,20 @@ const storage = multer.diskStorage({
     },
 });
 
+function fixFilenameEncoding(name) {
+    if (!name || typeof name !== 'string') return name;
+    try {
+        return Buffer.from(name, 'latin1').toString('utf8');
+    } catch {
+        return name;
+    }
+}
+
 const upload = multer({
     storage,
     limits: { fileSize: config.maxUploadBytes },
-    fileFilter: (_req, file, cb) => {
+    fileFilter: (req, file, cb) => {
+        file.originalname = fixFilenameEncoding(file.originalname) || file.originalname;
         const ext = path.extname(file.originalname || '').toLowerCase();
         if (ext !== '.pdf' && ext !== '.docx') {
             return cb(new Error('Only .pdf and .docx are allowed'));
@@ -39,11 +50,22 @@ router.post('/upload', authRequired, upload.single('resume'), async (req, res) =
         if (!req.file) {
             return res.status(400).json({ success: false, error: 'resume file is required' });
         }
+        let modelApiKey = null;
+        const userRow = await pool.query(
+            `SELECT license_key FROM users WHERE id = $1 LIMIT 1`,
+            [req.user.id]
+        );
+        const licenseKey = userRow.rows[0]?.license_key;
+        if (licenseKey) {
+            const dec = decryptLicenseKey(licenseKey);
+            if (dec.success && dec.apiKey) modelApiKey = dec.apiKey;
+        }
         const row = await createResume({
             userId: req.user.id,
             filePath: req.file.path,
             originalFilename: req.file.originalname || 'resume',
             mimetype: req.file.mimetype,
+            modelApiKey,
         });
         return res.json({ success: true, resume: row });
     } catch (err) {
@@ -60,7 +82,54 @@ router.get('/list', authRequired, async (req, res) => {
     }
 });
 
-router.delete('/:id', authRequired, async (req, res) => {
+router.get('/item/:id', authRequired, async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id)) {
+            return res.status(400).json({ success: false, error: 'invalid id' });
+        }
+        const result = await pool.query(
+            `SELECT * FROM resumes WHERE id = $1 AND user_id = $2 LIMIT 1`,
+            [id, req.user.id]
+        );
+        if (result.rowCount === 0) {
+            return res.status(404).json({ success: false, error: 'resume not found' });
+        }
+        return res.json({ success: true, resume: result.rows[0] });
+    } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.put('/item/:id', authRequired, async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id)) {
+            return res.status(400).json({ success: false, error: 'invalid id' });
+        }
+        const { analyzedContent } = req.body;
+        if (typeof analyzedContent !== 'string') {
+            return res.status(400).json({ success: false, error: 'analyzedContent must be a string' });
+        }
+        const updated = await pool.query(
+            `
+            UPDATE resumes
+            SET analyzed_content = $1
+            WHERE id = $2 AND user_id = $3
+            RETURNING *
+            `,
+            [analyzedContent, id, req.user.id]
+        );
+        if (updated.rowCount === 0) {
+            return res.status(404).json({ success: false, error: 'resume not found' });
+        }
+        return res.json({ success: true, resume: updated.rows[0] });
+    } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.delete('/item/:id', authRequired, async (req, res) => {
     try {
         const id = Number(req.params.id);
         if (!Number.isFinite(id)) {

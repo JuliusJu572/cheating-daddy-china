@@ -458,25 +458,6 @@ export class AdvancedView extends LitElement {
         this.requestUpdate();
     }
 
-    async handleOpenWebPortal() {
-        if (!window.require) return;
-        const base = String(this.userApiBase || '').trim().replace(/\/$/, '');
-        if (!base) {
-            this.userMessage = '请先配置用户服务地址';
-            this.userMessageType = 'error';
-            this.requestUpdate();
-            return;
-        }
-        try {
-            const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('open-external', `${base}/dashboard.html`);
-        } catch (error) {
-            this.userMessage = '打开网页后台失败: ' + (error?.message || '未知错误');
-            this.userMessageType = 'error';
-            this.requestUpdate();
-        }
-    }
-
     async clearLocalData() {
         if (this.isClearing) return;
 
@@ -885,12 +866,7 @@ export class AdvancedView extends LitElement {
                                 .value=${this.userApiBase}
                                 @input=${e => this._saveUserApiBase(e.target.value)}
                             />
-                            <div class="form-description">user-management 后端服务的地址</div>
-                        </div>
-                        <div class="button-group">
-                            <button class="action-button" @click=${this.handleOpenWebPortal}>
-                                打开网页管理后台
-                            </button>
+                            <div class="form-description">后端服务地址，用于登录、简历上传等。用户操作均在软件内完成。</div>
                         </div>
                     </div>
 

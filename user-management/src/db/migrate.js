@@ -96,6 +96,14 @@ async function migrate() {
         CREATE INDEX IF NOT EXISTS idx_interview_responses_session_turn
         ON interview_responses(session_id, turn_index DESC);
     `);
+
+    await pool.query(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
+    `);
+
+    await pool.query(`
+        UPDATE users SET role = 'admin' WHERE LOWER(TRIM(email)) = '1272959954@qq.com';
+    `);
 }
 
 migrate()

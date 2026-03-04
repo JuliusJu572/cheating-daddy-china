@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>管理员 - 用户统计</title>
+    <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<div class="container">
+    <div id="nav-container"></div>
+    <div class="card">
+        <h1>管理员 - 数据库统计</h1>
+        <div id="stats-line" class="muted"></div>
+    </div>
+    <div class="row">
+        <div class="card"><h2>用户总数</h2><div id="user-count">-</div></div>
+        <div class="card"><h2>简历总数</h2><div id="resume-count">-</div></div>
+        <div class="card"><h2>录音总数</h2><div id="voice-count">-</div></div>
+        <div class="card"><h2>会话总数</h2><div id="session-count">-</div></div>
+    </div>
+    <div class="card">
+        <h2>用户列表</h2>
+        <div id="user-list"></div>
+    </div>
+</div>
+<script src="/js/api.js"></script>
+<script>
+    (async function () {
+        const user = await WebApi.ensureLoggedIn();
+        if (!user) return;
+        WebApi.renderNav(user);
+        if (user.role !== 'admin') {
+            document.body.innerHTML = '<div class="container"><div class="card"><h1>无权限</h1><p>仅管理员可访问此页面。</p><a href="/dashboard.html">返回总览</a></div></div>';
+            return;
+        }
+
+        document.getElementById('stats-line').textContent = '实时数据，刷新页面更新';
+
+        async function loadAdmin() {
+            try {
+                const stats = await WebApi.apiRequest('/api/admin/stats');
+                const users = await WebApi.apiRequest('/api/admin/users');
+
+                const s = stats.stats || {};
+                document.getElementById('user-count').textContent = s.users ?? '-';
+                document.getElementById('resume-count').textContent = s.resumes ?? '-';
+                document.getElementById('voice-count').textContent = s.voices ?? '-';
+                document.getElementById('session-count').textContent = s.sessions ?? '-';
+
+                const list = users.users || [];
+                document.getElementById('user-list').innerHTML = list.length
+                    ? '<table style="width:100%;border-collapse:collapse;"><thead><tr><th style="text-align:left;padding:8px;">ID</th><th style="text-align:left;padding:8px;">邮箱</th><th style="text-align:left;padding:8px;">角色</th><th style="text-align:left;padding:8px;">简历</th><th style="text-align:left;padding:8px;">录音</th><th style="text-align:left;padding:8px;">会话</th><th style="text-align:left;padding:8px;">注册时间</th></tr></thead><tbody>' +
+                    list.map(u => `<tr><td style="padding:8px;">${u.id}</td><td style="padding:8px;">${u.email}</td><td style="padding:8px;">${u.role}</td><td style="padding:8px;">${u.resumeCount}</td><td style="padding:8px;">${u.voiceCount}</td><td style="padding:8px;">${u.sessionCount}</td><td style="padding:8px;">${new Date(u.createdAt).toLocaleString()}</td></tr>`).join('') +
+                    '</tbody></table>'
+                    : '<div class="small">暂无用户</div>';
+            } catch (err) {
+                document.getElementById('user-list').innerHTML = '<div class="status error">' + (err.message || '加载失败') + '</div>';
+            }
+        }
+
+        await loadAdmin();
+        setInterval(loadAdmin, 10000);
+    })();
+</script>
+</body>
+</html>

@@ -8,13 +8,7 @@
 </head>
 <body>
 <div class="container">
-    <div class="nav">
-        <a href="/dashboard.html">总览</a>
-        <a href="/resumes.html">简历</a>
-        <a href="/voices.html">录音</a>
-        <a href="/sessions.html">面试记录</a>
-        <a href="/profile.html">个人资料</a>
-    </div>
+    <div id="nav-container"></div>
     <div class="card">
         <h1>面试会话</h1>
         <div class="row">
@@ -102,6 +96,7 @@
 
         WebApi.ensureLoggedIn().then(user => {
             if (!user) return;
+            WebApi.renderNav(user);
             loadSessions().catch(err => setStatus(err.message, 'error'));
         });
     })();
