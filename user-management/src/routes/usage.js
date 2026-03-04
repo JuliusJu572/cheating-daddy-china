@@ -87,7 +87,7 @@ router.get('/detail/:userId', authRequired, adminRequired, async (req, res) => {
             return fail(res, 400, 'invalid userId', 'INVALID_USER_ID');
         }
 
-        const [dailyRes, byTypeRes] = await Promise.all([
+        const [dailyRes, byTypeRes, byTypeAndModelRes] = await Promise.all([
             pool.query(
                 `
                 SELECT
@@ -115,6 +115,21 @@ router.get('/detail/:userId', authRequired, adminRequired, async (req, res) => {
                 `,
                 [userId]
             ),
+            pool.query(
+                `
+                SELECT
+                    call_type,
+                    model,
+                    COALESCE(SUM(prompt_tokens), 0)::bigint AS prompt_tokens,
+                    COALESCE(SUM(completion_tokens), 0)::bigint AS completion_tokens,
+                    COALESCE(SUM(total_tokens), 0)::bigint AS total_tokens
+                FROM token_usage
+                WHERE user_id = $1
+                GROUP BY call_type, model
+                ORDER BY total_tokens DESC
+                `,
+                [userId]
+            ),
         ]);
 
         return res.json({
@@ -125,6 +140,13 @@ router.get('/detail/:userId', authRequired, adminRequired, async (req, res) => {
             })),
             byType: byTypeRes.rows.map(r => ({
                 callType: r.call_type,
+                promptTokens: Number(r.prompt_tokens || 0),
+                completionTokens: Number(r.completion_tokens || 0),
+                totalTokens: Number(r.total_tokens || 0),
+            })),
+            byTypeAndModel: byTypeAndModelRes.rows.map(r => ({
+                callType: r.call_type,
+                model: r.model || 'unknown',
                 promptTokens: Number(r.prompt_tokens || 0),
                 completionTokens: Number(r.completion_tokens || 0),
                 totalTokens: Number(r.total_tokens || 0),
