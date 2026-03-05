@@ -29,14 +29,15 @@ export class AssistantView extends LitElement {
 
         .live-transcript-container {
             margin-bottom: 10px;
-            border-radius: 8px;
+            border-radius: 10px;
             border: 1px solid var(--button-border);
-            background: var(--input-background);
-            padding: 10px 12px;
+            background: var(--main-content-background);
+            padding: 16px;
             max-height: 140px;
             overflow-y: auto;
             user-select: text;
             transition: border-color 0.2s;
+            line-height: 1.6;
         }
 
         .live-transcript-container.recording {
@@ -47,7 +48,7 @@ export class AssistantView extends LitElement {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 6px;
+            margin-bottom: 8px;
         }
 
         .live-transcript-title {
@@ -74,8 +75,8 @@ export class AssistantView extends LitElement {
         }
 
         .live-transcript-content {
-            font-size: 13px;
-            line-height: 1.5;
+            font-size: calc(var(--response-font-size, 18px) * 0.5);
+            line-height: 1.6;
             color: var(--text-color);
             white-space: pre-wrap;
             word-break: break-word;

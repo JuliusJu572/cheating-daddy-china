@@ -8,12 +8,25 @@ const DEFAULT_CONFIG = {
     layout: 'normal',
     qwenTextModel: 'qwen3-max',
     qwenVisionModel: 'qwen3-vl-plus',
+    qwenOcrModel: 'qwen-vl-ocr-2025-11-20',
+    docParsingModel: 'deepseek-v3.2',
+    docParsingEnableThinking: true,
+    docParsingMaxTokens: 4096,
     transcriptionModel: 'qwen3-asr-flash',
     modelApiBase: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     maxTokens: 4096,
     enableContext: true,
+    enableDocParsingContext: false,
     licenseKey: '',
     apiKey: '',
+    documentParsing: {
+        resumeRaw: '',
+        resumeParsed: '',
+        resumeUpdatedAt: 0,
+        jdRaw: '',
+        jdParsed: '',
+        jdUpdatedAt: 0,
+    },
 };
 
 function getConfigDir() {

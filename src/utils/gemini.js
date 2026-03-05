@@ -2,6 +2,7 @@ const { ipcMain, BrowserWindow, app } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('child_process');
+const { getLocalConfig } = require('../config');
 
 let macAudioProcess = null;
 let macAudioBuffers = [];
@@ -19,6 +20,41 @@ function sendToRenderer(channel, payload) {
 }
 
 function setupGeminiIpcHandlers(geminiSessionRef) {
+    const clampText = (text, maxLen) => {
+        const s = typeof text === 'string' ? text : '';
+        if (s.length <= maxLen) return s;
+        return s.slice(0, maxLen) + '\n\n[...已截断...]';
+    };
+
+    const buildDocumentContextBlock = cfg => {
+        const doc = cfg?.documentParsing || {};
+        const enabled = cfg?.enableDocParsingContext === true;
+        if (!enabled) return '';
+
+        const resume = doc.resumeParsed;
+        const jd = doc.jdParsed;
+
+        const resumeLabel = '简历信息（解析压缩）';
+        const jdLabel = 'JD 信息（解析压缩）';
+
+        const parts = [];
+        const resumeText = clampText(resume, 8000).trim();
+        const jdText = clampText(jd, 6000).trim();
+
+        if (resumeText) parts.push(`【${resumeLabel}】\n${resumeText}`);
+        if (jdText) parts.push(`【${jdLabel}】\n${jdText}`);
+
+        return parts.join('\n\n');
+    };
+
+    const withDocumentContext = text => {
+        const cfg = getLocalConfig();
+        const base = typeof text === 'string' ? text : '';
+        const ctx = buildDocumentContextBlock(cfg);
+        if (!ctx) return base;
+        return `${ctx}\n\n【转录/输入】\n${base}`;
+    };
+
     ipcMain.handle('send-image-content', async (event, { data, mimeType, debug }) => {
         try {
             console.log('🖼️ [send-image-content] 收到图片内容...');
@@ -45,15 +81,16 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     ipcMain.handle('send-text-message', async (event, text) => {
         try {
             console.log('📝 [send-text-message] 收到文本消息...');
+            const finalText = withDocumentContext(text);
 
             const session = geminiSessionRef?.current;
             if (session && typeof session.sendRealtimeInput === 'function') {
                 console.log('✅ [send-text-message] 发送到 session (Qwen Text)...');
-                await session.sendRealtimeInput({ text });
+                await session.sendRealtimeInput({ text: finalText });
                 console.log('✅ [send-text-message] 发送成功');
             } else {
                 console.warn('⚠️ [send-text-message] 无有效 session');
-                sendToRenderer('update-response', `[Mock] 文本: ${text}`);
+                sendToRenderer('update-response', `[Mock] 文本: ${finalText}`);
                 sendToRenderer('update-status', '正在监听...');
             }
             return { success: true };

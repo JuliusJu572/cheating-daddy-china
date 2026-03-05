@@ -4,6 +4,7 @@ import { resizeLayout } from '../../utils/windowResize.js';
 export class HistoryView extends LitElement {
     static styles = css`
         * {
+            box-sizing: border-box;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             cursor: default;
             user-select: none;
@@ -14,12 +15,14 @@ export class HistoryView extends LitElement {
             display: flex;
             flex-direction: column;
             width: 100%;
+            overflow: hidden;
         }
 
         .history-container {
             height: 100%;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
 
         .sessions-list {
@@ -27,6 +30,7 @@ export class HistoryView extends LitElement {
             overflow-y: auto;
             margin-bottom: 16px;
             padding-bottom: 20px;
+            overflow-x: hidden;
         }
 
         .session-item {
@@ -80,6 +84,7 @@ export class HistoryView extends LitElement {
         .conversation-view {
             flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             background: var(--main-content-background);
             border: 1px solid var(--button-border);
             border-radius: 6px;
@@ -99,6 +104,8 @@ export class HistoryView extends LitElement {
             border-radius: 0 4px 4px 0;
             user-select: text;
             cursor: text;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         .message.user {
@@ -184,41 +191,23 @@ export class HistoryView extends LitElement {
             margin-top: 32px;
         }
 
-        /* Scrollbar styles for scrollable elements */
-        .sessions-list::-webkit-scrollbar {
+        ::-webkit-scrollbar {
             width: 6px;
+            height: 6px;
         }
 
-        .sessions-list::-webkit-scrollbar-track {
-            background: var(--scrollbar-track, rgba(0, 0, 0, 0.2));
+        ::-webkit-scrollbar-track {
+            background: var(--scrollbar-background);
             border-radius: 3px;
         }
 
-        .sessions-list::-webkit-scrollbar-thumb {
-            background: var(--scrollbar-thumb, rgba(255, 255, 255, 0.2));
+        ::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
             border-radius: 3px;
         }
 
-        .sessions-list::-webkit-scrollbar-thumb:hover {
-            background: var(--scrollbar-thumb-hover, rgba(255, 255, 255, 0.3));
-        }
-
-        .conversation-view::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .conversation-view::-webkit-scrollbar-track {
-            background: var(--scrollbar-track, rgba(0, 0, 0, 0.2));
-            border-radius: 3px;
-        }
-
-        .conversation-view::-webkit-scrollbar-thumb {
-            background: var(--scrollbar-thumb, rgba(255, 255, 255, 0.2));
-            border-radius: 3px;
-        }
-
-        .conversation-view::-webkit-scrollbar-thumb:hover {
-            background: var(--scrollbar-thumb-hover, rgba(255, 255, 255, 0.3));
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--scrollbar-thumb-hover);
         }
 
         .tabs-container {
@@ -286,6 +275,8 @@ export class HistoryView extends LitElement {
             line-height: 1.4;
             user-select: text;
             cursor: text;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         .delete-button {

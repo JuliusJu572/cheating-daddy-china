@@ -284,6 +284,204 @@ app.on('activate', async () => {
 });
 
 function setupGeneralIpcHandlers() {
+    const clampText = (text, maxLen) => {
+        const s = typeof text === 'string' ? text : '';
+        if (s.length <= maxLen) return s;
+        return s.slice(0, maxLen) + '\n\n[...已截断...]';
+    };
+
+    const buildDocumentContextBlock = cfg => {
+        const doc = cfg?.documentParsing || {};
+        const enabled = cfg?.enableDocParsingContext === true;
+        if (!enabled) return '';
+
+        const resume = doc.resumeParsed;
+        const jd = doc.jdParsed;
+
+        const resumeLabel = '简历信息（解析压缩）';
+        const jdLabel = 'JD 信息（解析压缩）';
+
+        const parts = [];
+        const resumeText = clampText(resume, 8000).trim();
+        const jdText = clampText(jd, 6000).trim();
+
+        if (resumeText) parts.push(`【${resumeLabel}】\n${resumeText}`);
+        if (jdText) parts.push(`【${jdLabel}】\n${jdText}`);
+
+        return parts.join('\n\n');
+    };
+
+    const withDocumentContext = (text, cfg) => {
+        const base = typeof text === 'string' ? text : '';
+        const ctx = buildDocumentContextBlock(cfg);
+        if (!ctx) return base;
+        return `${ctx}\n\n【转录/输入】\n${base}`;
+    };
+
+    const extractChatCompletionText = data => {
+        const content = data?.choices?.[0]?.message?.content;
+        if (typeof content === 'string') return content;
+        if (Array.isArray(content)) {
+            const t = content.find(x => typeof x?.text === 'string')?.text;
+            return typeof t === 'string' ? t : '';
+        }
+        return '';
+    };
+
+    const callOneShotChatCompletion = async ({ apiKey, apiBase, model, systemPrompt, userText, userContent, maxTokens, enableThinking }) => {
+        const endpoint = `${String(apiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '')}/chat/completions`;
+        const content = userContent ?? userText ?? '';
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8',
+                Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model,
+                messages: [
+                    { role: 'system', content: systemPrompt || '' },
+                    { role: 'user', content },
+                ],
+                stream: false,
+                max_tokens: maxTokens,
+                extra_body: typeof enableThinking === 'boolean' ? { enable_thinking: enableThinking } : { enable_thinking: false },
+            }),
+        });
+
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`HTTP ${res.status}: ${text}`);
+        }
+        const data = await res.json();
+        return extractChatCompletionText(data);
+    };
+
+    const stripThinkingTags = (text) => {
+        const s = String(text || '');
+        const withoutBlocks = s
+            .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '')
+            .replace(/<thinking\b[^>]*>[\s\S]*?<\/thinking>/gi, '')
+            .replace(/<analysis\b[^>]*>[\s\S]*?<\/analysis>/gi, '')
+            .replace(/<\/?think\b[^>]*>/gi, '')
+            .replace(/<\/?thinking\b[^>]*>/gi, '')
+            .replace(/<\/?analysis\b[^>]*>/gi, '');
+        return withoutBlocks.trim();
+    };
+
+    const extractTextFromImageViaVision = async ({ apiKey, apiBase, model, mimeType, base64Data }) => {
+        const dataUrl = `data:${mimeType || 'image/png'};base64,${base64Data}`;
+        const systemPrompt = [
+            '你是文字提取助手。',
+            '任务：只从图片中提取可读文字，按从上到下的顺序输出。',
+            '要求：',
+            '- 输出纯文本，不要解释',
+            '- 不要补全/编造缺失内容',
+            '- 尽量保持原有段落换行',
+        ].join('\n');
+
+        const userContent = [
+            { type: 'text', text: '请从图片中提取全部文字，只输出文字本身。' },
+            { type: 'image_url', image_url: { url: dataUrl } },
+        ];
+
+        return callOneShotChatCompletion({
+            apiKey,
+            apiBase,
+            model,
+            systemPrompt,
+            userContent,
+            maxTokens: 2048,
+            enableThinking: false,
+        });
+    };
+
+    const capturePdfPagesAsPngBase64 = async ({ pdfBase64, pages }) => {
+        const count = Math.max(1, Math.min(8, Number(pages) || 1));
+        const tempDir = app.getPath('temp');
+        const fileName = `resume_${Date.now()}_${Math.random().toString(16).slice(2)}.pdf`;
+        const filePath = path.join(tempDir, fileName);
+        fs.writeFileSync(filePath, Buffer.from(pdfBase64, 'base64'));
+
+        const win = new BrowserWindow({
+            show: false,
+            width: 1200,
+            height: 1600,
+            webPreferences: {
+                offscreen: true,
+                backgroundThrottling: false,
+                sandbox: false,
+            },
+        });
+
+        try {
+            const out = [];
+            for (let i = 1; i <= count; i++) {
+                const normalized = filePath.replace(/\\/g, '/');
+                const url = `${encodeURI(`file:///${normalized}`)}#page=${i}`;
+                await win.loadURL(url);
+                await new Promise(r => setTimeout(r, 600));
+                const img = await win.webContents.capturePage();
+                const pngBase64 = img.toPNG().toString('base64');
+                if (pngBase64) out.push({ data: pngBase64, mimeType: 'image/png' });
+            }
+            return out;
+        } finally {
+            try { win.close(); } catch (_) {}
+            try { fs.unlinkSync(filePath); } catch (_) {}
+        }
+    };
+
+    const summarizeDocument = async ({ kind, rawText }) => {
+        const cfg = getLocalConfig();
+        const apiKey = String(cfg?.apiKey || '').trim();
+        if (!apiKey) throw new Error('Missing API key');
+
+        const apiBase = cfg?.modelApiBase || DEFAULT_MODEL_API_BASE;
+        const model = String(cfg?.docParsingModel || 'deepseek-v3.2').trim();
+        const enableThinking = cfg?.docParsingEnableThinking !== false;
+        const text = clampText(String(rawText || ''), 120000);
+        const docMaxTokensRaw = Number(cfg?.docParsingMaxTokens);
+        const docMaxTokens = Number.isFinite(docMaxTokensRaw) ? Math.max(64, Math.min(4096, Math.floor(docMaxTokensRaw))) : 1024;
+
+        const systemPrompt = kind === 'resume'
+            ? [
+                  '你是“面试背景压缩”助手。',
+                  '任务：把简历原文压缩成极简面试背景提示卡，后续仅用于回答时的背景参考。',
+                  '要求：',
+                  '- 中文输出，Markdown',
+                  '- 尽量短（建议 300-700 字），最多不超过 1200 字',
+                  '- 只输出 4 块：一句话定位 / 核心技能(<=8条) / 关键经历(<=2段) / 关键项目(<=2段)',
+                  '- 每段经历/项目：时间、公司/团队、角色、技术栈、量化成果（没有就省略）',
+                  '- 不要编造或推测',
+              ].join('\n')
+            : [
+                  '你是“JD 极简压缩”助手。',
+                  '任务：把 JD 原文压缩成面试背景提示卡，避免后续回答跑偏。',
+                  '要求：',
+                  '- 中文输出，Markdown',
+                  '- 尽量短（建议 180-420 字），最多不超过 800 字',
+                  '- 只输出三块：核心职责(<=5条)/硬性要求(<=5条)/关键词(<=15个)',
+                  '- 不要输出推测性内容（如可能考点/软性要求/公司文化）',
+                  '- 不要编造或推测',
+              ].join('\n');
+
+        const userText = kind === 'resume' ? `简历原文：\n\n${text}` : `JD 原文：\n\n${text}`;
+        console.log(`[doc-parse] start kind=${kind} model=${model} thinking=${enableThinking} inChars=${text.length} maxTokens=${docMaxTokens}`);
+        const result = await callOneShotChatCompletion({
+            apiKey,
+            apiBase,
+            model,
+            systemPrompt,
+            userText,
+            maxTokens: docMaxTokens,
+            enableThinking,
+        });
+        const cleaned = enableThinking ? stripThinkingTags(result) : String(result || '').trim();
+        console.log(`[doc-parse] done kind=${kind} outChars=${String(cleaned || '').length}`);
+        return String(cleaned || '').trim();
+    };
+
     // Config-related IPC handlers
     ipcMain.handle('set-onboarded', async (event) => {
         try {
@@ -383,11 +581,211 @@ function setupGeneralIpcHandlers() {
             if (typeof next.enableContext === 'boolean') {
                 cfg.enableContext = next.enableContext;
             }
+            if (typeof next.enableDocParsingContext === 'boolean') {
+                cfg.enableDocParsingContext = next.enableDocParsingContext;
+            }
+            if (typeof next.docParsingEnableThinking === 'boolean') {
+                cfg.docParsingEnableThinking = next.docParsingEnableThinking;
+            }
+            if (typeof next.docParsingModel === 'string') {
+                const v = next.docParsingModel.trim();
+                if (!allowedTextModels.has(v)) throw new Error(`Invalid docParsingModel: ${v}`);
+                cfg.docParsingModel = v;
+            }
+            if (typeof next.docParsingMaxTokens === 'number' && Number.isFinite(next.docParsingMaxTokens)) {
+                cfg.docParsingMaxTokens = Math.max(64, Math.min(4096, Math.floor(next.docParsingMaxTokens)));
+            }
 
             writeConfig(cfg);
             return { success: true, config: cfg };
         } catch (error) {
             console.error('Error setting model config:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('get-document-parsing', async () => {
+        try {
+            const cfg = getLocalConfig();
+            return { success: true, data: cfg.documentParsing || {}, enableDocParsingContext: cfg.enableDocParsingContext === true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('clear-document-parsing', async () => {
+        try {
+            const cfg = getLocalConfig();
+            cfg.documentParsing = {
+                resumeRaw: '',
+                resumeParsed: '',
+                resumeUpdatedAt: 0,
+                jdRaw: '',
+                jdParsed: '',
+                jdUpdatedAt: 0,
+            };
+            writeConfig(cfg);
+            return { success: true, data: cfg.documentParsing };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('parse-resume-pdf', async (_event, payload) => {
+        try {
+            const pdfBase64 = String(payload?.pdfBase64 || '');
+            if (!pdfBase64) return { success: false, error: 'missing pdf' };
+
+            let raw = '';
+            let numPages = 0;
+            try {
+                const pdfParseMod = require('pdf-parse');
+                const pdfParse = typeof pdfParseMod === 'function' ? pdfParseMod : pdfParseMod?.default;
+                if (typeof pdfParse === 'function') {
+                    const buffer = Buffer.from(pdfBase64, 'base64');
+                    const parsed = await pdfParse(buffer);
+                    raw = String(parsed?.text || '').trim();
+                    numPages = Math.max(0, Number(parsed?.numpages) || 0);
+                }
+            } catch (_) {}
+
+            if (!raw) {
+                const cfg0 = getLocalConfig();
+                const apiKey = String(cfg0?.apiKey || '').trim();
+                if (!apiKey) return { success: false, error: 'Missing API key' };
+
+                const apiBase = cfg0?.modelApiBase || DEFAULT_MODEL_API_BASE;
+                const ocrModel = String(cfg0?.qwenOcrModel || 'qwen-vl-ocr-2025-11-20').trim();
+                const pagesToCapture = Math.min(3, Math.max(1, numPages || 3));
+
+                const images = await capturePdfPagesAsPngBase64({ pdfBase64, pages: pagesToCapture });
+                if (!images.length) return { success: false, error: 'pdf_no_text', code: 'pdf_no_text' };
+
+                const texts = [];
+                for (const img of images) {
+                    const t = await extractTextFromImageViaVision({
+                        apiKey,
+                        apiBase,
+                        model: ocrModel,
+                        mimeType: img.mimeType,
+                        base64Data: img.data,
+                    });
+                    const cleaned = String(t || '').trim();
+                    if (cleaned) texts.push(cleaned);
+                }
+                const ocrRaw = texts.join('\n\n').trim();
+                if (!ocrRaw) return { success: false, error: 'pdf_no_text', code: 'pdf_no_text' };
+
+                const summary = await summarizeDocument({ kind: 'resume', rawText: ocrRaw });
+                const cfg = getLocalConfig();
+                cfg.documentParsing = {
+                    ...(cfg.documentParsing || {}),
+                    resumeRaw: clampText(ocrRaw, 200000),
+                    resumeParsed: clampText(summary, 12000),
+                    resumeUpdatedAt: Date.now(),
+                };
+                writeConfig(cfg);
+                return { success: true, data: cfg.documentParsing };
+            }
+
+            const summary = await summarizeDocument({ kind: 'resume', rawText: raw });
+            const cfg = getLocalConfig();
+            cfg.documentParsing = {
+                ...(cfg.documentParsing || {}),
+                resumeRaw: clampText(raw, 200000),
+                resumeParsed: clampText(summary, 12000),
+                resumeUpdatedAt: Date.now(),
+            };
+            writeConfig(cfg);
+            return { success: true, data: cfg.documentParsing };
+        } catch (error) {
+            console.error('parse-resume-pdf error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('parse-resume-images', async (_event, payload) => {
+        try {
+            const images = Array.isArray(payload?.images) ? payload.images : [];
+            if (!images.length) return { success: false, error: 'empty images' };
+
+            const cfg0 = getLocalConfig();
+            const apiKey = String(cfg0?.apiKey || '').trim();
+            if (!apiKey) return { success: false, error: 'Missing API key' };
+
+            const apiBase = cfg0?.modelApiBase || DEFAULT_MODEL_API_BASE;
+            const visionModel = String(cfg0?.qwenOcrModel || 'qwen-vl-ocr-2025-11-20').trim();
+
+            const maxPages = 8;
+            const selected = images.slice(0, maxPages);
+            const texts = [];
+
+            for (const img of selected) {
+                const data = String(img?.data || '');
+                const mimeType = String(img?.mimeType || 'image/png');
+                if (!data) continue;
+                const t = await extractTextFromImageViaVision({ apiKey, apiBase, model: visionModel, mimeType, base64Data: data });
+                const cleaned = String(t || '').trim();
+                if (cleaned) texts.push(cleaned);
+            }
+
+            const raw = texts.join('\n\n').trim();
+            if (!raw) return { success: false, error: 'empty image text' };
+
+            const summary = await summarizeDocument({ kind: 'resume', rawText: raw });
+            const cfg = getLocalConfig();
+            cfg.documentParsing = {
+                ...(cfg.documentParsing || {}),
+                resumeRaw: clampText(raw, 200000),
+                resumeParsed: clampText(summary, 12000),
+                resumeUpdatedAt: Date.now(),
+            };
+            writeConfig(cfg);
+            return { success: true, data: cfg.documentParsing };
+        } catch (error) {
+            console.error('parse-resume-images error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('parse-resume-text', async (_event, payload) => {
+        try {
+            const resumeText = String(payload?.resumeText || '').trim();
+            if (!resumeText) return { success: false, error: 'empty resume' };
+
+            const summary = await summarizeDocument({ kind: 'resume', rawText: resumeText });
+            const cfg = getLocalConfig();
+            cfg.documentParsing = {
+                ...(cfg.documentParsing || {}),
+                resumeRaw: clampText(resumeText, 200000),
+                resumeParsed: clampText(summary, 12000),
+                resumeUpdatedAt: Date.now(),
+            };
+            writeConfig(cfg);
+            return { success: true, data: cfg.documentParsing };
+        } catch (error) {
+            console.error('parse-resume-text error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('parse-jd-text', async (_event, payload) => {
+        try {
+            const jdText = String(payload?.jdText || '').trim();
+            if (!jdText) return { success: false, error: 'empty jd' };
+
+            const summary = await summarizeDocument({ kind: 'jd', rawText: jdText });
+            const cfg = getLocalConfig();
+            cfg.documentParsing = {
+                ...(cfg.documentParsing || {}),
+                jdRaw: clampText(jdText, 200000),
+                jdParsed: clampText(summary, 12000),
+                jdUpdatedAt: Date.now(),
+            };
+            writeConfig(cfg);
+            return { success: true, data: cfg.documentParsing };
+        } catch (error) {
+            console.error('parse-jd-text error:', error);
             return { success: false, error: error.message };
         }
     });
@@ -989,12 +1387,11 @@ function setupGeneralIpcHandlers() {
             console.log('📝 [ASR] Transcription result:', text);
             
             if (text && geminiSessionRef.current) {
-                console.log('🚀 Sending transcription to model:', text);
+                const cfg = getLocalConfig();
+                const finalText = withDocumentContext(text, cfg);
+                console.log('🚀 Sending transcription to model, length:', finalText.length);
                 sendToRenderer('update-status', '回答中...');
-                // 传递 skipFinalStatus: true，让 sendRealtimeInput 不设置最终状态
-                // 由这里统一设置 "完成"
-                await geminiSessionRef.current.sendRealtimeInput({ text }, { skipFinalStatus: true });
-                sendToRenderer('update-status', '完成');
+                await geminiSessionRef.current.sendRealtimeInput({ text: finalText });
             } else if (!text) {
                 sendToRenderer('update-status', '没有检测到语音');
             }

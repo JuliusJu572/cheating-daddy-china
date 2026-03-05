@@ -420,12 +420,17 @@ export class CustomizeView extends LitElement {
         selectedModel: { type: String },
         qwenTextModel: { type: String },
         qwenVisionModel: { type: String },
+        qwenOcrModel: { type: String },
+        docParsingModel: { type: String },
+        docParsingEnableThinking: { type: Boolean },
+        docParsingMaxTokens: { type: Number },
         transcriptionModel: { type: String },
         modelApiBase: { type: String },
         modelApiKey: { type: String },
         modelTestStatus: { type: String },
         maxTokens: { type: Number },
         enableContext: { type: Boolean },
+        enableDocParsingContext: { type: Boolean },
     };
 
     constructor() {
@@ -459,12 +464,17 @@ export class CustomizeView extends LitElement {
         this.selectedModel = localStorage.getItem('selectedModel') || 'qwen3.5-plus';
         this.qwenTextModel = localStorage.getItem('qwenTextModel') || 'qwen3-max';
         this.qwenVisionModel = localStorage.getItem('qwenVisionModel') || 'qwen3-vl-plus';
+        this.qwenOcrModel = localStorage.getItem('qwenOcrModel') || 'qwen-vl-ocr-2025-11-20';
+        this.docParsingModel = localStorage.getItem('docParsingModel') || 'deepseek-v3.2';
+        this.docParsingEnableThinking = localStorage.getItem('docParsingEnableThinking') !== 'false';
+        this.docParsingMaxTokens = parseInt(localStorage.getItem('docParsingMaxTokens') || '1024', 10);
         this.transcriptionModel = localStorage.getItem('transcriptionModel') || 'qwen3-asr-flash';
         this.modelApiBase = localStorage.getItem('modelApiBase') || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
         this.modelApiKey = localStorage.getItem('modelApiKey') || '';
         this.modelTestStatus = '';
         this.maxTokens = parseInt(localStorage.getItem('maxTokens') || '4096', 10);
         this.enableContext = localStorage.getItem('enableContext') !== 'false'; // Default true
+        this.enableDocParsingContext = localStorage.getItem('enableDocParsingContext') === 'true'; // Default false
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
@@ -480,6 +490,10 @@ export class CustomizeView extends LitElement {
         this.handleModelApiBaseInput = this.handleModelApiBaseInput.bind(this);
         this.handleMaxTokensChange = this.handleMaxTokensChange.bind(this);
         this.handleEnableContextChange = this.handleEnableContextChange.bind(this);
+        this.handleEnableDocParsingContextChange = this.handleEnableDocParsingContextChange.bind(this);
+        this.handleDocParsingModelSelect = this.handleDocParsingModelSelect.bind(this);
+        this.handleDocParsingEnableThinkingChange = this.handleDocParsingEnableThinkingChange.bind(this);
+        this.handleDocParsingMaxTokensChange = this.handleDocParsingMaxTokensChange.bind(this);
     }
 
   async connectedCallback() {
@@ -494,19 +508,29 @@ export class CustomizeView extends LitElement {
                     const cfg = res.config;
                     this.qwenTextModel = cfg.qwenTextModel || this.qwenTextModel;
                     this.qwenVisionModel = cfg.qwenVisionModel || this.qwenVisionModel;
+                    this.qwenOcrModel = cfg.qwenOcrModel || this.qwenOcrModel;
+                    this.docParsingModel = cfg.docParsingModel || this.docParsingModel;
+                    if (typeof cfg.docParsingEnableThinking === 'boolean') this.docParsingEnableThinking = cfg.docParsingEnableThinking;
+                    if (cfg.docParsingMaxTokens) this.docParsingMaxTokens = cfg.docParsingMaxTokens;
                     this.transcriptionModel = cfg.transcriptionModel || this.transcriptionModel;
                     this.modelApiBase = cfg.modelApiBase || this.modelApiBase;
                     if (cfg.maxTokens) this.maxTokens = cfg.maxTokens;
                     if (typeof cfg.enableContext === 'boolean') this.enableContext = cfg.enableContext;
+                    if (typeof cfg.enableDocParsingContext === 'boolean') this.enableDocParsingContext = cfg.enableDocParsingContext;
                     if (cfg.apiKey) this.modelApiKey = cfg.apiKey;
                     
                     // Update localStorage to match
                     if (cfg.qwenTextModel) localStorage.setItem('qwenTextModel', cfg.qwenTextModel);
                     if (cfg.qwenVisionModel) localStorage.setItem('qwenVisionModel', cfg.qwenVisionModel);
+                    if (cfg.qwenOcrModel) localStorage.setItem('qwenOcrModel', cfg.qwenOcrModel);
+                    if (cfg.docParsingModel) localStorage.setItem('docParsingModel', cfg.docParsingModel);
+                    if (typeof cfg.docParsingEnableThinking === 'boolean') localStorage.setItem('docParsingEnableThinking', String(cfg.docParsingEnableThinking));
+                    if (cfg.docParsingMaxTokens) localStorage.setItem('docParsingMaxTokens', String(cfg.docParsingMaxTokens));
                     if (cfg.transcriptionModel) localStorage.setItem('transcriptionModel', cfg.transcriptionModel);
                     if (cfg.modelApiBase) localStorage.setItem('modelApiBase', cfg.modelApiBase);
                     if (cfg.maxTokens) localStorage.setItem('maxTokens', String(cfg.maxTokens));
                     if (typeof cfg.enableContext === 'boolean') localStorage.setItem('enableContext', String(cfg.enableContext));
+                    if (typeof cfg.enableDocParsingContext === 'boolean') localStorage.setItem('enableDocParsingContext', String(cfg.enableDocParsingContext));
                     if (cfg.apiKey) localStorage.setItem('modelApiKey', cfg.apiKey);
                     
                     this.requestUpdate();
@@ -1015,6 +1039,10 @@ export class CustomizeView extends LitElement {
                 modelApiBase: this.modelApiBase,
                 maxTokens: this.maxTokens,
                 enableContext: this.enableContext,
+                enableDocParsingContext: this.enableDocParsingContext,
+                docParsingModel: this.docParsingModel,
+                docParsingEnableThinking: this.docParsingEnableThinking,
+                docParsingMaxTokens: this.docParsingMaxTokens,
             });
         } catch (e) {}
     }
@@ -1027,6 +1055,12 @@ export class CustomizeView extends LitElement {
     async handleQwenTextModelSelect(e) {
         this.qwenTextModel = e.target.value;
         localStorage.setItem('qwenTextModel', this.qwenTextModel);
+        await this.persistModelConfig();
+    }
+
+    async handleDocParsingModelSelect(e) {
+        this.docParsingModel = e.target.value;
+        localStorage.setItem('docParsingModel', this.docParsingModel);
         await this.persistModelConfig();
     }
 
@@ -1069,9 +1103,32 @@ export class CustomizeView extends LitElement {
         }
     }
 
+    handleDocParsingMaxTokensChange(e) {
+        const val = parseInt(e.target.value, 10);
+        if (!isNaN(val)) {
+            this.docParsingMaxTokens = val;
+            localStorage.setItem('docParsingMaxTokens', String(this.docParsingMaxTokens));
+            this.persistModelConfig();
+        }
+    }
+
     handleEnableContextChange(e) {
         this.enableContext = e.target.checked;
         localStorage.setItem('enableContext', String(this.enableContext));
+        this.persistModelConfig();
+        this.requestUpdate();
+    }
+
+    handleEnableDocParsingContextChange(e) {
+        this.enableDocParsingContext = e.target.checked;
+        localStorage.setItem('enableDocParsingContext', String(this.enableDocParsingContext));
+        this.persistModelConfig();
+        this.requestUpdate();
+    }
+
+    handleDocParsingEnableThinkingChange(e) {
+        this.docParsingEnableThinking = e.target.checked;
+        localStorage.setItem('docParsingEnableThinking', String(this.docParsingEnableThinking));
         this.persistModelConfig();
         this.requestUpdate();
     }
@@ -1428,6 +1485,16 @@ export class CustomizeView extends LitElement {
 
                         <div class="form-row">
                             <div class="form-group">
+                                <label class="form-label">视觉模型（简历 PDF OCR）</label>
+                                <select class="form-control" disabled .value=${this.qwenOcrModel}>
+                                    <option value="qwen-vl-ocr-2025-11-20">Qwen-VL-OCR-2025-11-20</option>
+                                </select>
+                                <div class="form-description">用于文档解析中的 PDF 页面截图文字识别，当前固定为默认模型</div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
                                 <label class="form-label">实时转写模型</label>
                                 <select class="form-control" disabled .value=${this.transcriptionModel}>
                                     ${this.getTranscriptionModelOptions().map(
@@ -1462,6 +1529,68 @@ export class CustomizeView extends LitElement {
                                         开启后，AI 将记住之前的对话内容。关闭此选项可解决消息数异常增长的问题。
                                     </span>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">文档解析加入上下文</label>
+                                <div class="checkbox-group">
+                                    <input
+                                        type="checkbox"
+                                        class="checkbox-input"
+                                        .checked=${this.enableDocParsingContext}
+                                        @change=${this.handleEnableDocParsingContextChange}
+                                    />
+                                    <span class="form-description">
+                                        开启：把“解析压缩版（简历/JD）”加入上下文；关闭：不加入任何简历/JD 上下文。
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">文档解析模型</label>
+                                <select class="form-control" @change=${this.handleDocParsingModelSelect} .value=${this.docParsingModel}>
+                                    ${this.getQwenTextModelOptions().map(
+                                        option => html`<option value=${option.value} ?selected=${option.value === this.docParsingModel}>${option.name}</option>`
+                                    )}
+                                </select>
+                                <div class="form-description">用于简历解析/JD 解析（默认 DeepSeek-V3.2）</div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">文档解析思考模式</label>
+                                <div class="checkbox-group">
+                                    <input
+                                        type="checkbox"
+                                        class="checkbox-input"
+                                        .checked=${this.docParsingEnableThinking}
+                                        @change=${this.handleDocParsingEnableThinkingChange}
+                                    />
+                                    <span class="form-description">
+                                        开启：使用模型思考模式并自动移除思考标签；关闭：不启用思考模式且不做标签清理。
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">文档解析最大Tokens</label>
+                                <input
+                                    type="number"
+                                    class="form-control"
+                                    .value=${this.docParsingMaxTokens}
+                                    @input=${this.handleDocParsingMaxTokensChange}
+                                    placeholder="4096"
+                                    min="64"
+                                    max="8192"
+                                />
+                                <div class="form-description">用于简历/JD 解析输出上限，值越小输出越简练</div>
                             </div>
                         </div>
 

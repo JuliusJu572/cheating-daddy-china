@@ -179,6 +179,7 @@ export class AppHeader extends LitElement {
             main: t('header_title_main'),
             customize: t('header_title_customize'),
             help: t('header_title_help'),
+            docs: '文档解析',
             history: t('header_title_history'),
             advanced: t('header_title_advanced'),
             assistant: t('header_title_assistant'),
@@ -195,7 +196,7 @@ export class AppHeader extends LitElement {
     }
 
     isNavigationView() {
-        const navigationViews = ['customize', 'help', 'history', 'advanced'];
+        const navigationViews = ['customize', 'help', 'docs', 'history', 'advanced'];
         return navigationViews.includes(this.currentView);
     }
 
@@ -214,7 +215,7 @@ export class AppHeader extends LitElement {
                         : ''}
                     ${this.currentView === 'main'
                         ? html`
-                              <button class="icon-button" @click=${this.onHistoryClick}>
+                              <button class="icon-button" @click=${this.onHistoryClick} title="文档解析 (Resume/JD)">
                                   <?xml version="1.0" encoding="UTF-8"?><svg
                                       width="24px"
                                       height="24px"
@@ -225,28 +226,7 @@ export class AppHeader extends LitElement {
                                       color="currentColor"
                                   >
                                       <path
-                                          d="M12 21V7C12 5.89543 12.8954 5 14 5H21.4C21.7314 5 22 5.26863 22 5.6V18.7143"
-                                          stroke="currentColor"
-                                          stroke-width="1.7"
-                                          stroke-linecap="round"
-                                      ></path>
-                                      <path
-                                          d="M12 21V7C12 5.89543 11.1046 5 10 5H2.6C2.26863 5 2 5.26863 2 5.6V18.7143"
-                                          stroke="currentColor"
-                                          stroke-width="1.7"
-                                          stroke-linecap="round"
-                                      ></path>
-                                      <path d="M14 19L22 19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>
-                                      <path d="M10 19L2 19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>
-                                      <path
-                                          d="M12 21C12 19.8954 12.8954 19 14 19"
-                                          stroke="currentColor"
-                                          stroke-width="1.7"
-                                          stroke-linecap="round"
-                                          stroke-linejoin="round"
-                                      ></path>
-                                      <path
-                                          d="M12 21C12 19.8954 11.1046 19 10 19"
+                                          d="M9 17H15M9 13H15M9 9H13M13 3L19 9M13 3H8.2C7.0799 3 6.51984 3 6.09202 3.21799C5.71569 3.40973 5.40973 3.71569 5.21799 4.09202C5 4.51984 5 5.0799 5 6.2V17.8C5 18.9201 5 19.4802 5.21799 19.908C5.40973 20.2843 5.71569 20.5903 6.09202 20.782C6.51984 21 7.0799 21 8.2 21H15.8C16.9201 21 17.4802 21 17.908 20.782C18.2843 20.5903 18.5903 20.2843 18.782 19.908C19 19.4802 19 18.9201 19 17.8V9M13 3V9H19"
                                           stroke="currentColor"
                                           stroke-width="1.7"
                                           stroke-linecap="round"

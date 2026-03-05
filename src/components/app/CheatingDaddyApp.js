@@ -4,6 +4,7 @@ import { MainView } from '../views/MainView.js';
 import { CustomizeView } from '../views/CustomizeView.js';
 import { HelpView } from '../views/HelpView.js';
 import { HistoryView } from '../views/HistoryView.js';
+import { DocsView } from '../views/DocsView.js';
 import { AssistantView } from '../views/AssistantView.js';
 import { OnboardingView } from '../views/OnboardingView.js';
 import { AdvancedView } from '../views/AdvancedView.js';
@@ -247,7 +248,7 @@ export class CheatingDaddyApp extends LitElement {
     }
 
     handleHistoryClick() {
-        this.currentView = 'history';
+        this.currentView = 'docs';
         this.requestUpdate();
     }
 
@@ -258,7 +259,7 @@ export class CheatingDaddyApp extends LitElement {
 
     // 在 handleClose 函数中，添加 macOS 特定清理：
     async handleClose() {
-        if (this.currentView === 'customize' || this.currentView === 'help' || this.currentView === 'history') {
+        if (this.currentView === 'customize' || this.currentView === 'help' || this.currentView === 'docs' || this.currentView === 'history') {
             this.currentView = 'main';
             this.requestUpdate();
         } else if (this.currentView === 'assistant') {
@@ -368,14 +369,14 @@ export class CheatingDaddyApp extends LitElement {
 
     // Assistant view event handlers
     async handleSendText(message) {
+        this._awaitingNewResponse = true;
         const result = await window.cheddar.sendTextMessage(message);
 
         if (!result.success) {
             console.error('Failed to send message:', result.error);
             this.setStatus('Error sending message: ' + result.error);
         } else {
-            this.setStatus('Message sent...');
-            this._awaitingNewResponse = true;
+            this.setStatus('就绪');
         }
     }
 
@@ -384,10 +385,9 @@ export class CheatingDaddyApp extends LitElement {
             this.setStatus('实时转写不可用');
             return;
         }
+        this._awaitingNewResponse = true;
         const result = await window.cheddar.submitLiveTranscriptDelta();
-        if (result?.success && result?.submitted) {
-            this._awaitingNewResponse = true;
-        }
+        if (!result?.success) this._awaitingNewResponse = false;
     }
 
     handleResponseIndexChanged(e) {
@@ -480,6 +480,9 @@ export class CheatingDaddyApp extends LitElement {
 
             case 'help':
                 return html` <help-view .onExternalLinkClick=${url => this.handleExternalLinkClick(url)}></help-view> `;
+
+            case 'docs':
+                return html` <docs-view></docs-view> `;
 
             case 'history':
                 return html` <history-view></history-view> `;

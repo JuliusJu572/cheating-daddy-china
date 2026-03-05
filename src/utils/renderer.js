@@ -919,6 +919,9 @@ async function startQuickAudioCapture(options = {}) {
             chunkDurationSec: 1.0,
             onChunk: msg => {
                 if (!isLiveAsrRunning) return;
+                const buffer = Buffer.from(msg.buffer);
+                quickRecordChunks.push(buffer); // 保存完整音频数据
+                
                 const base64 = arrayBufferToBase64(msg.buffer);
                 ipcRenderer.invoke('push-live-audio-chunk', {
                     pcmBase64: base64,
@@ -929,6 +932,8 @@ async function startQuickAudioCapture(options = {}) {
                 if (ev && ev.type === 'stall') quickRecordStallCount++;
             },
         });
+
+        quickRecordChunks = []; // 每次开始前清空旧的音频缓存
 
         cheddar.setLiveAsrRunning(true);
         
@@ -951,18 +956,54 @@ async function startQuickAudioCapture(options = {}) {
 }
 
 async function submitLiveTranscriptDelta() {
+    cheddar.setStatus('处理音频中...');
+    
+    // 1. 优先使用全量录制的音频数据
+    if (quickRecordChunks && quickRecordChunks.length > 0) {
+        try {
+            console.log(`[AudioSubmit] Using full audio buffer: ${quickRecordChunks.length} chunks`);
+            
+            // 合并所有 Buffer
+            const fullBuffer = Buffer.concat(quickRecordChunks);
+            const base64Audio = fullBuffer.toString('base64');
+            
+            // 重要：清空缓存防止重复发送
+            quickRecordChunks = [];
+            
+            // 调用主进程保存音频并转录（这会重新转录一次完整音频，但更准确）
+            // 注意：save-audio-and-transcribe 会自动将结果发给 LLM
+            const result = await ipcRenderer.invoke('save-audio-and-transcribe', {
+                pcmBase64: base64Audio,
+                sampleRate: liveAsrSampleRate
+            });
+            
+            if (result && result.success) {
+                // 成功后同步更新本地状态，避免状态不一致
+                lastSubmittedOffset = liveTranscriptBuffer.length;
+                console.log('[AudioSubmit] Full audio submitted successfully');
+                return { success: true, submitted: true, mode: 'audio-file' };
+            } else {
+                console.error('[AudioSubmit] Audio file transcription failed, falling back to text buffer');
+            }
+        } catch (e) {
+            console.error('[AudioSubmit] Error processing full audio:', e);
+        }
+    } else {
+        console.warn('[AudioSubmit] No audio chunks available, falling back to text buffer');
+    }
+
+    // 2. 降级方案：如果音频处理失败，回退到发送已有的文本缓存
     const submitText = liveTranscriptBuffer.substring(lastSubmittedOffset).trim();
     if (!submitText) {
         cheddar.setStatus('暂无新增转写');
         return { success: false, submitted: false, reason: 'empty-delta' };
     }
 
-    cheddar.setStatus('提交中...');
+    cheddar.setStatus('提交中 (文本模式)...');
     const result = await sendTextMessage(submitText);
     if (result?.success) {
         lastSubmittedOffset = liveTranscriptBuffer.length;
-        // 不在这里设状态——AI 流式回复期间 Qwen session 自己会设 '就绪'
-        return { success: true, submitted: true, text: submitText };
+        return { success: true, submitted: true, text: submitText, mode: 'text-buffer' };
     }
     cheddar.setStatus('Error: ' + (result?.error || 'submit failed'));
     return { success: false, submitted: false, reason: 'send-failed' };
