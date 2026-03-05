@@ -41,7 +41,7 @@ function configureWindowsPaths() {
 configureWindowsPaths();
 const { createWindow, updateGlobalShortcuts, ensureDataDirectories } = require('./utils/window');
 const { setupGeminiIpcHandlers, stopMacOSAudioCapture, sendToRenderer, initializeGeminiSession } = require('./utils/gemini');
-const { getSystemPrompt } = require('./utils/prompts');
+const { getSystemPrompt, getEnrichmentPromptAppend } = require('./utils/prompts');
 const { initializeRandomProcessNames } = require('./utils/processRandomizer');
 const { applyAntiAnalysisMeasures } = require('./utils/stealthFeatures');
 const { getLocalConfig, writeConfig } = require('./config');
@@ -283,54 +283,67 @@ app.on('activate', async () => {
     await createMainWindow();
 });
 
-function setupGeneralIpcHandlers() {
-    const clampText = (text, maxLen) => {
-        const s = typeof text === 'string' ? text : '';
-        if (s.length <= maxLen) return s;
-        return s.slice(0, maxLen) + '\n\n[...已截断...]';
-    };
+// --- Helper Functions ---
 
-    const buildDocumentContextBlock = cfg => {
-        const doc = cfg?.documentParsing || {};
-        const enabled = cfg?.enableDocParsingContext === true;
-        if (!enabled) return '';
+const clampText = (text, maxLen) => {
+    const s = typeof text === 'string' ? text : '';
+    if (s.length <= maxLen) return s;
+    return s.slice(0, maxLen) + '\n\n[...已截断...]';
+};
 
-        const resume = doc.resumeParsed;
-        const jd = doc.jdParsed;
+const extractChatCompletionText = data => {
+    const content = data?.choices?.[0]?.message?.content;
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+        const t = content.find(x => typeof x?.text === 'string')?.text;
+        return typeof t === 'string' ? t : '';
+    }
+    return '';
+};
 
-        const resumeLabel = '简历信息（解析压缩）';
-        const jdLabel = 'JD 信息（解析压缩）';
+const stripThinkingTags = (text) => {
+    const s = String(text || '');
+    const withoutBlocks = s
+        .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '')
+        .replace(/<thinking\b[^>]*>[\s\S]*?<\/thinking>/gi, '')
+        .replace(/<analysis\b[^>]*>[\s\S]*?<\/analysis>/gi, '')
+        .replace(/<\/?think\b[^>]*>/gi, '')
+        .replace(/<\/?thinking\b[^>]*>/gi, '')
+        .replace(/<\/?analysis\b[^>]*>/gi, '');
+    return withoutBlocks.trim();
+};
 
-        const parts = [];
-        const resumeText = clampText(resume, 8000).trim();
-        const jdText = clampText(jd, 6000).trim();
+const callOneShotChatCompletion = async ({ apiKey, apiBase, model, systemPrompt, userText, userContent, maxTokens, enableThinking }) => {
+    const endpoint = `${String(apiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '')}/chat/completions`;
+    const content = userContent ?? userText ?? '';
+    const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+            model,
+            messages: [
+                { role: 'system', content: systemPrompt || '' },
+                { role: 'user', content },
+            ],
+            stream: false,
+            max_tokens: maxTokens,
+            extra_body: typeof enableThinking === 'boolean' ? { enable_thinking: enableThinking } : { enable_thinking: false },
+        }),
+    });
 
-        if (resumeText) parts.push(`【${resumeLabel}】\n${resumeText}`);
-        if (jdText) parts.push(`【${jdLabel}】\n${jdText}`);
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status}: ${text}`);
+    }
+    const data = await res.json();
+    return extractChatCompletionText(data);
+};
 
-        return parts.join('\n\n');
-    };
-
-    const withDocumentContext = (text, cfg) => {
-        const base = typeof text === 'string' ? text : '';
-        const ctx = buildDocumentContextBlock(cfg);
-        if (!ctx) return base;
-        return `${ctx}\n\n【转录/输入】\n${base}`;
-    };
-
-    const extractChatCompletionText = data => {
-        const content = data?.choices?.[0]?.message?.content;
-        if (typeof content === 'string') return content;
-        if (Array.isArray(content)) {
-            const t = content.find(x => typeof x?.text === 'string')?.text;
-            return typeof t === 'string' ? t : '';
-        }
-        return '';
-    };
-
-    const callOneShotChatCompletion = async ({ apiKey, apiBase, model, systemPrompt, userText, userContent, maxTokens, enableThinking }) => {
+const callStreamingChatCompletion = async ({ apiKey, apiBase, model, systemPrompt, userText, maxTokens, enableThinking, onChunk }) => {
         const endpoint = `${String(apiBase || DEFAULT_MODEL_API_BASE).replace(/\/$/, '')}/chat/completions`;
-        const content = userContent ?? userText ?? '';
         const res = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -341,9 +354,9 @@ function setupGeneralIpcHandlers() {
                 model,
                 messages: [
                     { role: 'system', content: systemPrompt || '' },
-                    { role: 'user', content },
+                    { role: 'user', content: userText || '' },
                 ],
-                stream: false,
+                stream: true,
                 max_tokens: maxTokens,
                 extra_body: typeof enableThinking === 'boolean' ? { enable_thinking: enableThinking } : { enable_thinking: false },
             }),
@@ -353,22 +366,113 @@ function setupGeneralIpcHandlers() {
             const text = await res.text();
             throw new Error(`HTTP ${res.status}: ${text}`);
         }
-        const data = await res.json();
-        return extractChatCompletionText(data);
+
+        const decoder = new TextDecoder('utf-8');
+        let fullContent = '';
+        
+        // Handle streaming response
+        if (res.body && typeof res.body.getReader === 'function') {
+            const reader = res.body.getReader();
+            let buf = '';
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: false });
+                let idx;
+                while ((idx = buf.indexOf('\n')) >= 0) {
+                    const line = buf.slice(0, idx).trimEnd();
+                    buf = buf.slice(idx + 1);
+                    if (!line || !line.startsWith('data:')) continue;
+                    const dataStr = line.slice('data:'.length).trim();
+                    if (!dataStr || dataStr === '[DONE]') continue;
+                    try {
+                        const evt = JSON.parse(dataStr);
+                        const delta = evt?.choices?.[0]?.delta?.content || '';
+                        if (delta) {
+                            fullContent += delta;
+                            if (onChunk) onChunk(fullContent);
+                        }
+                    } catch (_) {}
+                }
+            }
+            if (buf.length) {
+                 // process remaining buffer if needed, usually incomplete
+            }
+        } else {
+             // Fallback for non-streaming environments or different fetch implementations
+             const data = await res.json();
+             fullContent = data?.choices?.[0]?.message?.content || '';
+             if (onChunk) onChunk(fullContent);
+        }
+        
+        return fullContent;
     };
 
-    const stripThinkingTags = (text) => {
-        const s = String(text || '');
-        const withoutBlocks = s
-            .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '')
-            .replace(/<thinking\b[^>]*>[\s\S]*?<\/thinking>/gi, '')
-            .replace(/<analysis\b[^>]*>[\s\S]*?<\/analysis>/gi, '')
-            .replace(/<\/?think\b[^>]*>/gi, '')
-            .replace(/<\/?thinking\b[^>]*>/gi, '')
-            .replace(/<\/?analysis\b[^>]*>/gi, '');
-        return withoutBlocks.trim();
+    const requestEnrichment = async (transcript, primaryResponse) => {
+        try {
+            const cfg = getLocalConfig();
+            if (!cfg.enableEnrichment) return;
+
+            const apiKey = String(cfg?.apiKey || '').trim();
+            if (!apiKey) return;
+
+            const apiBase = cfg?.modelApiBase || DEFAULT_MODEL_API_BASE;
+            const model = String(cfg?.qwenTextModel || 'qwen3-max').trim();
+            const systemPrompt = getEnrichmentPromptAppend();
+            
+            const userText = `【面试对话上下文】\n[用户/转录]: ${transcript}\n[AI回答]: ${primaryResponse}\n\n请根据以上内容生成追问和解析。`;
+
+            console.log(`[enrichment] start model=${model}`);
+            
+            const onChunk = (partialText) => {
+                 sendToRenderer('update-response-enrichment', partialText);
+            };
+
+            await callStreamingChatCompletion({
+                apiKey,
+                apiBase,
+                model,
+                systemPrompt,
+                userText,
+                maxTokens: 1024,
+                enableThinking: false,
+                onChunk
+            });
+            
+        } catch (error) {
+            console.error('[enrichment] error:', error);
+        }
     };
 
+const buildDocumentContextBlock = cfg => {
+    const doc = cfg?.documentParsing || {};
+    const enabled = cfg?.enableDocParsingContext === true;
+    if (!enabled) return '';
+
+    const resume = doc.resumeParsed;
+    const jd = doc.jdParsed;
+
+    const resumeLabel = '简历信息（解析压缩）';
+    const jdLabel = 'JD 信息（解析压缩）';
+
+    const parts = [];
+    const resumeText = clampText(resume, 8000).trim();
+    const jdText = clampText(jd, 6000).trim();
+
+    if (resumeText) parts.push(`【${resumeLabel}】\n${resumeText}`);
+    if (jdText) parts.push(`【${jdLabel}】\n${jdText}`);
+
+    return parts.join('\n\n');
+};
+
+const withDocumentContext = (text, cfg) => {
+    const base = typeof text === 'string' ? text : '';
+    const ctx = buildDocumentContextBlock(cfg);
+    if (!ctx) return base;
+    return `${ctx}\n\n【转录/输入】\n${base}`;
+};
+
+function setupGeneralIpcHandlers() {
     const extractTextFromImageViaVision = async ({ apiKey, apiBase, model, mimeType, base64Data }) => {
         const dataUrl = `data:${mimeType || 'image/png'};base64,${base64Data}`;
         const systemPrompt = [
@@ -432,7 +536,7 @@ function setupGeneralIpcHandlers() {
         }
     };
 
-    const summarizeDocument = async ({ kind, rawText }) => {
+    const summarizeDocument = async ({ kind, rawText, onChunk }) => {
         const cfg = getLocalConfig();
         const apiKey = String(cfg?.apiKey || '').trim();
         if (!apiKey) throw new Error('Missing API key');
@@ -468,7 +572,8 @@ function setupGeneralIpcHandlers() {
 
         const userText = kind === 'resume' ? `简历原文：\n\n${text}` : `JD 原文：\n\n${text}`;
         console.log(`[doc-parse] start kind=${kind} model=${model} thinking=${enableThinking} inChars=${text.length} maxTokens=${docMaxTokens}`);
-        const result = await callOneShotChatCompletion({
+        
+        const result = await callStreamingChatCompletion({
             apiKey,
             apiBase,
             model,
@@ -476,7 +581,11 @@ function setupGeneralIpcHandlers() {
             userText,
             maxTokens: docMaxTokens,
             enableThinking,
+            onChunk: (chunk) => {
+                if (onChunk) onChunk(chunk);
+            }
         });
+
         const cleaned = enableThinking ? stripThinkingTags(result) : String(result || '').trim();
         console.log(`[doc-parse] done kind=${kind} outChars=${String(cleaned || '').length}`);
         return String(cleaned || '').trim();
@@ -579,11 +688,14 @@ function setupGeneralIpcHandlers() {
                 cfg.maxTokens = Math.max(1, Math.floor(next.maxTokens));
             }
             if (typeof next.enableContext === 'boolean') {
-                cfg.enableContext = next.enableContext;
-            }
-            if (typeof next.enableDocParsingContext === 'boolean') {
-                cfg.enableDocParsingContext = next.enableDocParsingContext;
-            }
+            cfg.enableContext = next.enableContext;
+        }
+        if (typeof next.enableEnrichment === 'boolean') {
+            cfg.enableEnrichment = next.enableEnrichment;
+        }
+        if (typeof next.enableDocParsingContext === 'boolean') {
+            cfg.enableDocParsingContext = next.enableDocParsingContext;
+        }
             if (typeof next.docParsingEnableThinking === 'boolean') {
                 cfg.docParsingEnableThinking = next.docParsingEnableThinking;
             }
@@ -748,12 +860,18 @@ function setupGeneralIpcHandlers() {
         }
     });
 
-    ipcMain.handle('parse-resume-text', async (_event, payload) => {
+    ipcMain.handle('parse-resume-text', async (event, payload) => {
         try {
             const resumeText = String(payload?.resumeText || '').trim();
             if (!resumeText) return { success: false, error: 'empty resume' };
 
-            const summary = await summarizeDocument({ kind: 'resume', rawText: resumeText });
+            const onChunk = (chunk) => {
+                 // Stream raw chunk. The summarizeDocument will strip thinking if needed at the end,
+                 // but during streaming we just show what we get.
+                 sendToRenderer('update-doc-parsing-stream', { kind: 'resume', text: chunk, done: false });
+            };
+
+            const summary = await summarizeDocument({ kind: 'resume', rawText: resumeText, onChunk });
             const cfg = getLocalConfig();
             cfg.documentParsing = {
                 ...(cfg.documentParsing || {}),
@@ -762,6 +880,9 @@ function setupGeneralIpcHandlers() {
                 resumeUpdatedAt: Date.now(),
             };
             writeConfig(cfg);
+            console.log('[ipc] parse-resume-text success, returning data');
+            // Send final "done" event with the cleaned summary
+            sendToRenderer('update-doc-parsing-stream', { kind: 'resume', text: cfg.documentParsing.resumeParsed, done: true });
             return { success: true, data: cfg.documentParsing };
         } catch (error) {
             console.error('parse-resume-text error:', error);
@@ -769,12 +890,16 @@ function setupGeneralIpcHandlers() {
         }
     });
 
-    ipcMain.handle('parse-jd-text', async (_event, payload) => {
+    ipcMain.handle('parse-jd-text', async (event, payload) => {
         try {
             const jdText = String(payload?.jdText || '').trim();
             if (!jdText) return { success: false, error: 'empty jd' };
 
-            const summary = await summarizeDocument({ kind: 'jd', rawText: jdText });
+            const onChunk = (chunk) => {
+                 sendToRenderer('update-doc-parsing-stream', { kind: 'jd', text: chunk, done: false });
+            };
+
+            const summary = await summarizeDocument({ kind: 'jd', rawText: jdText, onChunk });
             const cfg = getLocalConfig();
             cfg.documentParsing = {
                 ...(cfg.documentParsing || {}),
@@ -783,6 +908,8 @@ function setupGeneralIpcHandlers() {
                 jdUpdatedAt: Date.now(),
             };
             writeConfig(cfg);
+            // Send final "done" event with the cleaned summary
+            sendToRenderer('update-doc-parsing-stream', { kind: 'jd', text: cfg.documentParsing.jdParsed, done: true });
             return { success: true, data: cfg.documentParsing };
         } catch (error) {
             console.error('parse-jd-text error:', error);
@@ -1632,8 +1759,13 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
             if (payload?.text) {
                 console.log('📝 [sendRealtimeInput] Processing text message...');
                 messages.push({ role: 'user', content: payload.text });
-                await callChatCompletions(qwenTextModel, messages, { skipFinalStatus });
+                const aiResponse = await callChatCompletions(qwenTextModel, messages, { skipFinalStatus });
                 console.log('✅ [sendRealtimeInput] Text message processed');
+
+                // Enrichment
+                if (!skipFinalStatus) {
+                    requestEnrichment(payload.text, aiResponse);
+                }
                 return;
             }
 
@@ -1763,6 +1895,7 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
         if (!skipFinalStatus) {
             sendToRenderer('update-status', '就绪');
         }
+        return content;
     }
 
     async function sendRealtimeInput(payload, options = {}) {
@@ -1776,7 +1909,11 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
         try {
             if (payload?.text) {
                 messages.push({ role: 'user', content: payload.text });
-                await callChatCompletions({ skipFinalStatus });
+                const aiResponse = await callChatCompletions({ skipFinalStatus });
+                
+                if (!skipFinalStatus) {
+                    requestEnrichment(payload.text, aiResponse);
+                }
                 return;
             }
 

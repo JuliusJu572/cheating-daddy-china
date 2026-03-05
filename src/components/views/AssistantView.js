@@ -828,13 +828,10 @@ export class AssistantView extends LitElement {
     }
 
     updateResponseContent() {
-        console.log('updateResponseContent called');
         const container = this.shadowRoot.querySelector('#responseContainer');
         if (container) {
             const currentResponse = this.getCurrentResponse();
-            console.log('Current response:', currentResponse);
             const renderedResponse = this.renderMarkdown(currentResponse);
-            console.log('Rendered response:', renderedResponse);
             container.innerHTML = renderedResponse;
             this.renderDisplayMathPlaceholders(container);
             this.renderMathInContainer(container);
@@ -858,8 +855,6 @@ export class AssistantView extends LitElement {
                 words.forEach(word => word.classList.add('visible'));
                 this._lastAnimatedWordCount = words.length;
             }
-        } else {
-            console.log('Response container not found');
         }
     }
 

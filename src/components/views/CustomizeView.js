@@ -431,6 +431,7 @@ export class CustomizeView extends LitElement {
         maxTokens: { type: Number },
         enableContext: { type: Boolean },
         enableDocParsingContext: { type: Boolean },
+        enableEnrichment: { type: Boolean },
     };
 
     constructor() {
@@ -475,6 +476,7 @@ export class CustomizeView extends LitElement {
         this.maxTokens = parseInt(localStorage.getItem('maxTokens') || '4096', 10);
         this.enableContext = localStorage.getItem('enableContext') !== 'false'; // Default true
         this.enableDocParsingContext = localStorage.getItem('enableDocParsingContext') === 'true'; // Default false
+        this.enableEnrichment = localStorage.getItem('enableEnrichment') === 'true'; // Default true
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
@@ -491,6 +493,7 @@ export class CustomizeView extends LitElement {
         this.handleMaxTokensChange = this.handleMaxTokensChange.bind(this);
         this.handleEnableContextChange = this.handleEnableContextChange.bind(this);
         this.handleEnableDocParsingContextChange = this.handleEnableDocParsingContextChange.bind(this);
+        this.handleEnableEnrichmentChange = this.handleEnableEnrichmentChange.bind(this);
         this.handleDocParsingModelSelect = this.handleDocParsingModelSelect.bind(this);
         this.handleDocParsingEnableThinkingChange = this.handleDocParsingEnableThinkingChange.bind(this);
         this.handleDocParsingMaxTokensChange = this.handleDocParsingMaxTokensChange.bind(this);
@@ -517,6 +520,7 @@ export class CustomizeView extends LitElement {
                     if (cfg.maxTokens) this.maxTokens = cfg.maxTokens;
                     if (typeof cfg.enableContext === 'boolean') this.enableContext = cfg.enableContext;
                     if (typeof cfg.enableDocParsingContext === 'boolean') this.enableDocParsingContext = cfg.enableDocParsingContext;
+                    if (typeof cfg.enableEnrichment === 'boolean') this.enableEnrichment = cfg.enableEnrichment;
                     if (cfg.apiKey) this.modelApiKey = cfg.apiKey;
                     
                     // Update localStorage to match
@@ -531,6 +535,7 @@ export class CustomizeView extends LitElement {
                     if (cfg.maxTokens) localStorage.setItem('maxTokens', String(cfg.maxTokens));
                     if (typeof cfg.enableContext === 'boolean') localStorage.setItem('enableContext', String(cfg.enableContext));
                     if (typeof cfg.enableDocParsingContext === 'boolean') localStorage.setItem('enableDocParsingContext', String(cfg.enableDocParsingContext));
+                    if (typeof cfg.enableEnrichment === 'boolean') localStorage.setItem('enableEnrichment', String(cfg.enableEnrichment));
                     if (cfg.apiKey) localStorage.setItem('modelApiKey', cfg.apiKey);
                     
                     this.requestUpdate();
@@ -1040,6 +1045,7 @@ export class CustomizeView extends LitElement {
                 maxTokens: this.maxTokens,
                 enableContext: this.enableContext,
                 enableDocParsingContext: this.enableDocParsingContext,
+                enableEnrichment: this.enableEnrichment,
                 docParsingModel: this.docParsingModel,
                 docParsingEnableThinking: this.docParsingEnableThinking,
                 docParsingMaxTokens: this.docParsingMaxTokens,
@@ -1122,6 +1128,13 @@ export class CustomizeView extends LitElement {
     handleEnableDocParsingContextChange(e) {
         this.enableDocParsingContext = e.target.checked;
         localStorage.setItem('enableDocParsingContext', String(this.enableDocParsingContext));
+        this.persistModelConfig();
+        this.requestUpdate();
+    }
+
+    handleEnableEnrichmentChange(e) {
+        this.enableEnrichment = e.target.checked;
+        localStorage.setItem('enableEnrichment', String(this.enableEnrichment));
         this.persistModelConfig();
         this.requestUpdate();
     }
@@ -1527,6 +1540,23 @@ export class CustomizeView extends LitElement {
                                     />
                                     <span class="form-description">
                                         开启后，AI 将记住之前的对话内容。关闭此选项可解决消息数异常增长的问题。
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">启用追问增强 (Enrichment)</label>
+                                <div class="checkbox-group">
+                                    <input
+                                        type="checkbox"
+                                        class="checkbox-input"
+                                        .checked=${this.enableEnrichment}
+                                        @change=${this.handleEnableEnrichmentChange}
+                                    />
+                                    <span class="form-description">
+                                        开启后，AI 回答完会额外生成“追问预测”和“核心概念解析”。
                                     </span>
                                 </div>
                             </div>

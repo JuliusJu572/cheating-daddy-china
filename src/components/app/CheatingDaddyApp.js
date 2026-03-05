@@ -155,6 +155,9 @@ export class CheatingDaddyApp extends LitElement {
             ipcRenderer.on('update-response', (_, response) => {
                 this.setResponse(response);
             });
+            ipcRenderer.on('update-response-enrichment', (_, content) => {
+                this.handleEnrichmentUpdate(content);
+            });
             ipcRenderer.on('update-status', (_, status) => {
                 this.setStatus(status);
             });
@@ -169,6 +172,7 @@ export class CheatingDaddyApp extends LitElement {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             ipcRenderer.removeAllListeners('update-response');
+            ipcRenderer.removeAllListeners('update-response-enrichment');
             ipcRenderer.removeAllListeners('update-status');
             ipcRenderer.removeAllListeners('click-through-toggled');
         }
@@ -182,6 +186,24 @@ export class CheatingDaddyApp extends LitElement {
             this._currentResponseIsComplete = true;
             console.log('[setStatus] Marked current response as complete');
         }
+    }
+
+    handleEnrichmentUpdate(content) {
+        if (this.responses.length === 0) return;
+        
+        const lastIndex = this.responses.length - 1;
+        const current = this.responses[lastIndex];
+        const separator = '\n\n---\n\n';
+        
+        let mainPart = current;
+        if (current.includes(separator)) {
+            mainPart = current.split(separator)[0];
+        }
+        
+        const newResponse = mainPart + separator + content;
+        this.responses = [...this.responses.slice(0, lastIndex), newResponse];
+        this.shouldAnimateResponse = true;
+        this.requestUpdate();
     }
 
     setResponse(response) {

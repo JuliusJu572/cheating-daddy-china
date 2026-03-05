@@ -17,6 +17,7 @@ const DEFAULT_CONFIG = {
     maxTokens: 4096,
     enableContext: true,
     enableDocParsingContext: false,
+    enableEnrichment: true,
     licenseKey: '',
     apiKey: '',
     documentParsing: {

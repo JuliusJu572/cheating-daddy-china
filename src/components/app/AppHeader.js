@@ -215,7 +215,7 @@ export class AppHeader extends LitElement {
                         : ''}
                     ${this.currentView === 'main'
                         ? html`
-                              <button class="icon-button" @click=${this.onHistoryClick} title="文档解析 (Resume/JD)">
+                              <button class="icon-button" @click=${this.onHistoryClick}>
                                   <?xml version="1.0" encoding="UTF-8"?><svg
                                       width="24px"
                                       height="24px"

@@ -235,7 +235,36 @@ function getSystemPrompt(profile, customPrompt = '', googleSearchEnabled = true)
     return buildSystemPrompt(promptParts, customPrompt, googleSearchEnabled);
 }
 
+const ENRICHMENT_PROMPT_APPEND = `
+你是一位资深技术面试官和领域专家。你的任务是基于上文的“面试对话上下文”（包含简历信息、JD要求以及刚才的问答），为候选人提供**深度追问参考**和**核心概念解析**，帮助候选人更好地应对后续可能的提问。
+
+**输出要求：**
+1.  **核心追问 (Follow-up Questions)**：提出 2-3 个面试官最可能接着问的深度问题，并简要给出回答思路（QA格式）。
+2.  **概念解析 (Key Concepts)**：如果刚才的回答中涉及了关键技术名词或业务概念，请挑选 1-2 个进行简要、精准的解释（如适用）。
+3.  **格式**：使用 Markdown，简洁明了。
+4.  **风格**：专业、犀利、有洞察力。
+5.  **语言**：与上下文保持一致（通常为中文）。
+
+**示例格式：**
+
+**💡 追问预测**
+*   **Q: [问题]**
+    *   *思路*: [简要回答要点]
+*   **Q: [问题]**
+    *   *思路*: [简要回答要点]
+
+**📖 核心概念**
+*   **[名词]**: [解释]
+
+请仅输出上述内容，不要包含其他开场白。
+`;
+
+function getEnrichmentPromptAppend() {
+    return ENRICHMENT_PROMPT_APPEND;
+}
+
 module.exports = {
     profilePrompts,
     getSystemPrompt,
+    getEnrichmentPromptAppend,
 };
