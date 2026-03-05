@@ -747,64 +747,37 @@ function setupGeneralIpcHandlers() {
         try {
             const pdfBase64 = String(payload?.pdfBase64 || '');
             if (!pdfBase64) return { success: false, error: 'missing pdf' };
+            const cfg0 = getLocalConfig();
+            const apiKey = String(cfg0?.apiKey || '').trim();
+            if (!apiKey) return { success: false, error: 'Missing API key' };
 
-            let raw = '';
-            let numPages = 0;
-            try {
-                const pdfParseMod = require('pdf-parse');
-                const pdfParse = typeof pdfParseMod === 'function' ? pdfParseMod : pdfParseMod?.default;
-                if (typeof pdfParse === 'function') {
-                    const buffer = Buffer.from(pdfBase64, 'base64');
-                    const parsed = await pdfParse(buffer);
-                    raw = String(parsed?.text || '').trim();
-                    numPages = Math.max(0, Number(parsed?.numpages) || 0);
-                }
-            } catch (_) {}
+            const apiBase = cfg0?.modelApiBase || DEFAULT_MODEL_API_BASE;
+            const ocrModel = String(cfg0?.qwenOcrModel || 'qwen-vl-ocr-2025-11-20').trim();
+            const pagesToCapture = 3;
 
-            if (!raw) {
-                const cfg0 = getLocalConfig();
-                const apiKey = String(cfg0?.apiKey || '').trim();
-                if (!apiKey) return { success: false, error: 'Missing API key' };
+            const images = await capturePdfPagesAsPngBase64({ pdfBase64, pages: pagesToCapture });
+            if (!images.length) return { success: false, error: 'pdf_no_text', code: 'pdf_no_text' };
 
-                const apiBase = cfg0?.modelApiBase || DEFAULT_MODEL_API_BASE;
-                const ocrModel = String(cfg0?.qwenOcrModel || 'qwen-vl-ocr-2025-11-20').trim();
-                const pagesToCapture = Math.min(3, Math.max(1, numPages || 3));
-
-                const images = await capturePdfPagesAsPngBase64({ pdfBase64, pages: pagesToCapture });
-                if (!images.length) return { success: false, error: 'pdf_no_text', code: 'pdf_no_text' };
-
-                const texts = [];
-                for (const img of images) {
-                    const t = await extractTextFromImageViaVision({
-                        apiKey,
-                        apiBase,
-                        model: ocrModel,
-                        mimeType: img.mimeType,
-                        base64Data: img.data,
-                    });
-                    const cleaned = String(t || '').trim();
-                    if (cleaned) texts.push(cleaned);
-                }
-                const ocrRaw = texts.join('\n\n').trim();
-                if (!ocrRaw) return { success: false, error: 'pdf_no_text', code: 'pdf_no_text' };
-
-                const summary = await summarizeDocument({ kind: 'resume', rawText: ocrRaw });
-                const cfg = getLocalConfig();
-                cfg.documentParsing = {
-                    ...(cfg.documentParsing || {}),
-                    resumeRaw: clampText(ocrRaw, 200000),
-                    resumeParsed: clampText(summary, 12000),
-                    resumeUpdatedAt: Date.now(),
-                };
-                writeConfig(cfg);
-                return { success: true, data: cfg.documentParsing };
+            const texts = [];
+            for (const img of images) {
+                const t = await extractTextFromImageViaVision({
+                    apiKey,
+                    apiBase,
+                    model: ocrModel,
+                    mimeType: img.mimeType,
+                    base64Data: img.data,
+                });
+                const cleaned = String(t || '').trim();
+                if (cleaned) texts.push(cleaned);
             }
+            const ocrRaw = texts.join('\n\n').trim();
+            if (!ocrRaw) return { success: false, error: 'pdf_no_text', code: 'pdf_no_text' };
 
-            const summary = await summarizeDocument({ kind: 'resume', rawText: raw });
+            const summary = await summarizeDocument({ kind: 'resume', rawText: ocrRaw });
             const cfg = getLocalConfig();
             cfg.documentParsing = {
                 ...(cfg.documentParsing || {}),
-                resumeRaw: clampText(raw, 200000),
+                resumeRaw: clampText(ocrRaw, 200000),
                 resumeParsed: clampText(summary, 12000),
                 resumeUpdatedAt: Date.now(),
             };

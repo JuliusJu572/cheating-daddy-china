@@ -186,7 +186,10 @@ export class DocsView extends LitElement {
             border: 1px solid rgba(255, 255, 255, 0.08);
             padding: 10px;
             border-radius: 8px;
-            overflow: auto;
+            overflow-x: hidden;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
         }
 
         .doc-hint {
