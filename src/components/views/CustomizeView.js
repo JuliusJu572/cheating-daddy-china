@@ -55,6 +55,21 @@ export class CustomizeView extends LitElement {
             border-radius: 1.5px;
         }
 
+        .subsection-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--label-color, rgba(255, 255, 255, 0.9));
+            margin: 16px 0 8px 0;
+            padding-bottom: 4px;
+            border-bottom: 1px solid var(--table-border, rgba(255, 255, 255, 0.08));
+        }
+
+        .divider {
+            height: 1px;
+            background: var(--table-border, rgba(255, 255, 255, 0.08));
+            margin: 16px 0;
+        }
+
         .form-grid {
             display: grid;
             gap: 12px;
@@ -1473,6 +1488,9 @@ export class CustomizeView extends LitElement {
                     <div class="form-description" style="margin-bottom: 16px;">
                         当前使用 Qwen 模型（文本：${this.qwenTextModel}，视觉：${this.qwenVisionModel}，实时转写：${this.transcriptionModel}）
                     </div>
+                    
+                    <!-- General Models -->
+                    <div class="subsection-title">基础模型</div>
                     <div class="form-grid">
                         <div class="form-row">
                             <div class="form-group">
@@ -1483,9 +1501,6 @@ export class CustomizeView extends LitElement {
                                     )}
                                 </select>
                             </div>
-                        </div>
-
-                        <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">视觉模型（截图识别）</label>
                                 <select class="form-control" @change=${this.handleQwenVisionModelSelect} .value=${this.qwenVisionModel}>
@@ -1493,134 +1508,6 @@ export class CustomizeView extends LitElement {
                                         option => html`<option value=${option.value} ?selected=${option.value === this.qwenVisionModel}>${option.name}</option>`
                                     )}
                                 </select>
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">视觉模型（简历 PDF OCR）</label>
-                                <select class="form-control" disabled .value=${this.qwenOcrModel}>
-                                    <option value="qwen-vl-ocr-2025-11-20">Qwen-VL-OCR-2025-11-20</option>
-                                </select>
-                                <div class="form-description">用于文档解析中的 PDF 页面截图文字识别，当前固定为默认模型</div>
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">实时转写模型</label>
-                                <select class="form-control" disabled .value=${this.transcriptionModel}>
-                                    ${this.getTranscriptionModelOptions().map(
-                                        option => html`<option value=${option.value} ?selected=${option.value === this.transcriptionModel}>${option.name}</option>`
-                                    )}
-                                </select>
-                                <div class="form-description">用于 Ctrl+L 实时语音识别，当前仅支持 qwen3-asr-flash</div>
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group full-width">
-                                <label class="form-label">语音输入</label>
-                                <div class="form-description">
-                                    系统音频实时转写：<strong>${this.keybinds?.audioCapture || 'Ctrl+L'}</strong> 开始，再按停止并提交 AI。<br>
-                                    麦克风实时转写：<strong>${this.keybinds?.windowsAudioCapture || 'Ctrl+K'}</strong> 开始，再按停止并提交 AI。
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">启用上下文 (多轮对话)</label>
-                                <div class="checkbox-group">
-                                    <input
-                                        type="checkbox"
-                                        class="checkbox-input"
-                                        .checked=${this.enableContext}
-                                        @change=${this.handleEnableContextChange}
-                                    />
-                                    <span class="form-description">
-                                        开启后，AI 将记住之前的对话内容。关闭此选项可解决消息数异常增长的问题。
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">启用追问增强 (Enrichment)</label>
-                                <div class="checkbox-group">
-                                    <input
-                                        type="checkbox"
-                                        class="checkbox-input"
-                                        .checked=${this.enableEnrichment}
-                                        @change=${this.handleEnableEnrichmentChange}
-                                    />
-                                    <span class="form-description">
-                                        开启后，AI 回答完会额外生成“追问预测”和“核心概念解析”。
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">文档解析加入上下文</label>
-                                <div class="checkbox-group">
-                                    <input
-                                        type="checkbox"
-                                        class="checkbox-input"
-                                        .checked=${this.enableDocParsingContext}
-                                        @change=${this.handleEnableDocParsingContextChange}
-                                    />
-                                    <span class="form-description">
-                                        开启：把“解析压缩版（简历/JD）”加入上下文；关闭：不加入任何简历/JD 上下文。
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">文档解析模型</label>
-                                <select class="form-control" @change=${this.handleDocParsingModelSelect} .value=${this.docParsingModel}>
-                                    ${this.getQwenTextModelOptions().map(
-                                        option => html`<option value=${option.value} ?selected=${option.value === this.docParsingModel}>${option.name}</option>`
-                                    )}
-                                </select>
-                                <div class="form-description">用于简历解析/JD 解析（默认 DeepSeek-V3.2）</div>
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">文档解析思考模式</label>
-                                <div class="checkbox-group">
-                                    <input
-                                        type="checkbox"
-                                        class="checkbox-input"
-                                        .checked=${this.docParsingEnableThinking}
-                                        @change=${this.handleDocParsingEnableThinkingChange}
-                                    />
-                                    <span class="form-description">
-                                        开启：使用模型思考模式并自动移除思考标签；关闭：不启用思考模式且不做标签清理。
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">文档解析最大Tokens</label>
-                                <input
-                                    type="number"
-                                    class="form-control"
-                                    .value=${this.docParsingMaxTokens}
-                                    @input=${this.handleDocParsingMaxTokensChange}
-                                    placeholder="4096"
-                                    min="64"
-                                    max="8192"
-                                />
-                                <div class="form-description">用于简历/JD 解析输出上限，值越小输出越简练</div>
                             </div>
                         </div>
 
@@ -1638,6 +1525,140 @@ export class CustomizeView extends LitElement {
                                 />
                                 <div class="form-description">
                                     限制模型单次回复的最大长度，较大的值允许更长的回答，但可能增加延迟。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <!-- Context & Behavior -->
+                    <div class="subsection-title">上下文与增强</div>
+                    <div class="form-grid">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">启用上下文 (多轮对话)</label>
+                                <div class="checkbox-group">
+                                    <input
+                                        type="checkbox"
+                                        class="checkbox-input"
+                                        .checked=${this.enableContext}
+                                        @change=${this.handleEnableContextChange}
+                                    />
+                                    <span class="form-description">
+                                        开启后，AI 将记住之前的对话内容。
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">启用追问增强 (Enrichment)</label>
+                                <div class="checkbox-group">
+                                    <input
+                                        type="checkbox"
+                                        class="checkbox-input"
+                                        .checked=${this.enableEnrichment}
+                                        @change=${this.handleEnableEnrichmentChange}
+                                    />
+                                    <span class="form-description">
+                                        AI 回答完额外生成“追问预测”和“核心概念解析”。
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <!-- Document Parsing -->
+                    <div class="subsection-title">文档解析配置</div>
+                    <div class="form-grid">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">文档解析模型</label>
+                                <select class="form-control" @change=${this.handleDocParsingModelSelect} .value=${this.docParsingModel}>
+                                    ${this.getQwenTextModelOptions().map(
+                                        option => html`<option value=${option.value} ?selected=${option.value === this.docParsingModel}>${option.name}</option>`
+                                    )}
+                                </select>
+                                <div class="form-description">用于简历解析/JD 解析（默认 DeepSeek-V3.2）</div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">文档解析最大Tokens</label>
+                                <input
+                                    type="number"
+                                    class="form-control"
+                                    .value=${this.docParsingMaxTokens}
+                                    @input=${this.handleDocParsingMaxTokensChange}
+                                    placeholder="4096"
+                                    min="64"
+                                    max="8192"
+                                />
+                                <div class="form-description">用于简历/JD 解析输出上限，值越小输出越简练</div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">视觉模型（简历 PDF OCR）</label>
+                                <select class="form-control" disabled .value=${this.qwenOcrModel}>
+                                    <option value="qwen-vl-ocr-2025-11-20">Qwen-VL-OCR-2025-11-20</option>
+                                </select>
+                                <div class="form-description">用于文档解析中的 PDF 页面截图文字识别</div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">文档解析加入上下文</label>
+                                <div class="checkbox-group">
+                                    <input
+                                        type="checkbox"
+                                        class="checkbox-input"
+                                        .checked=${this.enableDocParsingContext}
+                                        @change=${this.handleEnableDocParsingContextChange}
+                                    />
+                                    <span class="form-description">
+                                        开启：把“解析压缩版（简历/JD）”加入上下文。
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">文档解析思考模式</label>
+                                <div class="checkbox-group">
+                                    <input
+                                        type="checkbox"
+                                        class="checkbox-input"
+                                        .checked=${this.docParsingEnableThinking}
+                                        @change=${this.handleDocParsingEnableThinkingChange}
+                                    />
+                                    <span class="form-description">
+                                        开启：使用模型思考模式并自动移除思考标签。
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <!-- Voice & Transcription -->
+                    <div class="subsection-title">语音与转写</div>
+                    <div class="form-grid">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">实时转写模型</label>
+                                <select class="form-control" disabled .value=${this.transcriptionModel}>
+                                    ${this.getTranscriptionModelOptions().map(
+                                        option => html`<option value=${option.value} ?selected=${option.value === this.transcriptionModel}>${option.name}</option>`
+                                    )}
+                                </select>
+                                <div class="form-description">用于 Ctrl+L 实时语音识别，当前仅支持 qwen3-asr-flash</div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">语音输入快捷键</label>
+                                <div class="form-description" style="padding: 8px 0;">
+                                    系统音频：<strong>${this.keybinds?.audioCapture || 'Ctrl+L'}</strong><br>
+                                    麦克风：<strong>${this.keybinds?.windowsAudioCapture || 'Ctrl+K'}</strong>
                                 </div>
                             </div>
                         </div>
