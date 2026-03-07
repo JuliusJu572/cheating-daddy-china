@@ -18,7 +18,8 @@ export class CustomizeView extends LitElement {
             display: block;
             padding: 12px;
             margin: 0 auto;
-            max-width: 700px;
+            width: 100%;
+            max-width: 1160px;
         }
 
         .settings-container {
@@ -30,8 +31,8 @@ export class CustomizeView extends LitElement {
         .settings-section {
             background: var(--card-background, rgba(255, 255, 255, 0.04));
             border: 1px solid var(--card-border, rgba(255, 255, 255, 0.1));
-            border-radius: 6px;
-            padding: 16px;
+            border-radius: 10px;
+            padding: 18px;
             backdrop-filter: blur(10px);
         }
 
@@ -77,7 +78,7 @@ export class CustomizeView extends LitElement {
 
         .form-row {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 12px;
             align-items: start;
         }
@@ -443,6 +444,14 @@ export class CustomizeView extends LitElement {
         modelApiBase: { type: String },
         modelApiKey: { type: String },
         modelTestStatus: { type: String },
+        userApiBase: { type: String },
+        proxyApiBase: { type: String },
+        aiProxyServicePath: { type: String },
+        userLoginEmail: { type: String },
+        userLoginPassword: { type: String },
+        balanceInfo: { type: String },
+        balanceStatus: { type: String },
+        isQueryingBalance: { type: Boolean },
         maxTokens: { type: Number },
         enableContext: { type: Boolean },
         enableDocParsingContext: { type: Boolean },
@@ -488,6 +497,14 @@ export class CustomizeView extends LitElement {
         this.modelApiBase = localStorage.getItem('modelApiBase') || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
         this.modelApiKey = localStorage.getItem('modelApiKey') || '';
         this.modelTestStatus = '';
+        this.userApiBase = localStorage.getItem('userApiBase') || 'https://muwadxphkifm.sealoshzh.site';
+        this.proxyApiBase = localStorage.getItem('proxyApiBase') || this.userApiBase;
+        this.aiProxyServicePath = localStorage.getItem('aiProxyServicePath') || 'usage/report';
+        this.userLoginEmail = localStorage.getItem('userLoginEmail') || '';
+        this.userLoginPassword = localStorage.getItem('userLoginPassword') || '';
+        this.balanceInfo = '';
+        this.balanceStatus = '';
+        this.isQueryingBalance = false;
         this.maxTokens = parseInt(localStorage.getItem('maxTokens') || '4096', 10);
         this.enableContext = localStorage.getItem('enableContext') !== 'false'; // Default true
         this.enableDocParsingContext = localStorage.getItem('enableDocParsingContext') === 'true'; // Default false
@@ -532,6 +549,11 @@ export class CustomizeView extends LitElement {
                     if (cfg.docParsingMaxTokens) this.docParsingMaxTokens = cfg.docParsingMaxTokens;
                     this.transcriptionModel = cfg.transcriptionModel || this.transcriptionModel;
                     this.modelApiBase = cfg.modelApiBase || this.modelApiBase;
+                    this.userApiBase = cfg.userApiBase || this.userApiBase;
+                    this.proxyApiBase = cfg.proxyApiBase || this.proxyApiBase;
+                    this.aiProxyServicePath = cfg.aiProxyServicePath || this.aiProxyServicePath;
+                    if (typeof cfg.userLoginEmail === 'string') this.userLoginEmail = cfg.userLoginEmail;
+                    if (typeof cfg.userLoginPassword === 'string') this.userLoginPassword = cfg.userLoginPassword;
                     if (cfg.maxTokens) this.maxTokens = cfg.maxTokens;
                     if (typeof cfg.enableContext === 'boolean') this.enableContext = cfg.enableContext;
                     if (typeof cfg.enableDocParsingContext === 'boolean') this.enableDocParsingContext = cfg.enableDocParsingContext;
@@ -547,6 +569,11 @@ export class CustomizeView extends LitElement {
                     if (cfg.docParsingMaxTokens) localStorage.setItem('docParsingMaxTokens', String(cfg.docParsingMaxTokens));
                     if (cfg.transcriptionModel) localStorage.setItem('transcriptionModel', cfg.transcriptionModel);
                     if (cfg.modelApiBase) localStorage.setItem('modelApiBase', cfg.modelApiBase);
+                    if (cfg.userApiBase) localStorage.setItem('userApiBase', cfg.userApiBase);
+                    if (cfg.proxyApiBase) localStorage.setItem('proxyApiBase', cfg.proxyApiBase);
+                    if (cfg.aiProxyServicePath) localStorage.setItem('aiProxyServicePath', cfg.aiProxyServicePath);
+                    if (typeof cfg.userLoginEmail === 'string') localStorage.setItem('userLoginEmail', cfg.userLoginEmail);
+                    if (typeof cfg.userLoginPassword === 'string') localStorage.setItem('userLoginPassword', cfg.userLoginPassword);
                     if (cfg.maxTokens) localStorage.setItem('maxTokens', String(cfg.maxTokens));
                     if (typeof cfg.enableContext === 'boolean') localStorage.setItem('enableContext', String(cfg.enableContext));
                     if (typeof cfg.enableDocParsingContext === 'boolean') localStorage.setItem('enableDocParsingContext', String(cfg.enableDocParsingContext));
@@ -568,6 +595,11 @@ export class CustomizeView extends LitElement {
                         this.qwenVisionModel = localStorage.getItem('qwenVisionModel') || this.qwenVisionModel;
                         this.transcriptionModel = localStorage.getItem('transcriptionModel') || this.transcriptionModel;
                         this.modelApiBase = localStorage.getItem('modelApiBase') || this.modelApiBase;
+                        this.userApiBase = localStorage.getItem('userApiBase') || this.userApiBase;
+                        this.proxyApiBase = localStorage.getItem('proxyApiBase') || this.proxyApiBase;
+                        this.aiProxyServicePath = localStorage.getItem('aiProxyServicePath') || this.aiProxyServicePath;
+                        this.userLoginEmail = localStorage.getItem('userLoginEmail') || this.userLoginEmail;
+                        this.userLoginPassword = localStorage.getItem('userLoginPassword') || this.userLoginPassword;
                         const mt = parseInt(localStorage.getItem('maxTokens') || '', 10);
                         if (!Number.isNaN(mt) && mt > 0) this.maxTokens = mt;
                         this.requestUpdate();
@@ -1057,6 +1089,11 @@ export class CustomizeView extends LitElement {
                 qwenVisionModel: this.qwenVisionModel,
                 transcriptionModel: this.transcriptionModel,
                 modelApiBase: this.modelApiBase,
+                userApiBase: this.userApiBase,
+                proxyApiBase: this.proxyApiBase,
+                aiProxyServicePath: this.aiProxyServicePath,
+                userLoginEmail: this.userLoginEmail,
+                userLoginPassword: this.userLoginPassword,
                 maxTokens: this.maxTokens,
                 enableContext: this.enableContext,
                 enableDocParsingContext: this.enableDocParsingContext,
@@ -1101,6 +1138,68 @@ export class CustomizeView extends LitElement {
         this.modelApiBase = e.target.value;
         localStorage.setItem('modelApiBase', this.modelApiBase);
         this.persistModelConfig();
+    }
+
+    handleUserApiBaseInput(e) {
+        this.userApiBase = e.target.value;
+        localStorage.setItem('userApiBase', this.userApiBase);
+        this.persistModelConfig();
+    }
+
+    handleProxyApiBaseInput(e) {
+        this.proxyApiBase = e.target.value;
+        localStorage.setItem('proxyApiBase', this.proxyApiBase);
+        this.persistModelConfig();
+    }
+
+    handleAiProxyServicePathInput(e) {
+        this.aiProxyServicePath = String(e.target.value || '').replace(/^\/+/, '');
+        localStorage.setItem('aiProxyServicePath', this.aiProxyServicePath);
+        this.persistModelConfig();
+    }
+
+    handleDefaultLoginEmailInput(e) {
+        this.userLoginEmail = e.target.value || '';
+        localStorage.setItem('userLoginEmail', this.userLoginEmail);
+        this.persistModelConfig();
+    }
+
+    handleDefaultLoginPasswordInput(e) {
+        this.userLoginPassword = e.target.value || '';
+        localStorage.setItem('userLoginPassword', this.userLoginPassword);
+        this.persistModelConfig();
+    }
+
+    async queryBalance() {
+        if (!window.require) return;
+        this.isQueryingBalance = true;
+        this.balanceStatus = '';
+        this.balanceInfo = '';
+        this.requestUpdate();
+        try {
+            const { ipcRenderer } = window.require('electron');
+            const res = await ipcRenderer.invoke('auth-get-balance');
+            if (!res?.ok) {
+                this.balanceStatus = 'error';
+                this.balanceInfo = res?.message || '余额查询失败';
+                this.requestUpdate();
+                return;
+            }
+            const data = res?.data || {};
+            const used = data?.usedTokens ?? data?.used ?? 0;
+            const quota = data?.quotaTokens ?? data?.quota ?? '未知';
+            // frozen is boolean, but let's show it if frozen
+            const frozen = data?.frozen ? ' (已冻结)' : '';
+            
+            this.balanceStatus = 'success';
+            this.balanceInfo = `已用: ${used} | 总配额: ${quota}${frozen}`;
+        } catch (error) {
+            this.balanceStatus = 'error';
+            this.balanceInfo = error?.message || '余额查询失败';
+        } finally {
+            this.isQueryingBalance = false;
+            this.requestUpdate();
+        }
     }
 
     async handleModelApiKeyInput(e) {
@@ -1187,6 +1286,23 @@ export class CustomizeView extends LitElement {
 
         return html`
             <div class="settings-container">
+                <div class="settings-section">
+                    <div class="section-title">
+                        <span>账号与计费</span>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-row">
+                            <div class="form-group full-width" style="display: flex; align-items: center; gap: 12px;">
+                                <button class="reset-keybinds-button" @click=${() => this.queryBalance()} ?disabled=${this.isQueryingBalance} style="width: auto; padding: 6px 16px;">
+                                    ${this.isQueryingBalance ? '查询中...' : '查询余额'}
+                                </button>
+                                <div class="form-description" style="margin: 0; font-size: 13px; color: var(--text-color);">
+                                    ${this.balanceInfo || '点击按钮查看用量和总配额'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <!-- Profile & Behavior Section -->
                 <div class="settings-section">
                     <div class="section-title">

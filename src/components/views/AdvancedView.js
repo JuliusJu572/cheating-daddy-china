@@ -18,7 +18,8 @@ export class AdvancedView extends LitElement {
             display: block;
             padding: 12px;
             margin: 0 auto;
-            max-width: 700px;
+            width: 100%;
+            max-width: 1160px;
         }
 
         .advanced-container {
@@ -30,8 +31,8 @@ export class AdvancedView extends LitElement {
         .advanced-section {
             background: var(--card-background, rgba(255, 255, 255, 0.04));
             border: 1px solid var(--card-border, rgba(255, 255, 255, 0.1));
-            border-radius: 6px;
-            padding: 16px;
+            border-radius: 10px;
+            padding: 18px;
             backdrop-filter: blur(10px);
         }
 
@@ -200,7 +201,7 @@ export class AdvancedView extends LitElement {
 
         .form-row {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 12px;
             align-items: start;
         }

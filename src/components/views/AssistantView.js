@@ -40,6 +40,25 @@ export class AssistantView extends LitElement {
             line-height: 1.6;
         }
 
+        .live-transcript-container::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .live-transcript-container::-webkit-scrollbar-track {
+            background: var(--scrollbar-background);
+            border-radius: 3px;
+        }
+
+        .live-transcript-container::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 3px;
+        }
+
+        .live-transcript-container::-webkit-scrollbar-thumb:hover {
+            background: var(--scrollbar-thumb-hover);
+        }
+
         .live-transcript-container.recording {
             border-color: #f44336;
         }
@@ -75,7 +94,7 @@ export class AssistantView extends LitElement {
         }
 
         .live-transcript-content {
-            font-size: calc(var(--response-font-size, 18px) * 0.5);
+            font-size: calc(var(--response-font-size, 18px) * 0.6);
             line-height: 1.6;
             color: var(--text-color);
             white-space: pre-wrap;
@@ -357,6 +376,7 @@ export class AssistantView extends LitElement {
         onSubmitLiveTranscript: { type: Function },
         onClearLiveTranscript: { type: Function },
         isLiveAsrRunning: { type: Boolean },
+        isAccountFrozen: { type: Boolean },
         shouldAnimateResponse: { type: Boolean },
         savedResponses: { type: Array },
     };
@@ -371,6 +391,7 @@ export class AssistantView extends LitElement {
         this.onSubmitLiveTranscript = async () => {};
         this.onClearLiveTranscript = () => {};
         this.isLiveAsrRunning = false;
+        this.isAccountFrozen = false;
         this._lastAnimatedWordCount = 0;
         this._mathInitialized = false;
         this._renderMathInElement = null;
@@ -869,8 +890,8 @@ export class AssistantView extends LitElement {
                 <div class="live-transcript-header">
                     <div class="live-transcript-title">
                         ${this.isLiveAsrRunning
-                            ? html`🔴 实时识别中&nbsp;&nbsp;<span style="font-size:11px;opacity:0.7">再按 Ctrl+L 停止并提交给 AI</span>`
-                            : html`按 Ctrl+L 开始实时识别`}
+                            ? html`🔴 实时识别中&nbsp;&nbsp;<span style="font-size:11px;opacity:0.7">再按快捷键停止并提交</span>`
+                            : html`按 Ctrl+L 开始识别系统声音 / 按 Ctrl+K 开始识别麦克风声音`}
                     </div>
                     ${this.liveTranscript ? html`
                         <button
@@ -880,14 +901,19 @@ export class AssistantView extends LitElement {
                         >✕ 清空</button>
                     ` : ''}
                 </div>
-                <div class="live-transcript-content">${this.liveTranscript || (this.isLiveAsrRunning ? '等待语音输入...' : '按 Ctrl+L 开始实时识别')}</div>
+                <div class="live-transcript-content">
+                    ${this.isAccountFrozen 
+                        ? '⛔ 账户已被冻结或余额不足，无法使用' 
+                        : (this.liveTranscript || (this.isLiveAsrRunning ? '等待语音输入...' : '按 Ctrl+L 开始识别系统声音 / 按 Ctrl+K 开始识别麦克风声音'))
+                    }
+                </div>
             </div>
             ` : ''}
 
             <div class="response-container" id="responseContainer"></div>
 
             <div class="text-input-container">
-                <button class="nav-button" @click=${this.navigateToPreviousResponse} ?disabled=${this.currentResponseIndex <= 0}>
+                <button class="nav-button" @click=${this.navigateToPreviousResponse} ?disabled=${this.currentResponseIndex <= 0 || this.isAccountFrozen}>
                     <?xml version="1.0" encoding="UTF-8"?><svg
                         width="24px"
                         height="24px"
@@ -923,9 +949,15 @@ export class AssistantView extends LitElement {
                     </svg>
                 </button>
 
-                <input type="text" id="textInput" placeholder="Type a message to the AI..." @keydown=${this.handleTextKeydown} />
+                <input
+                    type="text"
+                    id="textInput"
+                    placeholder="${this.isAccountFrozen ? '⛔ 账户已冻结，请充值后使用' : 'Type a message to the AI...'}"
+                    @keydown=${this.handleTextKeydown}
+                    ?disabled=${this.isAccountFrozen}
+                />
 
-                <button class="nav-button" @click=${this.navigateToNextResponse} ?disabled=${this.currentResponseIndex >= this.responses.length - 1}>
+                <button class="nav-button" @click=${this.navigateToNextResponse} ?disabled=${this.currentResponseIndex >= this.responses.length - 1 || this.isAccountFrozen}>
                     <?xml version="1.0" encoding="UTF-8"?><svg
                         width="24px"
                         height="24px"

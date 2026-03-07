@@ -75,32 +75,45 @@ export class MainView extends LitElement {
         }
 
         .start-button {
-            background: var(--start-button-background);
-            color: var(--start-button-color);
-            border: 1px solid var(--start-button-border);
-            padding: 8px 16px;
-            border-radius: 8px;
+            background: #ffffff;
+            color: #333333;
+            border: 1px solid #e5e7eb;
+            padding: 6px 12px;
+            border-radius: 6px;
             font-size: 13px;
             font-weight: 500;
             white-space: nowrap;
             display: flex;
             align-items: center;
-            gap: 6px;
+            justify-content: center;
+            gap: 4px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            width: auto;
+            min-width: 80px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            align-self: flex-start;
         }
 
         .start-button:hover {
-            background: var(--start-button-hover-background);
-            border-color: var(--start-button-hover-border);
+            background: #f9fafb;
+            border-color: #d1d5db;
+            color: #000000;
+            transform: translateY(0);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .start-button:active {
+            background: #f3f4f6;
+            box-shadow: none;
         }
 
         .start-button:disabled, .start-button.disabled {
-            opacity: 0.5;
+            background: #f3f4f6;
+            color: #9ca3af;
+            border-color: #e5e7eb;
             cursor: not-allowed;
-        }
-
-        .start-button:disabled:hover, .start-button.disabled:hover {
-            background: var(--start-button-background);
-            border-color: var(--start-button-border);
+            box-shadow: none;
         }
 
         .secondary-button {
@@ -203,8 +216,12 @@ export class MainView extends LitElement {
         onLayoutModeChange: { type: Function },
         onOpenSettings: { type: Function },
         _licenseKeyValue: { type: String, state: true },
-        hasApiKey: { type: Boolean },
-        isValidating: { type: Boolean },
+        _emailValue: { type: String, state: true },
+        _passwordValue: { type: String, state: true },
+        _authStep: { type: String, state: true },
+        _authState: { type: String, state: true },
+        _userEmail: { type: String, state: true },
+        hasApiKey: { type: Boolean, state: true },
         _statusMessage: { type: String, state: true },
         _statusType: { type: String, state: true },
     };
@@ -217,10 +234,15 @@ export class MainView extends LitElement {
         this.isInitializing = false;
         this.onLayoutModeChange = () => {};
         this._licenseKeyValue = '';
+        this._emailValue = localStorage.getItem('userLoginEmail') || '';
+        this._passwordValue = localStorage.getItem('userLoginPassword') || '';
+        this._authStep = 'license';
+        this._authState = 'idle';
+        this._userEmail = '';
         this.hasApiKey = !!localStorage.getItem('apiKey');
-        this.isValidating = false;
         this._statusMessage = '';
         this._statusType = '';
+        this._onAuthExpired = this.handleAuthExpired.bind(this);
         this.boundKeydownHandler = this.handleKeydown.bind(this);
     }
 
@@ -230,16 +252,25 @@ export class MainView extends LitElement {
         if (hydrated && typeof hydrated.then === 'function') {
             hydrated
                 .then(() => {
-                    this.hasApiKey = !!localStorage.getItem('apiKey');
-                    this.requestUpdate();
+                    this.initializeAuthFlow();
                 })
                 .catch(() => {});
         } else {
-            this.hasApiKey = !!localStorage.getItem('apiKey');
+            this.initializeAuthFlow();
         }
 
         window.electron?.ipcRenderer?.on('session-initializing', (event, isInitializing) => {
             this.isInitializing = isInitializing;
+        });
+        window.electron?.ipcRenderer?.on('user-auth-expired', this._onAuthExpired);
+        // Listen for account status changes (e.g. frozen)
+        window.electron?.ipcRenderer?.on('auth-status-changed', (event, data) => {
+            if (data && data.status === 'frozen') {
+                this._statusMessage = data.message || '账户已被冻结';
+                this._statusType = 'error';
+                // Force logout flow
+                this.handleAuthExpired();
+            }
         });
         document.addEventListener('keydown', this.boundKeydownHandler);
         this.loadLayoutMode();
@@ -249,6 +280,7 @@ export class MainView extends LitElement {
     disconnectedCallback() {
         super.disconnectedCallback();
         window.electron?.ipcRenderer?.removeAllListeners('session-initializing');
+        window.electron?.ipcRenderer?.removeListener?.('user-auth-expired', this._onAuthExpired);
         document.removeEventListener('keydown', this.boundKeydownHandler);
     }
 
@@ -260,15 +292,84 @@ export class MainView extends LitElement {
             ? (e.metaKey && !e.ctrlKey && e.key === 'Enter')
             : (!e.metaKey && e.ctrlKey && e.key === 'Enter');
 
-        if (isCmdOrCtrlEnter && this.hasApiKey) {
+        if (isCmdOrCtrlEnter && this._authStep === 'ready') {
             e.preventDefault();
             this.handleStartClick();
             return;
         }
+
+        if (isCmdOrCtrlEnter && (this._authStep === 'license' || this._authStep === 'login')) {
+            e.preventDefault();
+            this.handleStartClick();
+        }
     }
 
-    async handleInput(e) {
+    async initializeAuthFlow() {
+        this.hasApiKey = !!localStorage.getItem('apiKey');
+        this._authState = 'idle';
+        this._statusMessage = '';
+        this._statusType = '';
+        try {
+            let ipcRenderer = null;
+            if (window.require) {
+                ipcRenderer = window.require('electron').ipcRenderer;
+            } else if (window.electron?.ipcRenderer) {
+                ipcRenderer = window.electron.ipcRenderer;
+            }
+            if (!ipcRenderer) return;
+            const sessionRes = await ipcRenderer.invoke('auth-get-session');
+            const hasToken = !!sessionRes?.ok && !!sessionRes?.data?.hasToken;
+            if (!this.hasApiKey) {
+                this._authStep = 'license';
+                return;
+            }
+            if (!hasToken) {
+                this._authStep = 'login';
+                return;
+            }
+            const meRes = await ipcRenderer.invoke('auth-me');
+            if (meRes?.ok) {
+                const user = meRes?.data?.user || {};
+                this._userEmail = String(user?.email || '');
+                this._authStep = 'ready';
+                localStorage.setItem('userAuthToken', sessionRes?.data?.token || '');
+                localStorage.setItem('userProfile', JSON.stringify(user || {}));
+            } else {
+                this._authStep = 'login';
+            }
+        } catch (_) {
+            this._authStep = this.hasApiKey ? 'login' : 'license';
+        } finally {
+            this.requestUpdate();
+        }
+    }
+
+    handleAuthExpired() {
+        localStorage.removeItem('userAuthToken');
+        localStorage.removeItem('userProfile');
+        this._authStep = this.hasApiKey ? 'login' : 'license';
+        this._userEmail = '';
+        this._statusMessage = '登录状态已过期，请重新登录';
+        this._statusType = 'error';
+        this.requestUpdate();
+    }
+
+    async handleLicenseInput(e) {
         this._licenseKeyValue = e.target.value || '';
+        this._statusMessage = '';
+        this.requestUpdate();
+    }
+
+    async handleEmailInput(e) {
+        this._emailValue = e.target.value || '';
+        localStorage.setItem('userLoginEmail', this._emailValue);
+        this._statusMessage = '';
+        this.requestUpdate();
+    }
+
+    async handlePasswordInput(e) {
+        this._passwordValue = e.target.value || '';
+        localStorage.setItem('userLoginPassword', this._passwordValue);
         this._statusMessage = '';
         this.requestUpdate();
     }
@@ -278,13 +379,22 @@ export class MainView extends LitElement {
             return;
         }
 
-        // If we already have a valid API key, just start
-        if (this.hasApiKey && !this._licenseKeyValue.trim()) {
+        if (this._authStep === 'ready') {
             this.onStart();
             return;
         }
 
-        // Otherwise, validate and save the License Key
+        if (this._authStep === 'license') {
+            await this.handleLicenseValidate();
+            return;
+        }
+
+        if (this._authStep === 'login') {
+            await this.handleUserLogin();
+        }
+    }
+
+    async handleLicenseValidate() {
         const key = this._licenseKeyValue.trim();
 
         if (!key) {
@@ -301,7 +411,7 @@ export class MainView extends LitElement {
             return;
         }
 
-        this.isValidating = true;
+        this._authState = 'validating';
         this._statusMessage = '正在验证License Key...';
         this._statusType = 'info';
         this.requestUpdate();
@@ -345,30 +455,135 @@ export class MainView extends LitElement {
             }
 
             // 保存解密后的API Key
-            localStorage.setItem('apiKey', apiKey);
             localStorage.setItem('licenseKey', key);
+            localStorage.setItem('apiKey', apiKey);
             await ipcRenderer.invoke('set-license-key', { licenseKey: key, apiKey });
 
-            this._statusMessage = '✅ License Key验证成功！';
+            this._authState = 'persisting';
+            this._statusMessage = 'License Key验证成功，请登录账号';
             this._statusType = 'success';
             this.hasApiKey = true;
+            this._authStep = 'login';
             this._licenseKeyValue = '';
-
-            // 2秒后开始会话
-            setTimeout(() => {
-                this._statusMessage = '';
-                this.requestUpdate();
-                this.onStart();
-            }, 1000);
-
         } catch (error) {
             console.error('验证License Key错误:', error);
             this._statusMessage = '验证失败: ' + (error?.message || '未知错误');
             this._statusType = 'error';
         } finally {
-            this.isValidating = false;
+            this._authState = 'idle';
             this.requestUpdate();
         }
+    }
+
+    formatErrorMessage(res, fallback) {
+        const code = String(res?.code || '');
+        if (code === 'quota_exceeded') return '配额已用尽，请充值后再试';
+        if (code === 'account_frozen') return '账户已被冻结，请联系管理员';
+        if (code === 'auth_expired') return '登录已过期，请重新登录';
+        if (code === 'insufficient_balance') return '余额不足，无法开始会话';
+        return String(res?.message || fallback || '请求失败');
+    }
+
+    async handleUserLogin() {
+        const email = this._emailValue.trim();
+        const password = this._passwordValue;
+        if (!email || !password) {
+            this._statusMessage = '请输入邮箱和密码';
+            this._statusType = 'error';
+            this.requestUpdate();
+            return;
+        }
+        this._authState = 'validating';
+        this._statusMessage = '正在登录账号...';
+        this._statusType = 'info';
+        this.requestUpdate();
+        try {
+            let ipcRenderer = null;
+            if (window.require) {
+                ipcRenderer = window.require('electron').ipcRenderer;
+            } else if (window.electron?.ipcRenderer) {
+                ipcRenderer = window.electron.ipcRenderer;
+            }
+            if (!ipcRenderer) {
+                throw new Error('无法连接到主进程');
+            }
+            const loginRes = await ipcRenderer.invoke('auth-login', { email, password });
+            if (!loginRes?.ok) {
+                this._statusMessage = this.formatErrorMessage(loginRes, '登录失败');
+                this._statusType = 'error';
+                this.requestUpdate();
+                return;
+            }
+            const user = loginRes?.data?.user || {};
+            const token = loginRes?.data?.token || '';
+            
+            // Client-side check for frozen/balance after login
+            if (user.frozen) {
+                this._statusMessage = '登录失败：账户已被冻结';
+                this._statusType = 'error';
+                // Logout immediately
+                await ipcRenderer.invoke('auth-logout');
+                localStorage.removeItem('userAuthToken');
+                localStorage.removeItem('userProfile');
+                this.requestUpdate();
+                return;
+            }
+            
+            // Check quota if available
+            const quota = Number(user.quotaTokens ?? user.quota ?? 0);
+            const used = Number(user.usedTokens ?? user.used ?? 0);
+            // If quota > 0 and used >= quota, block.
+            // Also block if quota is 0 (new account with no quota or exhausted)
+            if ((quota > 0 && used >= quota) || quota <= 0) {
+                this._statusMessage = '登录失败：账户余额不足';
+                this._statusType = 'error';
+                 // Logout immediately
+                await ipcRenderer.invoke('auth-logout');
+                localStorage.removeItem('userAuthToken');
+                localStorage.removeItem('userProfile');
+                this.requestUpdate();
+                return;
+            }
+
+            this._userEmail = String(user?.email || email);
+            this._authStep = 'ready';
+            this._authState = 'ready';
+            this._passwordValue = '';
+            this._statusMessage = '登录成功，已完成认证';
+            this._statusType = 'success';
+            localStorage.setItem('userAuthToken', token);
+            localStorage.setItem('userProfile', JSON.stringify(user || {}));
+        } catch (error) {
+            this._statusMessage = '登录失败: ' + (error?.message || '未知错误');
+            this._statusType = 'error';
+        } finally {
+            if (this._authStep !== 'ready') {
+                this._authState = 'idle';
+            }
+            this.requestUpdate();
+        }
+    }
+
+    async handleLogoutClick() {
+        try {
+            let ipcRenderer = null;
+            if (window.require) {
+                ipcRenderer = window.require('electron').ipcRenderer;
+            } else if (window.electron?.ipcRenderer) {
+                ipcRenderer = window.electron.ipcRenderer;
+            }
+            if (ipcRenderer) {
+                await ipcRenderer.invoke('auth-logout');
+            }
+            localStorage.removeItem('userAuthToken');
+            localStorage.removeItem('userProfile');
+            this._authStep = this.hasApiKey ? 'login' : 'license';
+            this._userEmail = '';
+            this._statusMessage = '已退出登录';
+            this._statusType = 'info';
+            this._authState = 'idle';
+            this.requestUpdate();
+        } catch (_) {}
     }
 
     handleOpenSettingsClick() {
@@ -435,13 +650,19 @@ export class MainView extends LitElement {
     }
 
     render() {
-        // 状态显示
         let statusDisplay = html``;
-        if (this.hasApiKey && !this._licenseKeyValue.trim()) {
+        if (this._authStep === 'ready') {
             statusDisplay = html`
                 <div class="status-display has-key">
                     <span class="status-icon">✅</span>
-                    <span>License Key已配置，可以开始使用</span>
+                    <span>已登录 ${this._userEmail || '当前用户'}，可以开始会话</span>
+                </div>
+            `;
+        } else if (this._authStep === 'login') {
+            statusDisplay = html`
+                <div class="status-display no-key">
+                    <span class="status-icon">👤</span>
+                    <span>License Key已验证，请登录账号</span>
                 </div>
             `;
         } else {
@@ -453,7 +674,6 @@ export class MainView extends LitElement {
             `;
         }
 
-        // 状态消息显示
         let statusMessageDisplay = html``;
         if (this._statusMessage) {
             const messageClass = this._statusType === 'error'
@@ -469,26 +689,82 @@ export class MainView extends LitElement {
             `;
         }
 
-        // 输入框和按钮
-        const inputSection = html`
-            <div class="input-group">
-                <input
-                    type="password"
-                    placeholder="请输入License Key (格式: CD-xxxxx)"
-                    .value=${this._licenseKeyValue}
-                    @input=${e => this.handleInput(e)}
-                    ?disabled=${this.isValidating}
-                />
-                <button
-                    @click=${this.handleStartClick}
-                    class="start-button ${this.isInitializing || this.isValidating ? 'disabled' : ''}"
-                    ?disabled=${this.isInitializing || this.isValidating}
-                >
-                    ${this.isValidating ? '验证中...' : (this.isInitializing ? '初始化中...' : this.getStartButtonText())}
-                </button>
-            </div>
-            ${statusMessageDisplay}
-        `;
+        const isBusy = this.isInitializing || this._authState === 'validating' || this._authState === 'persisting';
+
+        let inputSection = html``;
+        if (this._authStep === 'license') {
+            inputSection = html`
+                <div class="input-group">
+                    <input
+                        type="password"
+                        placeholder="请输入License Key (格式: CD-xxxxx)"
+                        .value=${this._licenseKeyValue}
+                        @input=${e => this.handleLicenseInput(e)}
+                        ?disabled=${isBusy}
+                    />
+                    <button
+                        @click=${this.handleStartClick}
+                        class="start-button ${isBusy ? 'disabled' : ''}"
+                        ?disabled=${isBusy}
+                    >
+                        ${isBusy ? '验证中...' : '验证License'}
+                    </button>
+                </div>
+                ${statusMessageDisplay}
+            `;
+        } else if (this._authStep === 'login') {
+            inputSection = html`
+                <div class="input-group" style="flex-direction: column; gap: 8px;">
+                    <input
+                        type="text"
+                        placeholder="请输入登录邮箱"
+                        .value=${this._emailValue}
+                        @input=${e => this.handleEmailInput(e)}
+                        ?disabled=${isBusy}
+                    />
+                    <input
+                        type="password"
+                        placeholder="请输入登录密码"
+                        .value=${this._passwordValue}
+                        @input=${e => this.handlePasswordInput(e)}
+                        @keydown=${e => {
+                            if (e.key === 'Enter') {
+                                this.handleUserLogin();
+                            }
+                        }}
+                        ?disabled=${isBusy}
+                    />
+                    <button
+                        @click=${this.handleUserLogin}
+                        class="start-button ${isBusy ? 'disabled' : ''}"
+                        ?disabled=${isBusy}
+                    >
+                        ${isBusy ? '登录中...' : '登录账号'}
+                    </button>
+                </div>
+                ${statusMessageDisplay}
+            `;
+        } else {
+            inputSection = html`
+                <div class="input-group">
+                    <button
+                        @click=${this.handleStartClick}
+                        class="start-button ${this.isInitializing ? 'disabled' : ''}"
+                        ?disabled=${this.isInitializing}
+                    >
+                        ${this.isInitializing ? '初始化中...' : this.getStartButtonText()}
+                    </button>
+                    <button
+                        @click=${this.handleLogoutClick}
+                        class="secondary-button"
+                        ?disabled=${this.isInitializing}
+                    >
+                        退出登录
+                    </button>
+                </div>
+                ${statusMessageDisplay}
+            `;
+        }
 
         return html`
             <div class="welcome">欢迎使用作弊老铁</div>

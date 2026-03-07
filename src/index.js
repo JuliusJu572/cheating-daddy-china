@@ -19,34 +19,20 @@ const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
-
-function configureWindowsPaths() {
-    if (process.platform !== 'win32') return;
-
-    const appDataPath = process.env.APPDATA || path.join(process.env.USERPROFILE, 'AppData', 'Roaming');
-    const customUserDataPath = path.join(appDataPath, 'CheatingBuddy');
-
-    app.setPath('userData', customUserDataPath);
-    app.setPath('appData', customUserDataPath);
-    app.setPath('userCache', path.join(
-        process.env.LOCALAPPDATA || path.join(process.env.USERPROFILE, 'AppData', 'Local'),
-        'CheatingBuddy',
-        'Cache'
-    ));
-    app.setPath('logs', path.join(customUserDataPath, 'logs'));
-
-    console.log('🔧 [Windows] 设置userData路径:', customUserDataPath);
-}
-
-configureWindowsPaths();
+const { configureWindowsPaths } = require('./main/bootstrap/windowsPaths');
 const { createWindow, updateGlobalShortcuts, ensureDataDirectories } = require('./utils/window');
 const { setupGeminiIpcHandlers, stopMacOSAudioCapture, sendToRenderer, initializeGeminiSession } = require('./utils/gemini');
 const { getSystemPrompt, getEnrichmentPromptAppend } = require('./utils/prompts');
 const { initializeRandomProcessNames } = require('./utils/processRandomizer');
 const { applyAntiAnalysisMeasures } = require('./utils/stealthFeatures');
 const { getLocalConfig, writeConfig } = require('./config');
+const { createConfigStore } = require('./main/services/configStore');
+const { registerAuthIpcHandlers } = require('./main/ipc/auth');
+const { callUserAiProxyJson } = require('./main/services/userApiClient');
 const { pcmToWav } = require('./audioUtils');
 const FormData = require('form-data');
+configureWindowsPaths({ app, path, processRef: process });
+const configStore = createConfigStore({ getLocalConfig, writeConfig });
 const geminiSessionRef = { current: null };
 let mainWindow = null;
 let creatingWindow = false;
@@ -472,7 +458,91 @@ const withDocumentContext = (text, cfg) => {
     return `${ctx}\n\n【转录/输入】\n${base}`;
 };
 
+function pushTokenUsageRecord({ servicePath, model, usage, fallbackTotalTokens }) {
+    const totalTokensRaw = usage?.total_tokens ?? usage?.totalTokens ?? fallbackTotalTokens ?? null;
+    const totalTokens = Number(totalTokensRaw);
+    const record = {
+        ts: Date.now(),
+        servicePath: String(servicePath || ''),
+        model: String(model || ''),
+        totalTokens: Number.isFinite(totalTokens) ? totalTokens : null,
+    };
+    const cfg = configStore.get();
+    const prev = Array.isArray(cfg.tokenUsageRecords) ? cfg.tokenUsageRecords : [];
+    const next = [...prev, record].slice(-200);
+    configStore.update({ tokenUsageRecords: next });
+}
+
+function clearUserAuthState() {
+    configStore.update({
+        userAuthToken: '',
+        userProfile: null,
+    });
+}
+
+function mapRiskMessage(code, fallback) {
+    if (code === 'quota_exceeded') return '余额不足，请充值后继续';
+    if (code === 'account_frozen') return '账户已被冻结，已阻断请求';
+    if (code === 'auth_expired') return '登录状态已过期，请重新登录';
+    return fallback || '计费服务异常';
+}
+
+async function mirrorAiUsageToServer({ servicePath, payload, model, usage, fallbackTotalTokens }) {
+    const cfg = configStore.get();
+    const token = String(cfg.userAuthToken || '').trim();
+    const baseUrl = String(cfg.proxyApiBase || cfg.userApiBase || '').trim();
+    if (!token || !baseUrl) return { blocked: false, skipped: true };
+    try {
+        const pathToCall = String(servicePath || cfg.aiProxyServicePath || 'usage/report').trim();
+        const proxyPayload = {
+            provider: 'dashscope',
+            model,
+            usage: usage || null,
+            fallbackTotalTokens: Number.isFinite(Number(fallbackTotalTokens)) ? Number(fallbackTotalTokens) : null,
+            payload: payload && typeof payload === 'object' ? payload : {},
+            ts: Date.now(),
+        };
+        const res = await callUserAiProxyJson({
+            baseUrl,
+            token,
+            servicePath: pathToCall,
+            payload: proxyPayload,
+            timeoutMs: 20000,
+        });
+        pushTokenUsageRecord({
+            servicePath: pathToCall,
+            model,
+            usage: res?.data?.usage || usage,
+            fallbackTotalTokens,
+        });
+        return { blocked: false, data: res?.data || null };
+    } catch (error) {
+        const code = String(error?.code || '');
+        if (code === 'auth_expired') {
+            clearUserAuthState();
+            sendToRenderer('user-auth-expired', {
+                code,
+                message: mapRiskMessage(code, error?.message),
+            });
+        }
+        if (code === 'quota_exceeded' || code === 'account_frozen' || code === 'auth_expired') {
+            return {
+                blocked: true,
+                code,
+                message: mapRiskMessage(code, error?.message),
+            };
+        }
+        return { blocked: false, ignored: true };
+    }
+}
+
 function setupGeneralIpcHandlers() {
+    registerAuthIpcHandlers({
+        ipcMain,
+        configStore,
+        sendToRenderer,
+    });
+
     const extractTextFromImageViaVision = async ({ apiKey, apiBase, model, mimeType, base64Data }) => {
         const dataUrl = `data:${mimeType || 'image/png'};base64,${base64Data}`;
         const systemPrompt = [
@@ -683,6 +753,21 @@ function setupGeneralIpcHandlers() {
             }
             if (typeof next.modelApiBase === 'string') {
                 cfg.modelApiBase = next.modelApiBase.trim();
+            }
+            if (typeof next.userApiBase === 'string') {
+                cfg.userApiBase = next.userApiBase.trim();
+            }
+            if (typeof next.proxyApiBase === 'string') {
+                cfg.proxyApiBase = next.proxyApiBase.trim();
+            }
+            if (typeof next.aiProxyServicePath === 'string') {
+                cfg.aiProxyServicePath = next.aiProxyServicePath.trim().replace(/^\/+/, '');
+            }
+            if (typeof next.userLoginEmail === 'string') {
+                cfg.userLoginEmail = next.userLoginEmail;
+            }
+            if (typeof next.userLoginPassword === 'string') {
+                cfg.userLoginPassword = next.userLoginPassword;
             }
             if (typeof next.maxTokens === 'number' && Number.isFinite(next.maxTokens)) {
                 cfg.maxTokens = Math.max(1, Math.floor(next.maxTokens));
@@ -1354,7 +1439,23 @@ function setupGeneralIpcHandlers() {
 
     ipcMain.handle('save-audio-and-transcribe', async (event, payload) => {
         try {
-            const { pcmBase64, sampleRate } = payload || {};
+            const { pcmBase64, sampleRate, text, skipTranscribe } = payload || {};
+            
+            // Direct text path (for real-time ASR results)
+            if (skipTranscribe && text) {
+                console.log('📝 [ASR] Using pre-transcribed text:', text);
+                if (geminiSessionRef.current) {
+                    const cfg = getLocalConfig();
+                    const finalText = withDocumentContext(text, cfg);
+                    console.log('🚀 Sending transcription to model, length:', finalText.length);
+                    sendToRenderer('update-status', '回答中...');
+                    await geminiSessionRef.current.sendRealtimeInput({ text: finalText });
+                } else {
+                    sendToRenderer('update-status', '请先连接 AI 模型');
+                }
+                return { success: true, text };
+            }
+
             if (!pcmBase64) {
                 return { success: false, error: 'missing audio' };
             }
@@ -1483,20 +1584,22 @@ function setupGeneralIpcHandlers() {
 
             const result = await transcribeAudio(finalPath, apiKey, DEFAULT_ASR_API_BASE);
 
-            const text = result.data?.text || '';
-            console.log('📝 [ASR] Transcription result:', text);
+            const transcribedText = result.data?.text || '';
+            console.log('📝 [ASR] Transcription result:', transcribedText);
             
-            if (text && geminiSessionRef.current) {
+            if (transcribedText && geminiSessionRef.current) {
                 const cfg = getLocalConfig();
-                const finalText = withDocumentContext(text, cfg);
+                const finalText = withDocumentContext(transcribedText, cfg);
                 console.log('🚀 Sending transcription to model, length:', finalText.length);
                 sendToRenderer('update-status', '回答中...');
                 await geminiSessionRef.current.sendRealtimeInput({ text: finalText });
-            } else if (!text) {
+            } else if (!transcribedText) {
                 sendToRenderer('update-status', '没有检测到语音');
+            } else if (!geminiSessionRef.current) {
+                sendToRenderer('update-status', '请先连接 AI 模型');
             }
             
-            return { success: true, path: finalPath, text };
+            return { success: true, path: finalPath, text: transcribedText };
             
         } catch (error) {
             console.error('❌ save-audio-and-transcribe error:', error);
@@ -1618,6 +1721,62 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
         if (buf.length) onDataLine(buf.trimEnd());
     }
 
+    async function handleTokenDeduction(usage, model) {
+        if (!usage) return;
+        const totalTokens = usage.total_tokens || usage.totalTokens || 0;
+        if (totalTokens <= 0) return;
+
+        console.log('💰 [handleTokenDeduction] Triggering deduction for:', totalTokens, 'tokens');
+
+        try {
+            const { ipcMain } = require('electron');
+            const cfg = getLocalConfig();
+            const userToken = cfg.userAuthToken;
+            
+            if (userToken) {
+                // Fire and forget deduction
+                const { deductUserTokens } = require('./main/services/userApiClient');
+                
+                console.log('💰 [handleTokenDeduction] Calling API...');
+                deductUserTokens(cfg.userApiBase || '', userToken, totalTokens)
+                    .then(res => {
+                         console.log('💰 [handleTokenDeduction] Result:', res.ok ? 'Success' : 'Failed');
+                         if (res.ok && res.data) {
+                            const data = res.data;
+                            const user = cfg.userProfile || {};
+                            
+                            // Update local profile with latest stats
+                            const updatedUser = { 
+                                ...user, 
+                                frozen: data.frozen, 
+                                quotaTokens: data.quotaTokens, 
+                                usedTokens: data.usedTokens 
+                            };
+                            
+                            // Update store
+                            configStore.update({ userProfile: updatedUser });
+                            
+                            // If account became frozen, notify renderer to update UI status
+                            if (data.frozen) {
+                                const windows = BrowserWindow.getAllWindows();
+                                windows.forEach(win => {
+                                    win.webContents.send('auth-status-changed', { 
+                                        status: 'frozen',
+                                        message: '账户余额耗尽，已自动冻结'
+                                    });
+                                });
+                            }
+                        }
+                    })
+                    .catch(err => console.error('Background token deduction failed:', err));
+            } else {
+                console.warn('💰 [handleTokenDeduction] No user token found, skipping deduction');
+            }
+        } catch (e) {
+            console.error('Error handling token deduction:', e);
+        }
+    }
+
     async function callChatCompletions(model, messagesList, options = {}) {
         const { skipFinalStatus = false } = options;
 
@@ -1640,7 +1799,23 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
             stream: true,
             max_tokens: maxTokens,
             extra_body: { enable_thinking: false },
+            stream_options: { include_usage: true }, // Required for usage data in stream mode
         };
+        // Billing sync is now handled post-request by deduct API, but we keep this for legacy or other proxy
+        const billingSync = await mirrorAiUsageToServer({
+            servicePath: configStore.get().aiProxyServicePath || 'usage/report',
+            payload: {
+                requestType: 'chat.completions',
+                messageCount: requestMessages.length,
+            },
+            model,
+            usage: null,
+            fallbackTotalTokens: null,
+        });
+        if (billingSync?.blocked) {
+            sendToRenderer('update-status', billingSync.message);
+            throw new Error(billingSync.message);
+        }
 
         const startedAt = Date.now();
         const res = await fetch(endpoint, {
@@ -1664,6 +1839,7 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
 
         let fullContent = '';
         let firstTokenAt = 0;
+        let usage = null;
 
         if (body.stream && contentType.includes('text/event-stream')) {
             let done = false;
@@ -1678,6 +1854,9 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
                 }
                 try {
                     const evt = JSON.parse(dataStr);
+                    if (evt?.usage && typeof evt.usage === 'object') {
+                        usage = evt.usage;
+                    }
                     const delta = evt?.choices?.[0]?.delta;
                     const deltaText = typeof delta?.content === 'string' ? delta.content : '';
                     if (deltaText) {
@@ -1696,12 +1875,42 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
         } else {
             const data = await res.json();
             fullContent = data?.choices?.[0]?.message?.content || '';
+            usage = data?.usage || null;
             sendToRenderer('update-response', fullContent);
             console.log('✅ [callChatCompletions] Response received. total(ms):', Date.now() - startedAt);
         }
 
         messages.push({ role: 'assistant', content: fullContent });
         compactStoredHistory();
+        const fallbackTotalTokens = Number(usage?.total_tokens ?? usage?.totalTokens);
+        pushTokenUsageRecord({
+            servicePath: 'dashscope/chat/completions',
+            model,
+            usage,
+            fallbackTotalTokens: Number.isFinite(fallbackTotalTokens) ? fallbackTotalTokens : null,
+        });
+
+        // Trigger background deduction
+        // IMPORTANT: We use the usage object from the API response
+        // If usage is missing (e.g. stream ended abruptly), we might miss deduction
+        // But for standard Qwen/OpenAI compatible APIs, usage is usually provided in final chunk or response.
+        if (usage) {
+            handleTokenDeduction(usage, model);
+        } else {
+            console.warn('⚠️ [callChatCompletions] No usage data available for deduction');
+        }
+
+        mirrorAiUsageToServer({
+            servicePath: configStore.get().aiProxyServicePath || 'usage/report',
+            payload: {
+                requestType: 'chat.completions',
+                messageCount: requestMessages.length,
+                isUsageReport: true,
+            },
+            model,
+            usage,
+            fallbackTotalTokens: Number.isFinite(fallbackTotalTokens) ? fallbackTotalTokens : null,
+        }).catch(e => console.error('Usage report failed:', e));
 
         if (!skipFinalStatus) {
             sendToRenderer('update-status', '就绪');
@@ -1719,6 +1928,42 @@ function createQwenSession({ apiKey, apiBase = DEFAULT_MODEL_API_BASE, systemPro
         if (closed) {
             console.warn('⚠️ [sendRealtimeInput] Session is closed, ignoring input');
             return;
+        }
+
+        // Strict pre-check for account status
+        const currentCfg = getLocalConfig();
+        const user = currentCfg.userProfile || {};
+        if (user.frozen) {
+            const msg = '账户已被冻结，无法提问 🚫';
+            sendToRenderer('update-response', msg);
+            sendToRenderer('update-status', '账户已冻结');
+            // Trigger frozen event to ensure UI locks
+            const windows = BrowserWindow.getAllWindows();
+            windows.forEach(win => {
+                win.webContents.send('auth-status-changed', { 
+                    status: 'frozen',
+                    message: '账户已被冻结，无法继续使用'
+                });
+            });
+            return;
+        }
+        
+        // Also check balance if available locally
+        const quota = Number(user.quotaTokens ?? user.quota ?? 0);
+        const used = Number(user.usedTokens ?? user.used ?? 0);
+        if ((quota > 0 && used >= quota) || quota <= 0) {
+             const msg = '账户余额不足或欠费，无法提问 💸';
+             sendToRenderer('update-response', msg);
+             sendToRenderer('update-status', '余额不足');
+             // Trigger frozen event to ensure UI locks
+             const windows = BrowserWindow.getAllWindows();
+             windows.forEach(win => {
+                 win.webContents.send('auth-status-changed', { 
+                     status: 'frozen',
+                     message: '账户余额不足，请充值'
+                 });
+             });
+             return;
         }
 
         try {
@@ -1845,6 +2090,20 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
             stream: false,
             max_tokens: maxTokens,
         };
+        const billingSync = await mirrorAiUsageToServer({
+            servicePath: configStore.get().aiProxyServicePath || 'usage/report',
+            payload: {
+                requestType: 'chat.completions',
+                messageCount: messages.length,
+            },
+            model,
+            usage: null,
+            fallbackTotalTokens: null,
+        });
+        if (billingSync?.blocked) {
+            sendToRenderer('update-status', billingSync.message);
+            throw new Error(billingSync.message);
+        }
 
         const res = await fetch(endpoint, {
             method: 'POST',
@@ -1862,8 +2121,27 @@ function createAihubmixSession({ model, apiKey, apiBase, systemPrompt, language,
 
         const data = await res.json();
         const content = data?.choices?.[0]?.message?.content || '';
+        const usage = data?.usage || null;
         messages.push({ role: 'assistant', content });
         sendToRenderer('update-response', content);
+        const fallbackTotalTokens = Number(usage?.total_tokens ?? usage?.totalTokens);
+        pushTokenUsageRecord({
+            servicePath: 'openai-compatible/chat/completions',
+            model,
+            usage,
+            fallbackTotalTokens: Number.isFinite(fallbackTotalTokens) ? fallbackTotalTokens : null,
+        });
+        mirrorAiUsageToServer({
+            servicePath: configStore.get().aiProxyServicePath || 'usage/report',
+            payload: {
+                requestType: 'chat.completions',
+                messageCount: messages.length,
+                isUsageReport: true,
+            },
+            model,
+            usage,
+            fallbackTotalTokens: Number.isFinite(fallbackTotalTokens) ? fallbackTotalTokens : null,
+        }).catch(e => console.error('Usage report failed:', e));
 
         if (!skipFinalStatus) {
             sendToRenderer('update-status', '就绪');

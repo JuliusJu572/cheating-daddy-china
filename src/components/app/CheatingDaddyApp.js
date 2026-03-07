@@ -164,6 +164,12 @@ export class CheatingDaddyApp extends LitElement {
             ipcRenderer.on('click-through-toggled', (_, isEnabled) => {
                 this._isClickThrough = isEnabled;
             });
+            ipcRenderer.on('user-auth-expired', () => {
+                this.currentView = 'main';
+                this.sessionActive = false;
+                this.setStatus('登录过期，请重新登录');
+                this.requestUpdate();
+            });
         }
     }
 
@@ -175,6 +181,7 @@ export class CheatingDaddyApp extends LitElement {
             ipcRenderer.removeAllListeners('update-response-enrichment');
             ipcRenderer.removeAllListeners('update-status');
             ipcRenderer.removeAllListeners('click-through-toggled');
+            ipcRenderer.removeAllListeners('user-auth-expired');
         }
     }
 
@@ -298,7 +305,10 @@ export class CheatingDaddyApp extends LitElement {
             if (window.require) {
                 const { ipcRenderer } = window.require('electron');
                 await ipcRenderer.invoke('close-session');
+                await ipcRenderer.invoke('clear-live-transcript');
             }
+            this.liveTranscript = '';
+            this.isLiveAsrRunning = false;
             this.sessionActive = false;
             this.currentView = 'main';
             console.log('Session closed');
@@ -325,6 +335,30 @@ export class CheatingDaddyApp extends LitElement {
             this.setStatus('请先输入有效的License Key');
             return;
         }
+        try {
+            const ipcRenderer = window.electron?.ipcRenderer || (window.require ? window.require('electron').ipcRenderer : null);
+            if (!ipcRenderer) {
+                this.setStatus('主进程连接异常，请重启应用');
+                return;
+            }
+            const sessionRes = await ipcRenderer.invoke('auth-get-session');
+            if (!sessionRes?.ok || !sessionRes?.data?.hasToken) {
+                this.setStatus('请先登录账号');
+                return;
+            }
+            const meRes = await ipcRenderer.invoke('auth-me');
+            if (!meRes?.ok) {
+                this.setStatus(meRes?.message || '登录状态无效，请重新登录');
+                return;
+            }
+            const user = meRes?.data?.user || null;
+            if (user) {
+                localStorage.setItem('userProfile', JSON.stringify(user));
+            }
+        } catch (error) {
+            this.setStatus('登录校验失败: ' + (error?.message || '未知错误'));
+            return;
+        }
         if (!window.cheddar?.initializeGemini) {
             this.setStatus('应用未就绪，请重启后再试');
             return;
@@ -343,6 +377,14 @@ export class CheatingDaddyApp extends LitElement {
 
         this.responses = [];
         this.currentResponseIndex = -1;
+        this.liveTranscript = '';
+        this.isLiveAsrRunning = false;
+        try {
+            const ipcRenderer = window.electron?.ipcRenderer || (window.require ? window.require('electron').ipcRenderer : null);
+            if (ipcRenderer) {
+                await ipcRenderer.invoke('clear-live-transcript');
+            }
+        } catch (_) {}
         this.startTime = Date.now();
         this.currentView = 'assistant';
         this.requestUpdate();
@@ -391,6 +433,9 @@ export class CheatingDaddyApp extends LitElement {
 
     // Assistant view event handlers
     async handleSendText(message) {
+        // Clear live transcript when sending text (cleaner UI)
+        this.handleClearLiveTranscript();
+
         this._awaitingNewResponse = true;
         const result = await window.cheddar.sendTextMessage(message);
 

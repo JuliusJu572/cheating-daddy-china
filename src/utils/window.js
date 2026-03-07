@@ -75,7 +75,7 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
                 callback({ video: sources[0], audio: 'loopback' });
             });
         },
-        { useSystemPicker: true }
+        { useSystemPicker: false }
     );
 
     mainWindow.setResizable(false);
@@ -309,21 +309,16 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
                 const view = await mainWindow.webContents.executeJavaScript(
                     `cheddar && typeof cheddar.getCurrentView === 'function' ? cheddar.getCurrentView() : 'main'`
                 );
-                const wasVisible = mainWindow.isVisible();
-                if (wasVisible) {
-                    mainWindow.hide();
-                    await new Promise(r => setTimeout(r, 300)); // 等待窗口完全隐藏
-                }
+
                 try { 
                     sendToRenderer('update-status', '正在处理...'); 
                 } catch (_) {}
+
                 if (view === 'main') {
-                    // ✅ 启动会话但阻止窗口显示
                     await mainWindow.webContents.executeJavaScript(`
                         (async () => {
                             const originalView = cheddar.element().currentView;
                             await cheddar.element().handleStart();
-                            // 轮询等待 mediaStream 初始化
                             let attempts = 0;
                             while (attempts < 50 && !window.mediaStream) {
                                 await new Promise(r => setTimeout(r, 100));
@@ -332,25 +327,14 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
                         })()
                     `);
                 }
-                // ✅ 确保窗口仍然隐藏，然后截图
-            if (wasVisible && mainWindow.isVisible()) {
-                mainWindow.hide();
-                await new Promise(r => setTimeout(r, 200));
-            }
-            // 执行截图
-            await mainWindow.webContents.executeJavaScript(`
-                (async () => {
-                    if (typeof window.captureManualScreenshot === 'function') {
-                        await window.captureManualScreenshot();
-                    }
-                })()
-            `);
-            
-            // ✅ 截图完成后再显示窗口
-            await new Promise(r => setTimeout(r, 500)); // 等待截图处理完成
-            if (wasVisible) {
-                mainWindow.showInactive();
-            }
+
+                await mainWindow.webContents.executeJavaScript(`
+                    (async () => {
+                        if (typeof window.captureManualScreenshot === 'function') {
+                            await window.captureManualScreenshot();
+                        }
+                    })()
+                `);
         } catch (error) {
                 console.error('Error handling next step shortcut:', error);
                 try { mainWindow.showInactive(); } catch (_) {}
@@ -455,16 +439,58 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
     if (keybinds.audioCapture) {
         try {
             globalShortcut.register(keybinds.audioCapture, async () => {
+                // Show window immediately
+                if (!mainWindow.isVisible()) {
+                    if (process.platform === 'darwin') {
+                        mainWindow.setVisibleOnAllWorkspaces(false);
+                        mainWindow.setAlwaysOnTop(true, 'floating');
+                    }
+                    mainWindow.show();
+                    mainWindow.blur();
+                }
+
                 try {
-                    await mainWindow.webContents.executeJavaScript(`(async () => { if (window.startQuickAudioCapture) { await window.startQuickAudioCapture(); } })()`);
-                } catch (e) {}
+                    if (mainWindow.webContents.isLoading()) {
+                        await new Promise(resolve => mainWindow.webContents.once('did-finish-load', resolve));
+                    }
+                    const invoked = await mainWindow.webContents.executeJavaScript(`
+                        (async () => {
+                            let attempts = 0;
+                            while (attempts < 50 && typeof window.startQuickAudioCapture !== 'function') {
+                                await new Promise(r => setTimeout(r, 100));
+                                attempts++;
+                            }
+                            if (typeof window.startQuickAudioCapture === 'function') {
+                                await window.startQuickAudioCapture();
+                                return true;
+                            }
+                            return false;
+                        })()
+                    `);
+                    if (!invoked) {
+                        mainWindow.webContents.send('toggle-audio-capture');
+                    }
+                } catch (e) {
+                    try {
+                        mainWindow.webContents.send('toggle-audio-capture');
+                    } catch (_) {}
+                }
             });
-        } catch (error) {}
+            console.log(`Registered audioCapture: ${keybinds.audioCapture}`);
+        } catch (error) {
+            console.error(`Failed to register audioCapture (${keybinds.audioCapture}):`, error);
+        }
     }
 
     if (keybinds.windowsAudioCapture && process.platform === 'win32') {
         try {
             globalShortcut.register(keybinds.windowsAudioCapture, () => {
+                // Show window immediately
+                if (!mainWindow.isVisible()) {
+                    mainWindow.show();
+                    mainWindow.blur();
+                }
+
                 mainWindow.webContents.send('toggle-windows-audio-capture');
             });
             console.log(`Registered windowsAudioCapture: ${keybinds.windowsAudioCapture}`);

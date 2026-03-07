@@ -33,8 +33,14 @@ const isElectron = !!(typeof process !== 'undefined' && process.versions?.electr
 if (isElectron && platform === 'win32') {
     try {
         const { initialize } = nodeRequire('./utils/windowsAudioRecorder');
-        initialize();
-        console.log('Windows Audio Recorder initialized');
+        initialize({
+            onStateChange: (isRecording) => {
+                if (window.cheddar) {
+                    window.cheddar.setLiveAsrRunning(isRecording);
+                }
+            }
+        });
+        console.log('Windows Audio Recorder initialized with state callback');
     } catch (e) {
         console.error('Failed to initialize Windows Audio Recorder:', e);
     }
@@ -89,6 +95,25 @@ async function hydrateLocalStorageFromConfig() {
         if (typeof cfg.apiKey === 'string') {
             const v = cfg.apiKey.trim();
             if (v) localStorage.setItem('apiKey', v);
+        }
+        if (typeof cfg.userAuthToken === 'string') {
+            const v = cfg.userAuthToken.trim();
+            if (v) {
+                localStorage.setItem('userAuthToken', v);
+            } else {
+                localStorage.removeItem('userAuthToken');
+            }
+        }
+        if (cfg.userProfile && typeof cfg.userProfile === 'object') {
+            localStorage.setItem('userProfile', JSON.stringify(cfg.userProfile));
+        } else {
+            localStorage.removeItem('userProfile');
+        }
+        if (typeof cfg.userLoginEmail === 'string') {
+            localStorage.setItem('userLoginEmail', cfg.userLoginEmail);
+        }
+        if (typeof cfg.userLoginPassword === 'string') {
+            localStorage.setItem('userLoginPassword', cfg.userLoginPassword);
         }
     } catch (e) {}
 }
@@ -285,6 +310,14 @@ ipcRenderer.on('update-live-transcript', (_event, payload) => {
     }
     if (typeof cheddar?.setLiveTranscript === 'function') {
         cheddar.setLiveTranscript(liveTranscriptBuffer);
+    }
+});
+
+ipcRenderer.on('toggle-audio-capture', async () => {
+    try {
+        await startQuickAudioCapture();
+    } catch (error) {
+        console.error('toggle-audio-capture failed:', error);
     }
 });
 
@@ -752,6 +785,9 @@ async function captureManualScreenshot(imageQuality = null) {
     console.log('🎯 Manual screenshot triggered');
     console.log('📊 mediaStream status:', mediaStream ? 'initialized' : 'NULL');
     console.log('📊 hiddenVideo status:', hiddenVideo ? 'exists' : 'NULL');
+
+    // Clear live transcript when taking a screenshot (cleaner UI)
+    await clearLiveTranscript();
     
     // Check if capture has started
     if (!mediaStream) {
@@ -816,6 +852,21 @@ async function stopRealtimeAsrCapture() {
 
 async function startQuickAudioCapture(options = {}) {
     const useMic = options.useMic || false;
+
+    // Immediately switch to Assistant view and show "Initializing" status
+    // This makes the UI feel responsive even if audio init takes a moment
+    if (window.cheddar) {
+        if (window.cheddar.currentView !== 'assistant') {
+            window.cheddar.currentView = 'assistant';
+            window.cheddar.requestUpdate();
+        }
+        
+        // Only set "Initializing" if not already running, to avoid flickering
+        if (!isQuickRecording && !isLiveAsrRunning) {
+            const sourceName = useMic ? '麦克风' : '系统音频';
+            window.cheddar.setStatus(`初始化${sourceName}...`);
+        }
+    }
 
     if (isQuickRecording || isLiveAsrRunning) {
         cheddar.setLiveAsrRunning(false);
